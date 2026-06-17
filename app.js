@@ -2,7 +2,6 @@
 
 const STORAGE_KEY    = 'garantijos_v1';
 const AUTH_KEY       = 'garantijos_session';
-const PWD_HASH_KEY   = 'garantijos_pwd_hash';
 const BRUTE_KEY      = 'garantijos_brute';
 const WORKER_URL     = 'https://muddy-sea-0563.ignas7206.workers.dev';
 const CATEGORIES     = ['Elektronika', 'Buitinė technika', 'Avalynė / drabužiai', 'Baldai', 'Automobiliai', 'Kita'];
@@ -63,9 +62,10 @@ function bruteStatus() {
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
+// Hardcoded password hash – only owner knows the password
+const CORRECT_HASH = 'b9cf4364491e63cac7f0668fd4df6457ba29575537bcae6be2c265d05bb926dc';
+
 async function checkAuth() {
-  const savedHash = localStorage.getItem(PWD_HASH_KEY);
-  if (!savedHash) return; // no password set yet
   const token = sessionStorage.getItem(AUTH_KEY);
   const tokenHash = localStorage.getItem(AUTH_KEY + '_hash');
   if (token && tokenHash && await sha256(token) === tokenHash) {
@@ -76,23 +76,10 @@ async function checkAuth() {
 async function tryLogin(password) {
   const bs = bruteStatus();
   if (bs.locked) { state.pwdError = `Per daug bandymų. Palaukite ${bs.secs}s.`; render(); return; }
-
   if (!password) { state.pwdError = 'Įveskite slaptažodį'; render(); return; }
 
-  const savedHash = localStorage.getItem(PWD_HASH_KEY);
-
-  // First time – create password
-  if (!savedHash) {
-    if (password.length < 6) { state.pwdError = 'Slaptažodis per trumpas (min. 6 simboliai)'; render(); return; }
-    const hash = await sha256(password);
-    localStorage.setItem(PWD_HASH_KEY, hash);
-    await createSession();
-    return;
-  }
-
-  // Verify password
   const hash = await sha256(password);
-  if (hash === savedHash) {
+  if (hash === CORRECT_HASH) {
     resetBrute();
     await createSession();
   } else {
@@ -172,7 +159,6 @@ function render() {
 
 // ── Login view ─────────────────────────────────────────────────────────────
 function renderLogin() {
-  const isFirst = !localStorage.getItem(PWD_HASH_KEY);
   const bs = bruteStatus();
   return `
     <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px">
@@ -180,15 +166,14 @@ function renderLogin() {
         <div style="text-align:center;margin-bottom:32px">
           <div style="font-size:48px;margin-bottom:12px">🛡️</div>
           <h1 style="font-size:22px;font-weight:600;color:var(--text);margin-bottom:6px">Garantijos</h1>
-          <p style="font-size:14px;color:var(--text2)">${isFirst ? 'Sukurkite slaptažodį' : 'Įveskite slaptažodį'}</p>
+          <p style="font-size:14px;color:var(--text2)">Įveskite slaptažodį</p>
         </div>
         <div style="background:var(--bg);border:0.5px solid var(--border);border-radius:16px;padding:24px">
-          ${isFirst ? `<p style="font-size:13px;color:var(--text2);margin-bottom:16px;text-align:center">Pirmas paleidimas – nustatykite slaptažodį (min. 6 simboliai)</p>` : ''}
           <input type="password" id="pwdInput" placeholder="Slaptažodis" autofocus ${bs.locked ? 'disabled' : ''}
             style="width:100%;box-sizing:border-box;border-radius:10px;border:0.5px solid ${state.pwdError ? 'var(--red)' : 'var(--border2)'};background:var(--bg2);font-size:16px;padding:12px;color:var(--text);margin-bottom:${state.pwdError ? '8px' : '12px'}" />
           ${state.pwdError ? `<p style="font-size:13px;color:var(--red);margin-bottom:12px;text-align:center">${esc(state.pwdError)}</p>` : ''}
           <button id="loginBtn" ${bs.locked ? 'disabled' : ''} style="width:100%;background:var(--text);color:var(--bg);border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:500;cursor:${bs.locked ? 'not-allowed' : 'pointer'};opacity:${bs.locked ? '0.5' : '1'}">
-            ${isFirst ? 'Nustatyti slaptažodį' : 'Prisijungti'}
+            Prisijungti
           </button>
         </div>
       </div>
