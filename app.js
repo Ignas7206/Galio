@@ -1,60 +1,55 @@
 'use strict';
+import { auth, db, storage } from './firebase-config.js';
+import {
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
+  onAuthStateChanged, sendPasswordResetEmail, sendEmailVerification
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
+  setDoc, getDoc, serverTimestamp, increment
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  ref, uploadBytes, getDownloadURL, deleteObject
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
-const STORAGE_KEY  = 'garantijos_v1';
-const AUTH_KEY     = 'garantijos_session';
-const BRUTE_KEY    = 'garantijos_brute';
-const WORKER_URL   = 'https://muddy-sea-0563.ignas7206.workers.dev';
-const CORRECT_HASH = 'b9cf4364491e63cac7f0668fd4df6457ba29575537bcae6be2c265d05bb926dc';
-const CATEGORIES   = ['Elektronika','Buitinė technika','Avalynė / drabužiai','Baldai','Automobiliai','Kita'];
-const DOC_TYPES    = ['Kvitas / čekis','Sąskaita-faktūra (SF)','Banko išrašas','Kita'];
-const WARRANTY_OPTS= [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
-const ALLOWED_IMG  = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
-const MAX_IMG      = 4*1024*1024;
-const MAX_PDF      = 5*1024*1024;
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS   = 5*60*1000;
+const WORKER_URL    = 'https://long-moon-d252.ltdigitaltools.workers.dev';
+const CATEGORIES    = ['Elektronika','Buitinė technika','Avalynė / drabužiai','Baldai','Automobiliai','Kita'];
+const DOC_TYPES     = ['Kvitas / čekis','Sąskaita-faktūra (SF)','Banko išrašas','Kita'];
+const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
+const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
+const MAX_IMG       = 4*1024*1024;
+const MAX_PDF       = 5*1024*1024;
+const FREE_LIMIT    = 15;
 
 let state = {
+  booted:false, user:null, userDoc:null, loadingItems:false,
   view:'list', addMode:null,
-  items:[], selected:null,
+  items:[], itemsUnsub:null,
+  selected:null,
   search:'', filterCat:'Visos', sortBy:'newest',
   form:emptyForm(),
-  lightbox:null, analyzing:false,
-  authenticated:false, pwdError:'', docError:'',
-  showWarranty:false,
+  lightbox:null, analyzing:false, uploadPct:null,
+  authMode:'login', authError:'', authInfo:'', authBusy:false,
+  docError:'', showWarranty:false,
+  online: navigator.onLine,
+  onboardSlide: 0,
+  showOnboarding: !localStorage.getItem('garantijos_onboarded'),
+  swipe: { id:null, startX:0, currentX:0, dragging:false },
+  addPulse: false,
 };
 
-function emptyForm(){return{name:'',category:'Elektronika',shop:'',purchaseDate:today(),warrantyEnd:addMonths(today(),24),warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null};}
+function emptyForm(){return{name:'',category:'Elektronika',shop:'',purchaseDate:today(),warrantyEnd:addMonths(today(),24),warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true};}
 function today(){return new Date().toISOString().slice(0,10);}
 function addMonths(d,m){if(!d)return '';const r=new Date(d);r.setMonth(r.getMonth()+m);return r.toISOString().slice(0,10);}
 
-// ── Auth ───────────────────────────────────────────────────────────────────
-async function sha256(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');}
-function genToken(){const a=new Uint8Array(32);crypto.getRandomValues(a);return Array.from(a).map(x=>x.toString(16).padStart(2,'0')).join('');}
-async function checkAuth(){const t=sessionStorage.getItem(AUTH_KEY),h=localStorage.getItem(AUTH_KEY+'_h');if(t&&h&&await sha256(t)===h)state.authenticated=true;}
-async function createSession(){const t=genToken();sessionStorage.setItem(AUTH_KEY,t);localStorage.setItem(AUTH_KEY+'_h',await sha256(t));state.authenticated=true;state.pwdError='';render();}
-function logout(){sessionStorage.removeItem(AUTH_KEY);localStorage.removeItem(AUTH_KEY+'_h');state.authenticated=false;render();}
-function getBrute(){try{return JSON.parse(localStorage.getItem(BRUTE_KEY))||{a:0,u:0};}catch{return{a:0,u:0};}}
-function setBrute(b){localStorage.setItem(BRUTE_KEY,JSON.stringify(b));}
-function resetBrute(){localStorage.removeItem(BRUTE_KEY);}
-function bruteStatus(){const b=getBrute(),n=Date.now();if(b.u>n)return{locked:true,secs:Math.ceil((b.u-n)/1000)};return{locked:false};}
-async function tryLogin(pw){
-  const bs=bruteStatus();
-  if(bs.locked){state.pwdError=`Užblokuota. Palaukite ${bs.secs}s.`;render();return;}
-  if(!pw){state.pwdError='Įveskite slaptažodį';render();return;}
-  if(await sha256(pw)===CORRECT_HASH){resetBrute();await createSession();}
-  else{const b=getBrute();b.a=(b.a||0)+1;if(b.a>=MAX_ATTEMPTS){b.u=Date.now()+LOCKOUT_MS;b.a=0;state.pwdError='Per daug bandymų. Užblokuota 5 min.';}else{state.pwdError=`Neteisingas slaptažodis (${b.a}/${MAX_ATTEMPTS})`;}setBrute(b);render();}
-}
-
-// ── Persist ────────────────────────────────────────────────────────────────
-function load(){try{state.items=JSON.parse(localStorage.getItem(STORAGE_KEY))||[];}catch{state.items=[];}}
-function persist(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.items));}catch(e){if(e.name==='QuotaExceededError')toast('Vieta baigiasi! Ištrinkite kai kuriuos įrašus.');}}
+// ── Network status ───────────────────────────────────────────────────────
+window.addEventListener('online',()=>{state.online=true;render();});
+window.addEventListener('offline',()=>{state.online=false;render();});
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function daysLeft(d){if(!d)return null;return Math.ceil((new Date(d)-new Date())/86400000);}
 function fmtDate(d){if(!d)return '—';return new Date(d).toLocaleDateString('lt-LT');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function safeId(v){const n=Number(v);return Number.isFinite(n)?n:null;}
 function fmtSize(b){return b<1024*1024?(b/1024).toFixed(0)+'KB':(b/1024/1024).toFixed(1)+'MB';}
 function badgeHtml(days){
   if(days===null)return '';
@@ -66,24 +61,181 @@ function toast(msg){
   document.querySelectorAll('.toast').forEach(e=>e.remove());
   const el=document.createElement('div');el.className='toast';el.textContent=msg;
   document.getElementById('app').appendChild(el);
-  setTimeout(()=>el.remove(),2400);
+  setTimeout(()=>el.remove(),2600);
+}
+function friendlyAuthError(code){
+  const map={
+    'auth/email-already-in-use':'Šis el. paštas jau užregistruotas',
+    'auth/invalid-email':'Neteisingas el. pašto formatas',
+    'auth/weak-password':'Slaptažodis per silpnas (min. 6 simboliai)',
+    'auth/user-not-found':'Vartotojas nerastas',
+    'auth/wrong-password':'Neteisingas slaptažodis',
+    'auth/invalid-credential':'Neteisingas el. paštas arba slaptažodis',
+    'auth/too-many-requests':'Per daug bandymų. Pabandykite vėliau',
+    'auth/network-request-failed':'Nėra interneto ryšio',
+  };
+  return map[code]||'Įvyko klaida. Bandykite dar kartą';
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+onAuthStateChanged(auth, async (user)=>{
+  state.booted=true;
+  if(user && !user.emailVerified){
+    // allow usage but show banner; Firebase still treats them as authenticated
+  }
+  state.user=user;
+  if(user){
+    await ensureUserDoc(user);
+    attachItemsListener(user.uid);
+  }else{
+    if(state.itemsUnsub){state.itemsUnsub();state.itemsUnsub=null;}
+    state.items=[];
+    state.userDoc=null;
+  }
+  render();
+});
+
+async function ensureUserDoc(user){
+  const ref_ = doc(db,'users',user.uid);
+  const snap = await getDoc(ref_);
+  if(!snap.exists()){
+    await setDoc(ref_,{ email:user.email, plan:'free', itemCount:0, createdAt: serverTimestamp() });
+    state.userDoc = { email:user.email, plan:'free', itemCount:0 };
+  }else{
+    state.userDoc = snap.data();
+  }
+  // live updates to plan/itemCount
+  onSnapshot(ref_, s=>{ if(s.exists()){ state.userDoc=s.data(); render(); } });
+}
+
+function attachItemsListener(uid){
+  if(state.itemsUnsub)state.itemsUnsub();
+  state.loadingItems = true;
+  const q = query(collection(db,'users',uid,'warranties'), orderBy('createdAtMs','desc'));
+  state.itemsUnsub = onSnapshot(q, snap=>{
+    const wasEmpty = state.loadingItems;
+    state.items = snap.docs.map(d=>({id:d.id,...d.data()}));
+    state.loadingItems = false;
+    if(wasEmpty && state.items.length===0 && !state.addPulse){
+      state.addPulse = true;
+      setTimeout(()=>{state.addPulse=false;render();}, 3500);
+    }
+    render();
+  }, err=>{
+    state.loadingItems = false;
+    console.warn('Items listener error:', err);
+  });
+}
+
+async function doRegister(email,pwd,pwd2){
+  state.authError='';state.authInfo='';
+  if(!email||!pwd){state.authError='Užpildykite visus laukus';render();return;}
+  if(pwd.length<6){state.authError='Slaptažodis turi būti bent 6 simbolių';render();return;}
+  if(pwd!==pwd2){state.authError='Slaptažodžiai nesutampa';render();return;}
+  state.authBusy=true;render();
+  try{
+    const cred = await createUserWithEmailAndPassword(auth,email,pwd);
+    await sendEmailVerification(cred.user);
+    state.authInfo='Paskyra sukurta! Patikrinkite el. paštą patvirtinimui.';
+  }catch(e){ state.authError=friendlyAuthError(e.code); }
+  state.authBusy=false;render();
+}
+async function doLogin(email,pwd){
+  state.authError='';state.authInfo='';
+  if(!email||!pwd){state.authError='Užpildykite visus laukus';render();return;}
+  state.authBusy=true;render();
+  try{ await signInWithEmailAndPassword(auth,email,pwd); }
+  catch(e){ state.authError=friendlyAuthError(e.code); }
+  state.authBusy=false;render();
+}
+async function doReset(email){
+  state.authError='';state.authInfo='';
+  if(!email){state.authError='Įveskite el. paštą';render();return;}
+  state.authBusy=true;render();
+  try{ await sendPasswordResetEmail(auth,email); state.authInfo='Slaptažodžio atstatymo nuoroda išsiųsta į el. paštą'; }
+  catch(e){ state.authError=friendlyAuthError(e.code); }
+  state.authBusy=false;render();
+}
+async function doLogout(){
+  if(state.itemsUnsub){state.itemsUnsub();state.itemsUnsub=null;}
+  await signOut(auth);
+  state.view='list';state.addMode=null;
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
 function render(){
   const scr=document.getElementById('screen');
   const nav=document.getElementById('bottomNav');
+
+  if(!state.booted){ scr.innerHTML='<div class="center-loader"><div class="spinner"></div></div>'; nav.style.display='none'; return; }
   if(state.lightbox){scr.innerHTML=renderLightbox();nav.style.display='none';attachLightboxEvents();return;}
-  if(!state.authenticated){scr.innerHTML=renderLogin();nav.style.display='none';attachLoginEvents();return;}
+  if(!state.user){
+    if(state.showOnboarding){ scr.innerHTML=renderOnboarding(); nav.style.display='none'; attachOnboardingEvents(); return; }
+    scr.innerHTML=renderAuth();nav.style.display='none';attachAuthEvents();return;
+  }
+
   nav.style.display='flex';
-  if(state.view==='list')          scr.innerHTML=renderList();
-  else if(state.view==='search')   scr.innerHTML=renderSearch();
-  else if(state.view==='add'&&!state.addMode) scr.innerHTML=renderPicker();
-  else if(state.view==='add')      scr.innerHTML=renderAdd();
-  else if(state.view==='detail')   scr.innerHTML=renderDetail();
-  // sync nav active state
+  let html='';
+  if(state.view==='list')          html=renderList();
+  else if(state.view==='search')   html=renderSearch();
+  else if(state.view==='add'&&!state.addMode) html=renderPicker();
+  else if(state.view==='add')      html=renderAdd();
+  else if(state.view==='detail')   html=renderDetail();
+
+  const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto · veikia lokaliai'}</div>`;
+  scr.innerHTML = (state.online?'':syncPill) + html;
+
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.view));
+  const addCircle = document.querySelector('.nav-add-circle');
+  if(addCircle) addCircle.classList.toggle('pulse', state.addPulse && state.view==='list');
   attachEvents();
+}
+
+// ── Onboarding ─────────────────────────────────────────────────────────────
+const ONBOARD_SLIDES = [
+  { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok čekį', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
+  { icon:'ti-bell-ringing', bg:'var(--orange-bg)', color:'var(--orange)', title:'Niekada nepraleisk garantijos', text:'Matykite iš karto, kurių daiktų garantija baigiasi greitai, ir nepraraskite teisės į nemokamą remontą.' },
+  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Duomenys saugomi debesyje su jūsų paskyra ir pasiekiami iš bet kurio įrenginio, net be interneto.' },
+];
+function renderOnboarding(){
+  const slides = ONBOARD_SLIDES.map(s=>`
+    <div class="onboard-slide">
+      <div class="onboard-icon" style="background:${s.bg}"><i class="ti ${s.icon}" style="color:${s.color}"></i></div>
+      <h2>${esc(s.title)}</h2>
+      <p>${esc(s.text)}</p>
+    </div>`).join('');
+  const dots = ONBOARD_SLIDES.map((_,i)=>`<div class="onboard-dot${i===state.onboardSlide?' active':''}"></div>`).join('');
+  const isLast = state.onboardSlide === ONBOARD_SLIDES.length-1;
+  return `<div class="onboard-wrap">
+    <div class="onboard-slides" id="onboardSlides">${slides}</div>
+    <div class="onboard-dots">${dots}</div>
+    <div class="onboard-footer">
+      <button class="login-btn" id="onboardNext">${isLast?'Pradėti':'Toliau'}</button>
+      ${!isLast?`<button class="onboard-skip" id="onboardSkip">Praleisti</button>`:''}
+    </div>
+  </div>`;
+}
+function attachOnboardingEvents(){
+  const track = document.getElementById('onboardSlides');
+  const finish = ()=>{ state.showOnboarding=false; localStorage.setItem('garantijos_onboarded','1'); render(); };
+  document.getElementById('onboardNext')?.addEventListener('click',()=>{
+    if(state.onboardSlide < ONBOARD_SLIDES.length-1){
+      state.onboardSlide++; render();
+      const t=document.getElementById('onboardSlides');
+      if(t) t.scrollTo({left: t.clientWidth*state.onboardSlide, behavior:'smooth'});
+    } else { finish(); }
+  });
+  document.getElementById('onboardSkip')?.addEventListener('click', finish);
+  if(track){
+    let scrollTimeout;
+    track.addEventListener('scroll',()=>{
+      clearTimeout(scrollTimeout);
+      scrollTimeout=setTimeout(()=>{
+        const idx = Math.round(track.scrollLeft / track.clientWidth);
+        if(idx!==state.onboardSlide){ state.onboardSlide=idx; render(); const t=document.getElementById('onboardSlides'); if(t)t.scrollLeft=track.clientWidth*idx; }
+      },80);
+    });
+  }
 }
 
 // ── Lightbox ───────────────────────────────────────────────────────────────
@@ -93,35 +245,60 @@ function attachLightboxEvents(){
   document.getElementById('lbOverlay')?.addEventListener('click',e=>{if(e.target.id==='lbOverlay'){state.lightbox=null;render();}});
 }
 
-// ── Login ──────────────────────────────────────────────────────────────────
-function renderLogin(){
-  const bs=bruteStatus();
+// ── Auth screen ────────────────────────────────────────────────────────────
+function renderAuth(){
+  const m=state.authMode;
   return`<div class="login-wrap"><div class="login-card">
-    <div class="login-logo"><span class="shield">🛡️</span><h1>Garantijos</h1><p>Įveskite slaptažodį</p></div>
-    <input type="password" id="pwdInput" class="login-input${state.pwdError?' err':''}" placeholder="Slaptažodis" ${bs.locked?'disabled':''} />
-    ${state.pwdError?`<p class="login-error">${esc(state.pwdError)}</p>`:''}
-    <button id="loginBtn" class="login-btn" ${bs.locked?'disabled':''}>Prisijungti</button>
+    <div class="login-logo"><span class="shield">🛡️</span><h1>Garantijos</h1><p>${m==='register'?'Susikurkite paskyrą':m==='reset'?'Atstatykite slaptažodį':'Prisijunkite'}</p></div>
+
+    <input type="email" id="authEmail" class="login-input" placeholder="El. paštas" autocomplete="email" />
+    ${m!=='reset'?`<input type="password" id="authPwd" class="login-input" placeholder="Slaptažodis" autocomplete="${m==='register'?'new-password':'current-password'}" />`:''}
+    ${m==='register'?`<input type="password" id="authPwd2" class="login-input" placeholder="Pakartokite slaptažodį" autocomplete="new-password" />`:''}
+
+    ${state.authError?`<p class="login-error">${esc(state.authError)}</p>`:''}
+    ${state.authInfo?`<p class="login-info">${esc(state.authInfo)}</p>`:''}
+
+    <button id="authSubmit" class="login-btn" ${state.authBusy?'disabled':''}>
+      ${state.authBusy?'Prašome palaukti...':m==='register'?'Sukurti paskyrą':m==='reset'?'Siųsti nuorodą':'Prisijungti'}
+    </button>
+
+    ${m==='login'?`<div class="login-switch"><button id="toReset">Pamiršote slaptažodį?</button></div>`:''}
+    <div class="login-switch">
+      ${m==='login'?`Neturite paskyros? <button id="toRegister">Registruotis</button>`
+        :m==='register'?`Jau turite paskyrą? <button id="toLogin">Prisijungti</button>`
+        :`<button id="toLogin">Grįžti į prisijungimą</button>`}
+    </div>
   </div></div>`;
 }
-function attachLoginEvents(){
-  const btn=document.getElementById('loginBtn'),inp=document.getElementById('pwdInput');
-  if(btn)btn.addEventListener('click',()=>tryLogin(inp?.value||''));
-  if(inp){inp.addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin(inp.value);});setTimeout(()=>inp.focus(),100);}
+function attachAuthEvents(){
+  const e1=document.getElementById('authEmail'),p1=document.getElementById('authPwd'),p2=document.getElementById('authPwd2');
+  document.getElementById('authSubmit')?.addEventListener('click',()=>{
+    const email=e1?.value.trim()||'';
+    if(state.authMode==='register') doRegister(email,p1?.value||'',p2?.value||'');
+    else if(state.authMode==='reset') doReset(email);
+    else doLogin(email,p1?.value||'');
+  });
+  document.getElementById('toRegister')?.addEventListener('click',()=>{state.authMode='register';state.authError='';state.authInfo='';render();});
+  document.getElementById('toLogin')?.addEventListener('click',()=>{state.authMode='login';state.authError='';state.authInfo='';render();});
+  document.getElementById('toReset')?.addEventListener('click',()=>{state.authMode='reset';state.authError='';state.authInfo='';render();});
+  [e1,p1,p2].forEach(el=>el?.addEventListener('keydown',ev=>{if(ev.key==='Enter')document.getElementById('authSubmit')?.click();}));
+  setTimeout(()=>e1?.focus(),50);
 }
 
 // ── List ───────────────────────────────────────────────────────────────────
 function renderList(){
-  const{items,filterCat,sortBy}=state;
+  const{items,filterCat,sortBy,userDoc}=state;
   const expired =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d<0;}).length;
   const expiring=items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0&&d<=30;}).length;
   const valid   =items.length-expired;
+  const isPremium = userDoc?.plan==='premium';
 
   const filtered=items
     .filter(i=>filterCat==='Visos'||i.category===filterCat)
     .sort((a,b)=>{
       if(sortBy==='name')return a.name.localeCompare(b.name,'lt');
       if(sortBy==='expiring'){const da=daysLeft(a.warrantyEnd)??99999,db=daysLeft(b.warrantyEnd)??99999;return da-db;}
-      return b.id-a.id;
+      return (b.createdAtMs||0)-(a.createdAtMs||0);
     });
 
   const statsHtml=items.length>0?`<div class="stats-row">
@@ -130,28 +307,40 @@ function renderList(){
     <div class="stat-tile"><div class="n" style="color:var(--red)">${expired}</div><div class="l">Baigėsi</div></div>
   </div>`:'';
 
+  const planBanner = !isPremium ? `<div class="plan-banner">
+    <i class="ti ti-crown"></i>
+    <div class="pb-text"><b>${items.length}/${FREE_LIMIT}</b> nemokamų įrašų panaudota</div>
+    <button id="upgradeBtn">Premium</button>
+  </div>`:'';
+
   const chips=['Visos',...CATEGORIES].map(c=>`<button class="chip${filterCat===c?' active':''}" data-filter="${esc(c)}">${esc(c)}</button>`).join('');
 
   const cardsHtml=filtered.map(item=>{
     const days=daysLeft(item.warrantyEnd);
     let thumb;
-    if(item.docData&&item.docMime==='application/pdf')
+    if(item.docMime==='application/pdf')
       thumb=`<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
-    else if(item.docData)
-      thumb=`<img class="card-thumb" src="${esc(item.docData)}" alt="" loading="lazy" />`;
+    else if(item.docUrl)
+      thumb=`<img class="card-thumb" src="${esc(item.docUrl)}" alt="" loading="lazy" />`;
     else
       thumb=`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
-    return`<button class="card" data-id="${esc(String(item.id))}">
-      ${thumb}
-      <div class="card-body">
-        <div class="card-top"><span class="card-name">${esc(item.name)}</span>${badgeHtml(days)}</div>
-        <div class="card-sub">${esc(item.shop||item.category)}</div>
-        ${item.warrantyEnd?`<div class="card-date"><i class="ti ti-calendar" style="font-size:12px"></i>Iki ${fmtDate(item.warrantyEnd)}</div>`:''}
-      </div>
-    </button>`;
+    const urgentClass = days!==null && days<0 ? ' urgent-exp' : days!==null && days<=30 ? ' urgent-warn' : '';
+    return`<div class="swipe-wrap" data-swipe-id="${esc(item.id)}">
+      <div class="swipe-delete-bg"><i class="ti ti-trash"></i></div>
+      <button class="card${urgentClass}" data-id="${esc(item.id)}">
+        ${thumb}
+        <div class="card-body">
+          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${badgeHtml(days)}</div>
+          <div class="card-sub">${esc(item.shop||item.category)}</div>
+          ${item.warrantyEnd?`<div class="card-date"><i class="ti ti-calendar" style="font-size:12px"></i>Iki ${fmtDate(item.warrantyEnd)}</div>`:''}
+        </div>
+      </button>
+    </div>`;
   }).join('');
 
-  const emptyHtml=items.length===0?`<div class="empty-state">
+  const skeletonHtml = `<div class="skeleton-card"><div class="skeleton-box skel-thumb"></div><div class="skel-lines"><div class="skeleton-box skel-line" style="width:60%"></div><div class="skeleton-box skel-line" style="width:40%"></div></div></div>`.repeat(3);
+
+  const emptyHtml=state.loadingItems ? skeletonHtml : items.length===0?`<div class="empty-state">
     <div class="empty-icon"><i class="ti ti-shield-check"></i></div>
     <h3>Dar nėra garantijų</h3>
     <p>Pridėkite pirmą daiktą paspausdami + mygtuką apačioje</p>
@@ -164,6 +353,7 @@ function renderList(){
     </div>
     <div style="height:14px"></div>
     ${statsHtml}
+    ${planBanner}
     <div class="chips">${chips}</div>
     <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center">
       <span style="font-size:12px;color:var(--text3)">Rikiuoti:</span>
@@ -182,8 +372,8 @@ function renderSearch(){
   const results=!q?[]:state.items.filter(i=>{const s=q.toLowerCase();return i.name.toLowerCase().includes(s)||(i.shop||'').toLowerCase().includes(s)||(i.docNumber||'').toLowerCase().includes(s)||(i.notes||'').toLowerCase().includes(s);});
   const cardsHtml=results.map(item=>{
     const days=daysLeft(item.warrantyEnd);
-    const thumb=item.docData&&item.docMime!=='application/pdf'?`<img class="card-thumb" src="${esc(item.docData)}" alt="" loading="lazy" />`:`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
-    return`<button class="card" data-id="${esc(String(item.id))}">
+    const thumb=item.docUrl&&item.docMime!=='application/pdf'?`<img class="card-thumb" src="${esc(item.docUrl)}" alt="" loading="lazy" />`:`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
+    return`<button class="card" data-id="${esc(item.id)}">
       ${thumb}
       <div class="card-body">
         <div class="card-top"><span class="card-name">${esc(item.name)}</span>${badgeHtml(days)}</div>
@@ -194,14 +384,9 @@ function renderSearch(){
   }).join('');
 
   return`<div>
-    <div class="page-header" style="padding-bottom:14px">
-      <span class="page-title">Ieškoti</span>
-    </div>
+    <div class="page-header" style="padding-bottom:14px"><span class="page-title">Ieškoti</span></div>
     <div style="padding:12px 16px 4px">
-      <div class="search-bar" style="margin:0">
-        <i class="ti ti-search"></i>
-        <input type="search" id="searchInput" placeholder="Pavadinimas, dok. numeris..." value="${esc(q)}" autofocus />
-      </div>
+      <div class="search-bar" style="margin:0"><i class="ti ti-search"></i><input type="search" id="searchInput" placeholder="Pavadinimas, dok. numeris..." value="${esc(q)}" autofocus /></div>
     </div>
     <div class="cards" style="margin-top:12px">
       ${!q?`<div class="empty-state" style="padding:40px 32px"><div class="empty-icon"><i class="ti ti-search"></i></div><p>Įveskite paieškos žodį</p></div>`:results.length===0?`<div class="empty-state" style="padding:40px 32px"><div class="empty-icon"><i class="ti ti-mood-sad"></i></div><h3>Nieko nerasta</h3></div>`:cardsHtml}
@@ -211,11 +396,10 @@ function renderSearch(){
 
 // ── Add picker ─────────────────────────────────────────────────────────────
 function renderPicker(){
+  const atLimit = state.userDoc?.plan!=='premium' && state.items.length>=FREE_LIMIT;
   return`<div>
-    <div class="page-header-sm">
-      <button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button>
-      <h2>Pridėti garantiją</h2>
-    </div>
+    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Pridėti garantiją</h2></div>
+    ${atLimit?`<div class="plan-banner" style="margin:16px"><i class="ti ti-lock"></i><div class="pb-text">Pasiekėte nemokamo plano limitą (${FREE_LIMIT} įrašų). Atsinaujinkite į Premium, kad pridėtumėte daugiau.</div><button id="upgradeBtn2">Premium</button></div>`:`
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
@@ -225,7 +409,7 @@ function renderPicker(){
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
         <div><h3>Rankiniu būdu</h3><p>Suveskite informaciją patys. Dokumentą galima prisegti</p></div>
       </button>
-    </div>
+    </div>`}
   </div>`;
 }
 
@@ -239,14 +423,14 @@ function renderAdd(){
 
   let docAreaHtml='';
   if(hasPdf){
-    docAreaHtml=`<div class="doc-preview-pdf"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(f.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">PDF išsaugotas</div></div></div>`;
+    docAreaHtml=`<div class="doc-preview-pdf"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(f.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">PDF pridėtas</div></div></div>`;
   }else if(hasImg){
     docAreaHtml=`<div style="position:relative"><img class="doc-preview-img" id="docThumb" src="${esc(f.docData)}" alt="" /><div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.55);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;pointer-events:none"><i class="ti ti-zoom-in" style="font-size:14px;color:#fff"></i></div></div>`;
   }else{
     docAreaHtml=`<label class="doc-drop-zone" for="docInput">
       <i class="ti ti-${isPhoto?'camera':'paperclip'}"></i>
       <p>${isPhoto?'Fotografuoti arba įkelti':'Prisegti dokumentą (neprivaloma)'}</p>
-      <small>JPG, PNG, PDF · max ${isPhoto?'4MB / 5MB PDF':'4MB / 5MB PDF'}</small>
+      <small>JPG, PNG, PDF · max 4MB / 5MB PDF</small>
     </label>`;
   }
 
@@ -255,19 +439,14 @@ function renderAdd(){
     <div class="warranty-panel">
       <div class="warranty-handle"></div>
       <div class="warranty-title">Garantijos trukmė</div>
-      ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">
-        ${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}
-      </button>`).join('')}
+      ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
     </div>
   </div>`:'';
 
   return`<div>
-    <div class="page-header-sm">
-      <button class="back-btn" id="backBtn"><i class="ti ti-arrow-left"></i></button>
-      <h2>${isPhoto?'Pridėti su dokumentu':'Įvesti rankiniu būdu'}</h2>
-    </div>
+    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-arrow-left"></i></button><h2>${isPhoto?'Pridėti su dokumentu':'Įvesti rankiniu būdu'}</h2></div>
     <div class="form-body">
-
+      ${!state.user.emailVerified&&isPhoto?`<div class="plan-banner" style="margin-bottom:14px"><i class="ti ti-mail-exclamation"></i><div class="pb-text">Patvirtinkite el. paštą, kad galėtumėte naudoti AI analizę</div></div>`:''}
       <div class="doc-upload-area">
         ${docAreaHtml}
         <input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto?'capture="environment"':''} style="display:none" />
@@ -297,11 +476,11 @@ function renderAdd(){
       </div>
 
       <p class="form-label-section">Pastabos</p>
-      <div class="form-section">
-        <div class="form-row"><textarea id="f_notes" rows="3" placeholder="Papildoma informacija...">${esc(f.notes)}</textarea></div>
-      </div>
+      <div class="form-section"><div class="form-row"><textarea id="f_notes" rows="3" placeholder="Papildoma informacija...">${esc(f.notes)}</textarea></div></div>
 
-      <button class="save-btn" id="saveBtn" ${f.name.trim()?'':'disabled'}>Išsaugoti</button>
+      ${state.uploadPct!==null?`<div class="upload-progress-row"><div class="upload-progress-bar"><div class="upload-progress-fill" style="width:${state.uploadPct}%"></div></div><span style="font-size:12px;color:var(--text2)">${state.uploadPct}%</span></div>`:''}
+
+      <button class="save-btn" id="saveBtn" ${f.name.trim()&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
     </div>
     ${warrantySheet}
   </div>`;
@@ -317,16 +496,13 @@ function renderDetail(){
   else if(days<0){sc='var(--red-bg)';si='ti-shield-x';sv='Garantija baigėsi';}
   else if(days<=30){sc='var(--orange-bg)';si='ti-shield-exclamation';sv=`Liko ${days} d.`;}
   else{sc='var(--green-bg)';si='ti-shield-check';sv=`Liko ${days} d.`;}
-
   const textColor=days===null?'var(--text2)':days<0?'var(--red)':days<=30?'var(--orange)':'var(--green)';
 
   let docHtml='';
-  if(item.docData&&item.docMime==='application/pdf'){
-    const blob=b64toBlob(item.docData,'application/pdf');
-    const url=URL.createObjectURL(blob);
-    docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${url}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(item.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
-  }else if(item.docData){
-    docHtml=`<div class="detail-section"><img src="${esc(item.docData)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
+  if(item.docUrl&&item.docMime==='application/pdf'){
+    docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${esc(item.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(item.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
+  }else if(item.docUrl){
+    docHtml=`<div class="detail-section"><img src="${esc(item.docUrl)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
   }
 
   const rows=[
@@ -357,39 +533,84 @@ function renderDetail(){
   </div>`;
 }
 
-function b64toBlob(b64,mime){const s=atob(b64),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);return new Blob([a],{type:mime});}
-
 // ── Events ─────────────────────────────────────────────────────────────────
 function attachEvents(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn);};
   const onAll=(sel,ev,fn)=>document.querySelectorAll(sel).forEach(el=>el.addEventListener(ev,fn));
 
-  // Bottom nav
   document.getElementById('navList')?.addEventListener('click',()=>{state.view='list';render();});
-  document.getElementById('navAdd')?.addEventListener('click',()=>{state.form=emptyForm();state.docError='';state.addMode=null;state.view='add';render();});
   document.getElementById('navSearch')?.addEventListener('click',()=>{state.view='search';render();});
 
-  // List
-  on('logoutBtn','click',()=>{if(confirm('Atsijungti?'))logout();});
+  // Add button: tap = picker, long-press = jump straight to camera
+  const navAdd = document.getElementById('navAdd');
+  if(navAdd){
+    let pressTimer=null, longPressed=false;
+    const startPress=(e)=>{
+      longPressed=false;
+      pressTimer=setTimeout(()=>{
+        longPressed=true;
+        if(navigator.vibrate)navigator.vibrate(12);
+        state.form=emptyForm();state.docError='';state.addMode='photo';state.view='add';render();
+        setTimeout(()=>document.getElementById('docInput')?.click(),60);
+      },480);
+    };
+    const cancelPress=()=>{ clearTimeout(pressTimer); };
+    navAdd.addEventListener('touchstart',startPress,{passive:true});
+    navAdd.addEventListener('touchend',e=>{ cancelPress(); if(!longPressed){ state.form=emptyForm();state.docError='';state.addMode=null;state.view='add';render(); } });
+    navAdd.addEventListener('touchcancel',cancelPress);
+    navAdd.addEventListener('mousedown',startPress);
+    navAdd.addEventListener('mouseup',e=>{ cancelPress(); if(!longPressed){ state.form=emptyForm();state.docError='';state.addMode=null;state.view='add';render(); } });
+  }
+
+  // Swipe-to-delete on list cards
+  onAll('.swipe-wrap','touchstart',e=>{
+    const id=e.currentTarget.dataset.swipeId;
+    state.swipe={id,startX:e.touches[0].clientX,currentX:0,dragging:true};
+  });
+  onAll('.swipe-wrap','touchmove',e=>{
+    if(!state.swipe.dragging||state.swipe.id!==e.currentTarget.dataset.swipeId)return;
+    const dx=e.touches[0].clientX-state.swipe.startX;
+    if(dx<0){
+      state.swipe.currentX=Math.max(dx,-88);
+      if(Math.abs(state.swipe.currentX)>8) state.swipe.justSwiped=true;
+      const card=e.currentTarget.querySelector('.card');
+      if(card)card.style.transform=`translateX(${state.swipe.currentX}px)`;
+    }
+  });
+  onAll('.swipe-wrap','touchend',e=>{
+    if(!state.swipe.dragging||state.swipe.id!==e.currentTarget.dataset.swipeId)return;
+    const card=e.currentTarget.querySelector('.card');
+    const id=state.swipe.id;
+    if(state.swipe.currentX<-60){
+      if(card)card.style.transform='translateX(-88px)';
+      // confirm via tap on revealed delete area is implicit; auto-trigger confirm dialog
+      setTimeout(()=>{ if(card)card.style.transform=''; deleteItem(id); },80);
+    } else {
+      if(card)card.style.transform='';
+    }
+    state.swipe={id:null,startX:0,currentX:0,dragging:false};
+  });
+
+  on('logoutBtn','click',()=>{if(confirm('Atsijungti?'))doLogout();});
+  on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
+  on('upgradeBtn2','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});
   onAll('.chip[data-sort]','click',e=>{state.sortBy=e.currentTarget.dataset.sort;render();});
-  onAll('.card[data-id]','click',e=>{const id=safeId(e.currentTarget.dataset.id);if(id===null)return;state.selected=id;state.view='detail';render();});
+  onAll('.card[data-id]','click',e=>{
+    if(state.swipe.justSwiped){state.swipe.justSwiped=false;return;}
+    state.selected=e.currentTarget.dataset.id;state.view='detail';render();
+  });
 
-  // Search
   on('searchInput','input',e=>{state.search=e.target.value;render();});
 
-  // Picker
   on('modePhoto','click',()=>{state.addMode='photo';render();});
   on('modeManual','click',()=>{state.addMode='manual';render();});
 
-  // Back
   on('backBtn','click',()=>{
     if(state.view==='add'&&state.addMode){state.addMode=null;render();}
-    else if(state.view==='add'){state.view='list';render();}
     else{state.view='list';render();}
   });
 
-  // Warranty sheet
   on('warrantyBtn','click',()=>{state.showWarranty=true;render();});
   on('warrantyOverlay','click',()=>{state.showWarranty=false;render();});
   onAll('.warranty-opt','click',e=>{
@@ -400,17 +621,15 @@ function attachEvents(){
   });
   on('f_warrantyEnd','change',e=>{state.form.warrantyEnd=e.target.value;});
 
-  // Form fields
   ['name','shop','purchaseDate','docType','docNumber','category','notes'].forEach(k=>{
     on(`f_${k}`,'input',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
     on(`f_${k}`,'change',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
   });
 
-  // Doc
   on('docInput','change',handleDoc);
   on('removeDoc','click',()=>{state.form.docData=null;state.form.docMime=null;state.form.docFileName=null;state.docError='';render();});
   on('docThumb','click',()=>{if(state.form.docData)state.lightbox=state.form.docData;render();});
-  on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it?.docData)state.lightbox=it.docData;render();});
+  on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it?.docUrl)state.lightbox=it.docUrl;render();});
 
   on('saveBtn','click',saveItem);
   on('deleteBtn','click',()=>deleteItem(state.selected));
@@ -419,18 +638,74 @@ function attachEvents(){
 
 function syncSave(){const b=document.getElementById('saveBtn');if(b)b.disabled=!state.form.name.trim();}
 
-function deleteItem(id){
+async function deleteItem(id){
   if(!confirm('Ištrinti šį įrašą?'))return;
-  state.items=state.items.filter(i=>i.id!==id);persist();
-  toast('Ištrinta');state.view='list';render();
-}
-function saveItem(){
-  if(!state.form.name.trim())return;
-  state.items.unshift({...state.form,id:Date.now()});persist();
-  toast('Išsaugota ✓');state.form=emptyForm();state.docError='';state.addMode=null;state.view='list';render();
+  const item=state.items.find(i=>i.id===id);
+  try{
+    await deleteDoc(doc(db,'users',state.user.uid,'warranties',id));
+    await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(-1)});
+    if(item?.docStoragePath){
+      try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){console.warn('Storage delete failed:',e);}
+    }
+    toast('Ištrinta');
+  }catch(e){ toast('Klaida trinant: '+(e.message||'')); }
+  state.view='list';render();
 }
 
-// ── Document ───────────────────────────────────────────────────────────────
+async function saveItem(){
+  if(!state.form.name.trim())return;
+  if(state.userDoc?.plan!=='premium' && state.items.length>=FREE_LIMIT){
+    toast('Pasiektas nemokamo plano limitas');
+    return;
+  }
+  const f=state.form;
+  const payload={
+    name:f.name.trim().slice(0,200), category:f.category, shop:(f.shop||'').slice(0,100),
+    purchaseDate:f.purchaseDate, warrantyEnd:f.warrantyEnd, warrantyMonths:f.warrantyMonths,
+    docType:f.docType, docNumber:(f.docNumber||'').slice(0,100), notes:(f.notes||'').slice(0,1000),
+    notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+    createdAt: serverTimestamp(), createdAtMs: Date.now(),
+  };
+
+  try{
+    const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), payload);
+    await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(1)});
+
+    // Upload document if present (after creating doc so we have an ID for the storage path)
+    if(f.docData && f.docMime){
+      state.uploadPct=0; render();
+      try{
+        const ext = f.docMime==='application/pdf'?'pdf':(f.docMime.split('/')[1]||'jpg');
+        const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
+        const blob = base64ToBlob(f.docMime==='application/pdf'?f.docData:f.docData.split(',')[1], f.docMime);
+        state.uploadPct=40; render();
+        await uploadBytes(ref(storage,path), blob, {contentType:f.docMime});
+        state.uploadPct=80; render();
+        const url = await getDownloadURL(ref(storage,path));
+        await updateDoc(docRef, { docUrl:url, docMime:f.docMime, docFileName:f.docFileName, docStoragePath:path });
+        state.uploadPct=100; render();
+      }catch(e){
+        console.warn('Upload failed:',e);
+        toast('Dokumentas neišsaugotas (klaida įkeliant failą)');
+      }
+    }
+
+    toast('Išsaugota ✓');
+  }catch(e){
+    toast('Klaida saugant: '+(e.message||''));
+  }
+
+  state.uploadPct=null;
+  state.form=emptyForm();state.docError='';state.addMode=null;state.view='list';render();
+}
+
+function base64ToBlob(b64,mime){
+  const s=atob(b64),a=new Uint8Array(s.length);
+  for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);
+  return new Blob([a],{type:mime});
+}
+
+// ── Document picking ───────────────────────────────────────────────────────
 function handleDoc(e){
   const file=e.target.files[0];if(!file)return;
   const isPdf=file.type==='application/pdf';
@@ -460,7 +735,8 @@ function handleDoc(e){
 
 async function analyzeDoc(b64,mime){
   try{
-    const res=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json'},
+    const idToken = await state.user.getIdToken();
+    const res=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
       body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:[
         {type:'image',source:{type:'base64',media_type:mime,data:b64}},
         {type:'text',text:`Pirkimo dokumentas. Grąžink TIK JSON be markdown:
@@ -468,6 +744,9 @@ async function analyzeDoc(b64,mime){
 warrantyMonths: 6/12/24/36/60 pagal produktą. Nežinant – 24.`}
       ]}]})
     });
+    if(res.status===401){toast('Sesija pasibaigė, prisijunkite iš naujo');return;}
+    if(res.status===403){toast('Patvirtinkite el. paštą, kad naudotumėte AI analizę');return;}
+    if(res.status===429){toast('Pasiektas dienos AI analizių limitas (10/d.)');return;}
     if(!res.ok)return;
     const data=await res.json();
     const p=JSON.parse((data.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
@@ -482,6 +761,4 @@ warrantyMonths: 6/12/24/36/60 pagal produktą. Nežinant – 24.`}
   }catch(err){console.warn('AI:',err);}
 }
 
-// ── Boot ───────────────────────────────────────────────────────────────────
-load();
-checkAuth().then(()=>render());
+render();
