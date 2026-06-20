@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privatumo politika / Privacy Policy – Galio</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 720px; margin: 0 auto; padding: 24px 20px 60px; line-height: 1.6; color: #1a1a1a; }
+  h1 { font-size: 24px; border-bottom: 2px solid #1c6ef2; padding-bottom: 10px; }
+  h2 { font-size: 18px; margin-top: 32px; color: #1c6ef2; }
+  h3 { font-size: 15px; margin-top: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background: #f5f5f7; }
+  hr { margin: 40px 0; border: none; border-top: 1px solid #ddd; }
+  a { color: #1c6ef2; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0f0f0f; color: #f0f0f0; }
+    th { background: #1c1c1e; }
+    th, td { border-color: #333; }
+  }
+</style>
+</head>
+<body>
+<h1>Privatumo politika</h1>
+<p><strong>Paskutinį kartą atnaujinta: 2026 m. birželio 19 d.</strong></p>
+<h2>1. Bendroji informacija</h2>
+<p>Ši Privatumo politika paaiškina, kaip programėlė „Galio" (toliau – „Programėlė", „mes") renka, naudoja ir saugo Jūsų asmens duomenis, kai naudojatės mūsų teikiama paslauga – garantijų ir pirkimo dokumentų sekimo įrankiu.</p>
+<p><strong>Duomenų valdytojas:</strong> Ignas [Pavardė], veikiantis kaip fizinis asmuo (individuali veikla nėra registruota; jei ateityje bus įsteigtas juridinis asmuo, ši informacija bus atnaujinta).
+<strong>Kontaktinis el. paštas:</strong> [jūsų el. paštas]</p>
+<h2>2. Kokius duomenis renkame</h2>
+<h3>2.1. Registracijos duomenys</h3>
+<ul>
+<li>El. pašto adresas</li>
+<li>Slaptažodžio hash (per Firebase Authentication – mes patys slaptažodžio teksto nematome ir nesaugome)</li>
+<li>Jei prisijungiate per Google: vardas, profilio nuotrauka, el. paštas (tiek, kiek suteikiate prieigą)</li>
+</ul>
+<h3>2.2. Jūsų įvesti duomenys</h3>
+<ul>
+<li>Garantijų įrašai: produkto pavadinimas, parduotuvė, pirkimo data, garantijos terminas, dokumento tipas ir numeris, pastabos</li>
+<li>Pirkimo dokumentų nuotraukos ir PDF failai (čekiai, sąskaitos-faktūros, banko išrašai), kuriuos patys įkeliate</li>
+</ul>
+<h3>2.3. Automatiškai renkami duomenys</h3>
+<ul>
+<li>Naudojimosi statistika (kiek įrašų turite, kada paskutinį kartą prisijungėte)</li>
+<li>Techniniai duomenys (naršyklės tipas, įrenginio tipas) – tik tiek, kiek reikalinga Programėlės veikimui</li>
+</ul>
+<h3>2.4. AI analizės duomenys</h3>
+<p>Kai naudojate funkciją „Nufotografuoti dokumentą" arba „Patikrinti gamintojo garantijos terminą su AI", Jūsų įkelta nuotrauka ar užklausa siunčiama trečiosios šalies dirbtinio intelekto paslaugų teikėjui (Anthropic, PBC, JAV) per mūsų saugų tarpinį serverį (Cloudflare Workers), tam, kad būtų automatiškai ištraukta informacija. Žr. skyrių „Trečiosios šalys" žemiau.</p>
+<h2>3. Kam naudojame Jūsų duomenis</h2>
+<ul>
+<li>Paskyros sukūrimui ir autentifikavimui</li>
+<li>Garantijų sekimo funkcijos teikimui</li>
+<li>AI-pagrįstos dokumentų analizės teikimui (Jūsų prašymu)</li>
+<li>Pranešimų apie besibaigiančias garantijas siuntimui (jei įjungta nustatymuose)</li>
+<li>Programėlės tobulinimui ir techninių klaidų sprendimui</li>
+<li>Nemokamo plano limito (15 įrašų) vykdymui</li>
+</ul>
+<p><strong>Mes NENAUDOJAME Jūsų duomenų:</strong>
+- Reklamai ar trečiųjų šalių rinkodarai
+- Duomenų pardavimui
+- Jūsų garantijų turinio analizei be Jūsų aiškaus prašymo (AI funkcijos veikia tik paspaudus atitinkamą mygtuką)</p>
+<h2>4. Kur saugomi duomenys</h2>
+<p>Duomenys saugomi <strong>Google Firebase</strong> infrastruktūroje (Firestore duomenų bazė, Firebase Storage failams), Europos serverių regione (eur3). Firebase atitinka tarptautinius saugumo standartus ir turi savo privatumo politiką: https://firebase.google.com/support/privacy</p>
+<h2>5. Trečiosios šalys, su kuriomis dalinamės duomenimis</h2>
+<table>
+<thead>
+<tr>
+<th>Paslaugų teikėjas</th>
+<th>Paskirtis</th>
+<th>Kokie duomenys</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Google Firebase</td>
+<td>Autentifikacija, duomenų bazė, failų saugykla</td>
+<td>El. paštas, garantijų įrašai, dokumentai</td>
+</tr>
+<tr>
+<td>Anthropic, PBC</td>
+<td>AI dokumentų analizė (tik Jūsų prašymu)</td>
+<td>Įkeltos nuotraukos, tekstinės užklausos</td>
+</tr>
+<tr>
+<td>Cloudflare</td>
+<td>Saugaus tarpinio serverio paslauga AI užklausoms</td>
+<td>Laikinai – užklausos turinys, autentifikacijos tokenas</td>
+</tr>
+</tbody>
+</table>
+<p>Mes nesidaliname Jūsų duomenimis su jokiomis kitomis trečiosiomis šalimis, išskyrus aukščiau išvardintus techninius paslaugų teikėjus, būtinus Programėlės veikimui.</p>
+<h2>6. Jūsų teisės (pagal BDAR/GDPR)</h2>
+<p>Kaip ES gyventojas, turite šias teises:</p>
+<ul>
+<li><strong>Teisė susipažinti</strong> – gauti savo duomenų kopiją</li>
+<li><strong>Teisė ištaisyti</strong> – pakeisti netikslius duomenis (galite tiesiogiai Programėlėje)</li>
+<li><strong>Teisė ištrinti</strong> – ištrinti savo paskyrą ir visus duomenis (Nustatymai → Ištrinti paskyrą)</li>
+<li><strong>Teisė apriboti tvarkymą</strong></li>
+<li><strong>Teisė į duomenų perkėlimą</strong></li>
+<li><strong>Teisė nesutikti</strong> su duomenų tvarkymu</li>
+<li><strong>Teisė pateikti skundą</strong> Valstybinei duomenų apsaugos inspekcijai (VDAI), www.vdai.lrv.lt</li>
+</ul>
+<p>Savo teises galite įgyvendinti susisiekę el. paštu arba tiesiogiai per Programėlės nustatymus (paskyros ištrynimas).</p>
+<h2>7. Duomenų saugojimo trukmė</h2>
+<p>Jūsų duomenys saugomi tol, kol naudojatės Programėle. Ištrynus paskyrą, visi su ja susiję duomenys (garantijų įrašai, dokumentai, profilio informacija) yra negrįžtamai ištrinami iš mūsų sistemų per protingą laikotarpį.</p>
+<h2>8. Duomenų saugumas</h2>
+<p>Taikome šias saugumo priemones:
+- Šifruotas duomenų perdavimas (HTTPS/TLS)
+- Prieigos kontrolė – kiekvienas vartotojas mato tik savo duomenis (Firebase Security Rules)
+- Slaptažodžiai niekada nesaugomi paprastu tekstu
+- Reguliarus saugumo taisyklių auditas</p>
+<p>Nepaisant šių priemonių, jokia sistema nėra 100% saugi. Informuosime Jus per protingą laiką, jei įvyktų duomenų saugumo incidentas, galintis paveikti Jūsų asmens duomenis.</p>
+<h2>9. Vaikų privatumas</h2>
+<p>Programėlė nėra skirta asmenims iki 16 metų. Sąmoningai nerenkame duomenų iš vaikų.</p>
+<h2>10. Pakeitimai</h2>
+<p>Galime atnaujinti šią Privatumo politiką. Apie esminius pakeitimus informuosime el. paštu arba per Programėlę.</p>
+<h2>11. Kontaktai</h2>
+<p>Dėl bet kokių klausimų apie šią Privatumo politiką ar Jūsų duomenis, susisiekite: [jūsų el. paštas]</p>
+<h2>---</h2>
+<h1>Privacy Policy</h1>
+<p><strong>Last updated: June 19, 2026</strong></p>
+<h2>1. General Information</h2>
+<p>This Privacy Policy explains how the "Galio" application (the "App", "we") collects, uses, and protects your personal data when you use our warranty and purchase document tracking service.</p>
+<p><strong>Data Controller:</strong> Ignas [Surname], acting as a private individual (no registered business entity at this time; this information will be updated if a legal entity is established in the future).
+<strong>Contact email:</strong> [your email]</p>
+<h2>2. What Data We Collect</h2>
+<h3>2.1. Registration Data</h3>
+<ul>
+<li>Email address</li>
+<li>Password hash (via Firebase Authentication – we never see or store your plaintext password)</li>
+<li>If signing in via Google: name, profile picture, email (to the extent you grant access)</li>
+</ul>
+<h3>2.2. Data You Provide</h3>
+<ul>
+<li>Warranty entries: product name, store, purchase date, warranty term, document type and number, notes</li>
+<li>Photos and PDF files of purchase documents (receipts, invoices, bank statements) that you upload</li>
+</ul>
+<h3>2.3. Automatically Collected Data</h3>
+<ul>
+<li>Usage statistics (number of entries, last login)</li>
+<li>Technical data (browser type, device type) – only as necessary for the App to function</li>
+</ul>
+<h3>2.4. AI Analysis Data</h3>
+<p>When you use the "Photograph document" or "Check manufacturer warranty term with AI" features, your uploaded photo or query is sent to a third-party AI service provider (Anthropic, PBC, USA) via our secure proxy server (Cloudflare Workers) to automatically extract information. See "Third Parties" section below.</p>
+<h2>3. How We Use Your Data</h2>
+<ul>
+<li>To create and authenticate your account</li>
+<li>To provide the warranty tracking functionality</li>
+<li>To provide AI-based document analysis (at your request)</li>
+<li>To send notifications about expiring warranties (if enabled in settings)</li>
+<li>To improve the App and fix technical issues</li>
+<li>To enforce the Free plan limit (15 entries)</li>
+</ul>
+<p><strong>We do NOT use your data for:</strong>
+- Advertising or third-party marketing
+- Selling your data
+- Analyzing your warranty content without your explicit request (AI features only activate when you tap the corresponding button)</p>
+<h2>4. Where Data Is Stored</h2>
+<p>Data is stored on <strong>Google Firebase</strong> infrastructure (Firestore database, Firebase Storage for files), in the European server region (eur3). Firebase complies with international security standards; see their privacy policy: https://firebase.google.com/support/privacy</p>
+<h2>5. Third Parties We Share Data With</h2>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Purpose</th>
+<th>What Data</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Google Firebase</td>
+<td>Authentication, database, file storage</td>
+<td>Email, warranty entries, documents</td>
+</tr>
+<tr>
+<td>Anthropic, PBC</td>
+<td>AI document analysis (only at your request)</td>
+<td>Uploaded photos, text queries</td>
+</tr>
+<tr>
+<td>Cloudflare</td>
+<td>Secure proxy service for AI requests</td>
+<td>Temporarily – request content, auth token</td>
+</tr>
+</tbody>
+</table>
+<p>We do not share your data with any other third parties beyond the technical service providers listed above, which are necessary for the App's operation.</p>
+<h2>6. Your Rights (under GDPR)</h2>
+<p>As an EU resident, you have the following rights:</p>
+<ul>
+<li><strong>Right to access</strong> – obtain a copy of your data</li>
+<li><strong>Right to rectification</strong> – correct inaccurate data (directly in the App)</li>
+<li><strong>Right to erasure</strong> – delete your account and all data (Settings → Delete Account)</li>
+<li><strong>Right to restrict processing</strong></li>
+<li><strong>Right to data portability</strong></li>
+<li><strong>Right to object</strong> to processing</li>
+<li><strong>Right to lodge a complaint</strong> with the State Data Protection Inspectorate of Lithuania (VDAI), www.vdai.lrv.lt</li>
+</ul>
+<p>You can exercise your rights by contacting us via email or directly through the App's settings (account deletion).</p>
+<h2>7. Data Retention</h2>
+<p>Your data is retained for as long as you use the App. Upon account deletion, all associated data (warranty entries, documents, profile information) is permanently deleted from our systems within a reasonable period.</p>
+<h2>8. Data Security</h2>
+<p>We implement the following security measures:
+- Encrypted data transmission (HTTPS/TLS)
+- Access control – each user sees only their own data (Firebase Security Rules)
+- Passwords are never stored in plain text
+- Regular security rules auditing</p>
+<p>Despite these measures, no system is 100% secure. We will notify you within a reasonable time if a data security incident occurs that may affect your personal data.</p>
+<h2>9. Children's Privacy</h2>
+<p>The App is not intended for individuals under 16 years of age. We do not knowingly collect data from children.</p>
+<h2>10. Changes</h2>
+<p>We may update this Privacy Policy. We will notify you of material changes via email or through the App.</p>
+<h2>11. Contact</h2>
+<p>For any questions about this Privacy Policy or your data, contact: [your email]</p>
+</body>
+</html>

@@ -1,5 +1,5 @@
-const CACHE = 'garantijos-v4';
-const BASE = '/Garantija';
+const CACHE = 'galio-v1';
+const BASE = '/Galio';
 const ASSETS = [
   BASE + '/',
   BASE + '/index.html',
@@ -8,6 +8,8 @@ const ASSETS = [
   BASE + '/manifest.json',
   BASE + '/icon-192.png',
   BASE + '/icon-512.png',
+  BASE + '/privacy.html',
+  BASE + '/terms.html',
 ];
 
 self.addEventListener('install', e => {

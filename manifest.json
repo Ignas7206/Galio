@@ -1,9 +1,9 @@
 {
-  "name": "Garantijos",
-  "short_name": "Garantijos",
+  "name": "Galio",
+  "short_name": "Galio",
   "description": "Sekite savo daiktų garantijas",
-  "start_url": "/Garantija/",
-  "scope": "/Garantija/",
+  "start_url": "/Galio/",
+  "scope": "/Galio/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#111111",

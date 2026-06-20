@@ -7,11 +7,14 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
-  setDoc, getDoc, serverTimestamp, increment
+  setDoc, getDoc, getDocs, serverTimestamp, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   ref, uploadBytes, getDownloadURL, deleteObject
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import {
+  localGetAll, localPut, localDelete, localClear, localDeleteDatabase, genLocalId
+} from './local-db.js';
 
 const WORKER_URL    = 'https://long-moon-d252.ltdigitaltools.workers.dev';
 const CATEGORIES    = ['Elektronika','Buitinė technika','Avalynė / drabužiai','Baldai','Automobiliai','Kita'];
@@ -20,7 +23,9 @@ const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:2
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
 const MAX_IMG       = 4*1024*1024;
 const MAX_PDF       = 5*1024*1024;
-const FREE_LIMIT    = 15;
+const AI_FREE_USES  = 5; // lifetime AI document-analysis uses before Premium is required
+const PREMIUM_DAILY_LIMIT   = 30;  // Premium is capped, not unlimited — bounds our Anthropic billing exposure
+const PREMIUM_MONTHLY_LIMIT = 300;
 
 let state = {
   booted:false, user:null, userDoc:null, loadingItems:false,
@@ -38,8 +43,21 @@ let state = {
   swipe: { id:null, startX:0, currentX:0, dragging:false },
   addPulse: false,
   qrScanning: false, qrStream: null,
+  adminStats: null,
+  storageMode: 'local', // 'local' | 'cloud' — driven by userDoc.storageMode once loaded
+  migratingStorage: false, // true while toggleStorageMode() is mid-flight; suppresses auto-reattach
   policyChecking: false, policyResult: null, policyResultFor: null,
+  theme: localStorage.getItem('garantijos_theme') || 'auto',
 };
+
+function applyTheme(){
+  const root = document.documentElement;
+  root.classList.remove('theme-light','theme-dark');
+  if(state.theme==='light') root.classList.add('theme-light');
+  else if(state.theme==='dark') root.classList.add('theme-dark');
+  // 'auto' = no override class, falls back to prefers-color-scheme in CSS
+}
+applyTheme();
 
 function emptyForm(){return{name:'',category:'Elektronika',shop:'',purchaseDate:today(),warrantyEnd:addMonths(today(),24),warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true};}
 function today(){return new Date().toISOString().slice(0,10);}
@@ -52,7 +70,7 @@ window.addEventListener('offline',()=>{state.online=false;render();});
 // ── Helpers ────────────────────────────────────────────────────────────────
 function daysLeft(d){if(!d)return null;return Math.ceil((new Date(d)-new Date())/86400000);}
 function fmtDate(d){if(!d)return '—';return new Date(d).toLocaleDateString('lt-LT');}
-function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function fmtSize(b){return b<1024*1024?(b/1024).toFixed(0)+'KB':(b/1024/1024).toFixed(1)+'MB';}
 function badgeHtml(days){
   if(days===null)return '';
@@ -119,32 +137,87 @@ async function ensureUserDoc(user){
   const ref_ = doc(db,'users',user.uid);
   const snap = await getDoc(ref_);
   if(!snap.exists()){
-    await setDoc(ref_,{ email:user.email, plan:'free', itemCount:0, createdAt: serverTimestamp() });
-    state.userDoc = { email:user.email, plan:'free', itemCount:0 };
+    const initial = {
+      email:user.email, plan:'free', itemCount:0, notifyEnabled:true,
+      storageMode:'local', aiUsesRemaining: AI_FREE_USES,
+      createdAt: serverTimestamp(),
+    };
+    await setDoc(ref_, initial);
+    state.userDoc = initial;
   }else{
     state.userDoc = snap.data();
+    // Backfill fields for accounts created before this field existed
+    if(state.userDoc.aiUsesRemaining === undefined){
+      try{ await updateDoc(ref_, { aiUsesRemaining: AI_FREE_USES }); }catch(e){}
+      state.userDoc.aiUsesRemaining = AI_FREE_USES;
+    }
+    if(state.userDoc.storageMode === undefined){
+      try{ await updateDoc(ref_, { storageMode: 'local' }); }catch(e){}
+      state.userDoc.storageMode = 'local';
+    }
   }
-  // live updates to plan/itemCount
-  onSnapshot(ref_, s=>{ if(s.exists()){ state.userDoc=s.data(); render(); } });
+  state.storageMode = state.userDoc.storageMode || 'local';
+  // live updates to plan/itemCount/storageMode/aiUsesRemaining
+  onSnapshot(ref_, s=>{
+    if(s.exists()){
+      const prevMode = state.storageMode;
+      state.userDoc = s.data();
+      state.storageMode = state.userDoc.storageMode || 'local';
+      // If storage mode changed (e.g. user toggled it in Settings), re-attach
+      // the items listener pointed at the correct source — but not while
+      // toggleStorageMode() is mid-migration, since it manages the listener
+      // lifecycle itself and an early auto-reattach here would show a
+      // partially-migrated list before the migration loop finishes.
+      if(prevMode !== state.storageMode && !state.migratingStorage){
+        attachItemsListener(state.user.uid);
+      }
+      render();
+    }
+  });
 }
 
+// ── Items listener abstraction ──────────────────────────────────────────
+// In 'cloud' mode, items live in Firestore and sync in real time.
+// In 'local' mode, items live only in this browser's IndexedDB — nothing
+// is ever sent to Firestore/Storage for the warranty content itself.
 function attachItemsListener(uid){
-  if(state.itemsUnsub)state.itemsUnsub();
+  if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
   state.loadingItems = true;
-  const q = query(collection(db,'users',uid,'warranties'), orderBy('createdAtMs','desc'));
-  state.itemsUnsub = onSnapshot(q, snap=>{
-    const wasEmpty = state.loadingItems;
-    state.items = snap.docs.map(d=>({id:d.id,...d.data()}));
-    state.loadingItems = false;
-    if(wasEmpty && state.items.length===0 && !state.addPulse){
-      state.addPulse = true;
-      setTimeout(()=>{state.addPulse=false;render();}, 3500);
-    }
-    render();
-  }, err=>{
-    state.loadingItems = false;
-    console.warn('Items listener error:', err);
-  });
+
+  if(state.storageMode === 'cloud'){
+    const q = query(collection(db,'users',uid,'warranties'), orderBy('createdAtMs','desc'));
+    state.itemsUnsub = onSnapshot(q, snap=>{
+      const wasEmpty = state.loadingItems;
+      state.items = snap.docs.map(d=>({id:d.id,...d.data()}));
+      state.loadingItems = false;
+      if(wasEmpty && state.items.length===0 && !state.addPulse){
+        state.addPulse = true;
+        setTimeout(()=>{state.addPulse=false;render();}, 3500);
+      }
+      render();
+    }, err=>{
+      state.loadingItems = false;
+      console.warn('Items listener error:', err);
+    });
+  }else{
+    // Local mode: just load once from IndexedDB. There's no live listener
+    // concept needed since we're the only writer (single device).
+    localGetAll(uid).then(items=>{
+      items.sort((a,b)=>(b.createdAtMs||0)-(a.createdAtMs||0));
+      const wasEmpty = state.loadingItems;
+      state.items = items;
+      state.loadingItems = false;
+      if(wasEmpty && state.items.length===0 && !state.addPulse){
+        state.addPulse = true;
+        setTimeout(()=>{state.addPulse=false;render();}, 3500);
+      }
+      render();
+    }).catch(err=>{
+      state.loadingItems = false;
+      console.warn('Local DB load error:', err);
+      render();
+    });
+  }
 }
 
 async function doRegister(email,pwd,pwd2){
@@ -202,8 +275,16 @@ async function resendVerification(){
 }
 async function doLogout(){
   if(state.itemsUnsub){state.itemsUnsub();state.itemsUnsub=null;}
+  stopEmailVerifyPoll();
+  if(state.qrStream){state.qrStream.getTracks().forEach(t=>t.stop());state.qrStream=null;}
   await signOut(auth);
-  state.view='list';state.addMode=null;
+  // Reset all per-session state so a different account logging in on the
+  // same device never briefly sees stale data from the previous user.
+  state.view='list'; state.addMode=null; state.selected=null;
+  state.items=[]; state.userDoc=null; state.storageMode='local';
+  state.form=emptyForm(); state.docError='';
+  state.policyResult=null; state.policyResultFor=null; state.policyChecking=false;
+  state.search=''; state.lightbox=null;
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
@@ -226,6 +307,8 @@ function render(){
   else if(state.view==='add'&&!state.addMode) html=renderPicker();
   else if(state.view==='add')      html=renderAdd();
   else if(state.view==='detail')   html=renderDetail();
+  else if(state.view==='settings') html=renderSettings();
+  else if(state.view==='admin-stats') html=renderAdminStats();
 
   const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto · veikia lokaliai'}</div>`;
   scr.innerHTML = (state.online?'':syncPill) + html;
@@ -294,17 +377,23 @@ function attachLightboxEvents(){
 function renderAuth(){
   const m=state.authMode;
   return`<div class="login-wrap"><div class="login-card">
-    <div class="login-logo"><span class="shield">🛡️</span><h1>Garantijos</h1><p>${m==='register'?'Susikurkite paskyrą':m==='reset'?'Atstatykite slaptažodį':'Prisijunkite'}</p></div>
+    <div class="login-logo"><span class="shield">🛡️</span><h1>Galio</h1><p>${m==='register'?'Susikurkite paskyrą':m==='reset'?'Atstatykite slaptažodį':'Prisijunkite'}</p></div>
 
-    ${m!=='reset'?`<button id="googleBtn" class="login-btn" style="background:var(--bg3);color:var(--text);display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px" ${state.authBusy?'disabled':''}>
+    ${m!=='reset'?`<button id="googleBtn" class="login-btn" style="background:var(--bg3);color:var(--text);display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px" ${state.authBusy?'disabled':''}>
       <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.12-.84 2.07-1.79 2.71v2.26h2.9c1.7-1.56 2.68-3.87 2.68-6.61z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.81.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.7c-.18-.54-.28-1.11-.28-1.7s.1-1.16.28-1.7V4.97H.96A8.99 8.99 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l2.99 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
       Tęsti su Google
     </button>
+    ${m!=='login'?`<p style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:14px">Tęsdami sutinkate su <a href="terms.html" target="_blank" style="color:var(--accent)">Naudojimo sąlygomis</a> ir <a href="privacy.html" target="_blank" style="color:var(--accent)">Privatumo politika</a></p>`:''}
     <div class="login-divider">arba</div>`:''}
 
     <input type="email" id="authEmail" class="login-input" placeholder="El. paštas" autocomplete="email" />
     ${m!=='reset'?`<input type="password" id="authPwd" class="login-input" placeholder="Slaptažodis" autocomplete="${m==='register'?'new-password':'current-password'}" />`:''}
     ${m==='register'?`<input type="password" id="authPwd2" class="login-input" placeholder="Pakartokite slaptažodį" autocomplete="new-password" />`:''}
+
+    ${m==='register'?`<label class="consent-row">
+      <input type="checkbox" id="consentCheck" />
+      <span>Sutinku su <a href="terms.html" target="_blank">Naudojimo sąlygomis</a> ir <a href="privacy.html" target="_blank">Privatumo politika</a></span>
+    </label>`:''}
 
     ${state.authError?`<p class="login-error">${esc(state.authError)}</p>`:''}
     ${state.authInfo?`<p class="login-info">${esc(state.authInfo)}</p>`:''}
@@ -326,7 +415,15 @@ function attachAuthEvents(){
   document.getElementById('googleBtn')?.addEventListener('click',doGoogleLogin);
   document.getElementById('authSubmit')?.addEventListener('click',()=>{
     const email=e1?.value.trim()||'';
-    if(state.authMode==='register') doRegister(email,p1?.value||'',p2?.value||'');
+    if(state.authMode==='register'){
+      const consent = document.getElementById('consentCheck');
+      if(!consent?.checked){
+        state.authError='Turite sutikti su Naudojimo sąlygomis ir Privatumo politika';
+        render();
+        return;
+      }
+      doRegister(email,p1?.value||'',p2?.value||'');
+    }
     else if(state.authMode==='reset') doReset(email);
     else doLogin(email,p1?.value||'');
   });
@@ -359,9 +456,10 @@ function renderList(){
     <div class="stat-tile"><div class="n" style="color:var(--red)">${expired}</div><div class="l">Baigėsi</div></div>
   </div>`:'';
 
+  const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const planBanner = !isPremium ? `<div class="plan-banner">
-    <i class="ti ti-crown"></i>
-    <div class="pb-text"><b>${items.length}/${FREE_LIMIT}</b> nemokamų įrašų panaudota</div>
+    <i class="ti ti-sparkles"></i>
+    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · ${state.storageMode==='cloud'?'Cloud saugojimas':'Saugoma šiame įrenginyje'}</div>
     <button id="upgradeBtn">Premium</button>
   </div>`:'';
 
@@ -455,20 +553,23 @@ function renderSearch(){
 
 // ── Add picker ─────────────────────────────────────────────────────────────
 function renderPicker(){
-  const atLimit = state.userDoc?.plan!=='premium' && state.items.length>=FREE_LIMIT;
+  const isPremium = state.userDoc?.plan==='premium';
+  const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
+  const aiExhausted = !isPremium && aiLeft<=0;
+
   return`<div>
     <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Pridėti garantiją</h2></div>
-    ${atLimit?`<div class="plan-banner" style="margin:16px"><i class="ti ti-lock"></i><div class="pb-text">Pasiekėte nemokamo plano limitą (${FREE_LIMIT} įrašų). Atsinaujinkite į Premium, kad pridėtumėte daugiau.</div><button id="upgradeBtn2">Premium</button></div>`:`
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Su dokumentu + AI</h3><p>Nufotografuok arba įkelk – AI ištrauks informaciją automatiškai</p></div>
+        <div><h3>Su dokumentu${aiExhausted?'':' + AI'}</h3><p>${aiExhausted?'AI analizės išnaudotos – galite vis tiek prisegti dokumentą be automatinio atpažinimo':`Nufotografuok arba įkelk – AI ištrauks informaciją automatiškai${!isPremium?` (liko ${aiLeft})`:''}`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
-        <div><h3>Rankiniu būdu</h3><p>Suveskite informaciją patys. Dokumentą galima prisegti</p></div>
+        <div><h3>Rankiniu būdu</h3><p>Suveskite informaciją patys – visada nemokama. Dokumentą galima prisegti be AI</p></div>
       </button>
-    </div>`}
+    </div>
+    ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium – iki ${PREMIUM_DAILY_LIMIT}/d.</div><button id="upgradeBtn3">Premium</button></div>`:''}
   </div>`;
 }
 
@@ -603,13 +704,193 @@ function renderDetail(){
   </div>`;
 }
 
-// ── Events ─────────────────────────────────────────────────────────────────
+// ── Settings ───────────────────────────────────────────────────────────────
+function renderSettings(){
+  const u = state.user;
+  const isPremium = state.userDoc?.plan==='premium';
+  const isAdmin = state.userDoc?.role==='admin';
+  const notifyOn = state.userDoc?.notifyEnabled !== false; // default true
+  const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
+  const isCloud = state.storageMode==='cloud';
+  const initials = (u.displayName||u.email||'?').trim().charAt(0).toUpperCase();
+  const avatarHtml = u.photoURL
+    ? `<img src="${esc(u.photoURL)}" alt="" />`
+    : initials;
+
+  return `<div>
+    <div class="page-header"><span class="page-title">Nustatymai</span></div>
+
+    <div class="settings-profile">
+      <div class="settings-avatar">${avatarHtml}</div>
+      <div class="settings-profile-info">
+        <div class="settings-profile-email">${esc(u.displayName||u.email)}</div>
+        <div class="settings-profile-plan${isPremium?' premium':''}">
+          ${isPremium?'<i class="ti ti-crown" style="font-size:13px"></i> Premium narys':`Nemokamas planas · ${state.items.length} įrašų`}
+        </div>
+      </div>
+    </div>
+
+    ${!isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
+      <i class="ti ti-crown"></i>
+      <div class="pb-text">Atsinaujinkite į Premium – iki ${PREMIUM_DAILY_LIMIT} AI analizių/d. ir cloud sinchronizacija</div>
+      <button id="upgradeBtnSettings">Premium</button>
+    </div>` : ''}
+
+    <p class="form-label-section" style="margin:0 16px 8px">Saugojimo būdas</p>
+    <div class="form-section" style="margin:0 16px 8px">
+      <div class="settings-row">
+        <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
+        <div class="settings-row-label">${isCloud?'Cloud sinchronizacija':'Saugoma šiame įrenginyje'}<small>${isCloud?'Matoma iš bet kurio įrenginio · reikia Premium':'Duomenys lieka tik šiame telefone, nemokama'}</small></div>
+        <button class="toggle-switch${isCloud?' on':''}" id="storageModeToggle"><div class="knob"></div></button>
+      </div>
+    </div>
+    <p style="font-size:11.5px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
+      ${isCloud?'Cloud režimas reikalauja Premium. Jei atsinaujinsite atgal į Free, įjunkite šį nustatymą atgal į lokalų.':'Norėdami sinchronizuoti duomenis tarp įrenginių, įjunkite cloud saugojimą (reikalinga Premium prenumerata).'}
+    </p>
+
+    <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
+    <div class="form-section" style="margin:0 16px 20px">
+      ${isPremium ? `
+      <div class="detail-row" style="padding:13px 16px">
+        <i class="ti ti-sparkles" style="font-size:18px;color:var(--text3);width:20px"></i>
+        <span class="dr-label">Šiandien</span>
+        <span class="dr-val">${state.userDoc?.aiDayKey===new Date().toISOString().slice(0,10)?(state.userDoc?.aiDayCount||0):0}/${PREMIUM_DAILY_LIMIT}</span>
+      </div>
+      <div class="detail-row" style="padding:13px 16px">
+        <i class="ti ti-calendar" style="font-size:18px;color:var(--text3);width:20px"></i>
+        <span class="dr-label">Šį mėnesį</span>
+        <span class="dr-val">${state.userDoc?.aiMonthKey===new Date().toISOString().slice(0,7)?(state.userDoc?.aiMonthCount||0):0}/${PREMIUM_MONTHLY_LIMIT}</span>
+      </div>` : `
+      <div class="detail-row" style="padding:13px 16px">
+        <i class="ti ti-sparkles" style="font-size:18px;color:var(--text3);width:20px"></i>
+        <span class="dr-label">Liko nemokamų analizių</span>
+        <span class="dr-val">${aiLeft}/${AI_FREE_USES}</span>
+      </div>`}
+    </div>
+
+    <p class="form-label-section" style="margin:0 16px 8px">Išvaizda</p>
+    <div class="form-section" style="margin:0 16px 20px;padding:14px 16px">
+      <div class="theme-picker">
+        <button class="theme-opt${state.theme==='auto'?' active':''}" data-theme="auto"><i class="ti ti-device-mobile"></i><span>Auto</span></button>
+        <button class="theme-opt${state.theme==='light'?' active':''}" data-theme="light"><i class="ti ti-sun"></i><span>Šviesi</span></button>
+        <button class="theme-opt${state.theme==='dark'?' active':''}" data-theme="dark"><i class="ti ti-moon"></i><span>Tamsi</span></button>
+      </div>
+    </div>
+
+    <p class="form-label-section" style="margin:0 16px 8px">Pranešimai</p>
+    <div class="form-section" style="margin:0 16px 20px">
+      <div class="settings-row">
+        <i class="ti ti-bell row-icon"></i>
+        <div class="settings-row-label">Garantijos baigiasi<small>Priminimas likus 30 dienų</small></div>
+        <button class="toggle-switch${notifyOn?' on':''}" id="notifyToggle"><div class="knob"></div></button>
+      </div>
+    </div>
+
+    ${isAdmin ? `<p class="form-label-section" style="margin:0 16px 8px">Administravimas</p>
+    <div class="form-section" style="margin:0 16px 20px">
+      <button class="settings-row tappable" id="adminPanelBtn" style="width:100%;background:none;border:none;text-align:left">
+        <i class="ti ti-chart-bar row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Admin statistika</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </button>
+    </div>` : ''}
+
+    <p class="form-label-section" style="margin:0 16px 8px">Paskyra</p>
+    <div class="form-section" style="margin:0 16px 20px">
+      <button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
+        <i class="ti ti-lock row-icon"></i><span class="settings-row-label">Pakeisti slaptažodį</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </button>
+      <button class="settings-row tappable" id="settingsLogoutBtn" style="width:100%;background:none;border:none;text-align:left">
+        <i class="ti ti-logout row-icon"></i><span class="settings-row-label">Atsijungti</span>
+      </button>
+    </div>
+
+    <p class="form-label-section" style="margin:0 16px 8px">Pagalba</p>
+    <div class="form-section" style="margin:0 16px 20px">
+      <a class="settings-row tappable" id="helpMailLink" href="#" style="text-decoration:none;color:inherit;display:flex">
+        <i class="ti ti-help-circle row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Susisiekti su pagalba<small>ltdigitaltools@gmail.com</small></span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
+      </a>
+    </div>
+
+    <p class="form-label-section" style="margin:0 16px 8px">Teisinė informacija</p>
+    <div class="form-section" style="margin:0 16px 20px">
+      <a class="settings-row tappable" href="privacy.html" target="_blank" style="text-decoration:none;color:inherit;display:flex">
+        <i class="ti ti-shield-lock row-icon"></i><span class="settings-row-label">Privatumo politika</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
+      </a>
+      <a class="settings-row tappable" href="terms.html" target="_blank" style="text-decoration:none;color:inherit;display:flex">
+        <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Naudojimo sąlygos</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
+      </a>
+    </div>
+
+    <div class="form-section" style="margin:0 16px 20px">
+      <button class="settings-row tappable danger" id="deleteAccountBtn" style="width:100%;background:none;border:none;text-align:left">
+        <i class="ti ti-trash row-icon"></i><span class="settings-row-label">Ištrinti paskyrą</span>
+      </button>
+    </div>
+
+    <p style="text-align:center;font-size:11px;color:var(--text3);padding:0 16px 24px">Galio v1.0 · Duomenys saugomi debesyje</p>
+  </div>`;
+}
+
+// ── Admin stats ────────────────────────────────────────────────────────────
+function renderAdminStats(){
+  const s = state.adminStats;
+  return `<div>
+    <div class="page-header-sm">
+      <button class="back-btn" id="adminBackBtn"><i class="ti ti-arrow-left"></i></button>
+      <h2>Admin statistika</h2>
+    </div>
+    ${!s ? `<div class="empty-state"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:16px">Kraunama...</p></div>` : `
+    <div class="stats-row" style="padding:16px">
+      <div class="stat-tile"><div class="n">${s.totalUsers}</div><div class="l">Vartotojų</div></div>
+      <div class="stat-tile"><div class="n" style="color:var(--gold)">${s.premiumUsers}</div><div class="l">Premium</div></div>
+      <div class="stat-tile"><div class="n" style="color:var(--green)">${s.activeUsers}</div><div class="l">Su įrašais</div></div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-rows">
+        <div class="detail-row"><i class="ti ti-receipt"></i><span class="dr-label">Viso garantijų įrašų</span><span class="dr-val">${s.totalItems}</span></div>
+        <div class="detail-row"><i class="ti ti-mail-check"></i><span class="dr-label">Patvirtintų el. paštų</span><span class="dr-val">${s.verifiedUsers}/${s.totalUsers}</span></div>
+        <div class="detail-row"><i class="ti ti-calendar-plus"></i><span class="dr-label">Naujų per 7 d.</span><span class="dr-val">${s.newLast7Days}</span></div>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:11px;color:var(--text3);padding:0 16px 24px">Rodomi tik agreguoti, anoniminiai skaičiai. Vartotojų garantijų turinys niekada nerodomas.</p>
+    `}
+  </div>`;
+}
+
+async function loadAdminStats(){
+  state.adminStats = null;
+  render();
+  try{
+    const snap = await getDocs(collection(db,'users'));
+    let totalUsers=0, premiumUsers=0, activeUsers=0, totalItems=0, verifiedUsers=0, newLast7Days=0;
+    const weekAgoMs = Date.now() - 7*86400000;
+    snap.forEach(d=>{
+      const u = d.data();
+      totalUsers++;
+      if(u.plan==='premium') premiumUsers++;
+      if((u.itemCount||0)>0) activeUsers++;
+      totalItems += (u.itemCount||0);
+      // emailVerified isn't stored in Firestore by default; this is an
+      // approximation based on whatever we choose to track. For now we
+      // skip it unless present.
+      if(u.emailVerified) verifiedUsers++;
+      if(u.createdAt && u.createdAt.toMillis && u.createdAt.toMillis() > weekAgoMs) newLast7Days++;
+    });
+    state.adminStats = { totalUsers, premiumUsers, activeUsers, totalItems, verifiedUsers, newLast7Days };
+  }catch(e){
+    toast('Nepavyko įkelti statistikos');
+    state.view='settings';
+  }
+  render();
+}
+
+
 function attachEvents(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn);};
   const onAll=(sel,ev,fn)=>document.querySelectorAll(sel).forEach(el=>el.addEventListener(ev,fn));
 
   document.getElementById('navList')?.addEventListener('click',()=>{state.view='list';render();});
   document.getElementById('navSearch')?.addEventListener('click',()=>{state.view='search';render();});
+  document.getElementById('navSettings')?.addEventListener('click',()=>{state.view='settings';render();});
 
   // Add button: tap = picker, long-press = jump straight to camera
   const navAdd = document.getElementById('navAdd');
@@ -664,7 +945,7 @@ function attachEvents(){
   on('logoutBtn','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('resendVerifyBtn','click',resendVerification);
   on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
-  on('upgradeBtn2','click',()=>toast('Premium netrukus! 🚀'));
+  on('upgradeBtn3','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});
   onAll('.chip[data-sort]','click',e=>{state.sortBy=e.currentTarget.dataset.sort;render();});
   onAll('.card[data-id]','click',e=>{
@@ -707,6 +988,36 @@ function attachEvents(){
   on('deleteBtn','click',()=>deleteItem(state.selected));
   on('deleteBtn2','click',()=>deleteItem(state.selected));
   on('checkPolicyBtn','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it)checkPolicy(it);});
+
+  // Settings
+  on('upgradeBtnSettings','click',()=>toast('Premium netrukus! 🚀'));
+  onAll('.theme-opt','click',e=>{
+    const t=e.currentTarget.dataset.theme;
+    state.theme=t; localStorage.setItem('garantijos_theme',t); applyTheme(); render();
+  });
+  on('notifyToggle','click',toggleNotify);
+  on('storageModeToggle','click',toggleStorageMode);
+  on('changePwdBtn','click',()=>{
+    if(!state.user.email){toast('Google paskyroms slaptažodžio keisti nereikia');return;}
+    sendPasswordResetEmail(auth,state.user.email)
+      .then(()=>toast('Nuoroda slaptažodžiui keisti išsiųsta į el. paštą'))
+      .catch(()=>toast('Klaida siunčiant laišką'));
+  });
+  on('settingsLogoutBtn','click',()=>{if(confirm('Atsijungti?'))doLogout();});
+  on('deleteAccountBtn','click',confirmDeleteAccount);
+  on('adminPanelBtn','click',()=>{state.view='admin-stats';loadAdminStats();});
+  on('helpMailLink','click',e=>{
+    e.preventDefault();
+    const u = state.user;
+    const plan = state.userDoc?.plan || 'free';
+    const mode = state.storageMode || 'local';
+    const body = encodeURIComponent(
+      `\n\n---\nDiagnostinė informacija (nereikia trinti, padeda greičiau išspręsti):\nEl. paštas: ${u?.email||'—'}\nVartotojo ID: ${u?.uid||'—'}\nPlanas: ${plan}\nSaugojimo būdas: ${mode}\nEl. paštas patvirtintas: ${u?.emailVerified?'taip':'ne'}\nVersija: Galio v1.0`
+    );
+    const subject = encodeURIComponent('Galio – pagalbos užklausa');
+    window.location.href = `mailto:ltdigitaltools@gmail.com?subject=${subject}&body=${body}`;
+  });
+  on('adminBackBtn','click',()=>{state.view='settings';render();});
 }
 
 function syncSave(){const b=document.getElementById('saveBtn');if(b)b.disabled=!state.form.name.trim();}
@@ -714,11 +1025,18 @@ function syncSave(){const b=document.getElementById('saveBtn');if(b)b.disabled=!
 async function deleteItem(id){
   if(!confirm('Ištrinti šį įrašą?'))return;
   const item=state.items.find(i=>i.id===id);
+
   try{
-    await deleteDoc(doc(db,'users',state.user.uid,'warranties',id));
-    await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(-1)});
-    if(item?.docStoragePath){
-      try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){console.warn('Storage delete failed:',e);}
+    if(state.storageMode==='cloud'){
+      await deleteDoc(doc(db,'users',state.user.uid,'warranties',id));
+      await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(-1)});
+      if(item?.docStoragePath){
+        try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){console.warn('Storage delete failed:',e);}
+      }
+      // Cloud mode re-syncs via onSnapshot automatically.
+    }else{
+      await localDelete(state.user.uid, id);
+      state.items = state.items.filter(i=>i.id!==id);
     }
     toast('Ištrinta');
   }catch(e){ toast('Klaida trinant: '+(e.message||'')); }
@@ -727,40 +1045,53 @@ async function deleteItem(id){
 
 async function saveItem(){
   if(!state.form.name.trim())return;
-  if(state.userDoc?.plan!=='premium' && state.items.length>=FREE_LIMIT){
-    toast('Pasiektas nemokamo plano limitas');
-    return;
-  }
   const f=state.form;
+  const isCloud = state.storageMode==='cloud';
+
   const payload={
     name:f.name.trim().slice(0,200), category:f.category, shop:(f.shop||'').slice(0,100),
     purchaseDate:f.purchaseDate, warrantyEnd:f.warrantyEnd, warrantyMonths:f.warrantyMonths,
     docType:f.docType, docNumber:(f.docNumber||'').slice(0,100), notes:(f.notes||'').slice(0,1000),
     notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
-    createdAt: serverTimestamp(), createdAtMs: Date.now(),
+    createdAtMs: Date.now(),
   };
 
   try{
-    const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), payload);
-    await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(1)});
+    if(isCloud){
+      const fullPayload = { ...payload, createdAt: serverTimestamp() };
+      const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), fullPayload);
+      await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(1)});
 
-    // Upload document if present (after creating doc so we have an ID for the storage path)
-    if(f.docData && f.docMime){
-      state.uploadPct=0; render();
-      try{
-        const ext = f.docMime==='application/pdf'?'pdf':(f.docMime.split('/')[1]||'jpg');
-        const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
-        const blob = base64ToBlob(f.docMime==='application/pdf'?f.docData:f.docData.split(',')[1], f.docMime);
-        state.uploadPct=40; render();
-        await uploadBytes(ref(storage,path), blob, {contentType:f.docMime});
-        state.uploadPct=80; render();
-        const url = await getDownloadURL(ref(storage,path));
-        await updateDoc(docRef, { docUrl:url, docMime:f.docMime, docFileName:f.docFileName, docStoragePath:path });
-        state.uploadPct=100; render();
-      }catch(e){
-        console.warn('Upload failed:',e);
-        toast('Dokumentas neišsaugotas (klaida įkeliant failą)');
+      if(f.docData && f.docMime){
+        state.uploadPct=0; render();
+        try{
+          const ext = f.docMime==='application/pdf'?'pdf':(f.docMime.split('/')[1]||'jpg');
+          const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
+          const blob = base64ToBlob(f.docMime==='application/pdf'?f.docData:f.docData.split(',')[1], f.docMime);
+          state.uploadPct=40; render();
+          await uploadBytes(ref(storage,path), blob, {contentType:f.docMime});
+          state.uploadPct=80; render();
+          const url = await getDownloadURL(ref(storage,path));
+          await updateDoc(docRef, { docUrl:url, docMime:f.docMime, docFileName:f.docFileName, docStoragePath:path });
+          state.uploadPct=100; render();
+        }catch(e){
+          console.warn('Upload failed:',e);
+          toast('Dokumentas neišsaugotas (klaida įkeliant failą)');
+        }
       }
+    }else{
+      // Local mode: everything (including the document image/pdf as base64)
+      // stays in IndexedDB on this device only. Nothing touches Firestore
+      // or Storage for the warranty content itself.
+      const localItem = {
+        ...payload,
+        id: genLocalId(),
+        docUrl: f.docData || null, // for local mode we just reuse the data URL directly as "docUrl"
+        docMime: f.docMime || null,
+        docFileName: f.docFileName || null,
+      };
+      await localPut(state.user.uid, localItem);
+      state.items.unshift(localItem);
     }
 
     toast('Išsaugota ✓');
@@ -982,7 +1313,212 @@ async function checkPolicy(item){
   render();
 }
 
+// ── Settings actions ───────────────────────────────────────────────────────
+async function toggleNotify(){
+  if(!state.user)return;
+  const current = state.userDoc?.notifyEnabled !== false;
+  try{
+    await updateDoc(doc(db,'users',state.user.uid), { notifyEnabled: !current });
+  }catch(e){
+    toast('Nepavyko išsaugoti nustatymo');
+  }
+}
+
+async function toggleStorageMode(){
+  if(!state.user)return;
+  const isPremium = state.userDoc?.plan==='premium';
+  const wantsCloud = state.storageMode !== 'cloud';
+
+  if(wantsCloud && !isPremium){
+    toast('Cloud saugojimui reikalingas Premium planas');
+    return;
+  }
+
+  const confirmMsg = wantsCloud
+    ? `Perkelti ${state.items.length} įrašų į cloud? Jie bus pasiekiami iš bet kurio įrenginio.`
+    : `Perkelti ${state.items.length} įrašų į šį įrenginį? Jie nebebus matomi kituose įrenginiuose.`;
+  if(state.items.length>0 && !confirm(confirmMsg)) return;
+
+  const itemsToMigrate = state.items.slice();
+  toast('Perkeliama...');
+  state.migratingStorage = true;
+
+  try{
+    if(wantsCloud){
+      // IMPORTANT ORDERING: Firestore security rules only allow creating
+      // warranty documents when the user's profile already has
+      // storageMode == 'cloud' (requiresCloudPlan() check) — this stops a
+      // Free/local account from writing to the cloud subcollection by
+      // mistake or tampering. That means we must flip storageMode (and set
+      // the FINAL itemCount we expect to end up with) on the profile FIRST,
+      // in one atomic update matching rule variant D, before creating any
+      // warranty docs — otherwise every create in the loop below would be
+      // rejected by requiresCloudPlan().
+      await updateDoc(doc(db,'users',state.user.uid), {
+        itemCount: itemsToMigrate.length,
+        storageMode: 'cloud',
+      });
+
+      // Stop the items listener during migration so the live onSnapshot
+      // triggered by the storageMode flip above doesn't race with us
+      // rewriting state.items mid-loop — we'll re-attach it once done.
+      if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
+
+      for(const item of itemsToMigrate){
+        const payload = {
+          name:item.name, category:item.category, shop:item.shop||'',
+          purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
+          docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
+          notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+          createdAtMs:item.createdAtMs||Date.now(), createdAt:serverTimestamp(),
+        };
+        const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), payload);
+        if(item.docUrl && item.docMime){
+          try{
+            const ext = item.docMime==='application/pdf'?'pdf':(item.docMime.split('/')[1]||'jpg');
+            const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
+            const b64 = item.docMime==='application/pdf' ? item.docUrl : item.docUrl.split(',')[1];
+            const blob = base64ToBlob(b64, item.docMime);
+            await uploadBytes(ref(storage,path), blob, {contentType:item.docMime});
+            const url = await getDownloadURL(ref(storage,path));
+            await updateDoc(docRef, { docUrl:url, docMime:item.docMime, docFileName:item.docFileName, docStoragePath:path });
+          }catch(e){ console.warn('Migration upload failed for item:', item.id, e); }
+        }
+      }
+      await localClear(state.user.uid);
+      attachItemsListener(state.user.uid);
+    }else{
+      // cloud -> local: download each cloud item's doc (if any) as base64
+      // and store in IndexedDB, then delete the cloud copies.
+      // Stop the live Firestore listener first — otherwise each deleteDoc
+      // in the loop below triggers onSnapshot mid-migration, briefly
+      // showing a half-migrated list in the UI.
+      if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
+
+      for(const item of itemsToMigrate){
+        let localDocUrl = null;
+        if(item.docUrl){
+          try{
+            const resp = await fetch(item.docUrl);
+            const blob = await resp.blob();
+            localDocUrl = await new Promise((res,rej)=>{
+              const r = new FileReader();
+              r.onload = ()=>res(r.result);
+              r.onerror = rej;
+              r.readAsDataURL(blob);
+            });
+          }catch(e){ console.warn('Migration download failed for item:', item.id, e); }
+        }
+        const localItem = {
+          id: genLocalId(), name:item.name, category:item.category, shop:item.shop||'',
+          purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
+          docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
+          notifyEnabled:true, createdAtMs:item.createdAtMs||Date.now(),
+          docUrl: localDocUrl, docMime: localDocUrl?item.docMime:null, docFileName: localDocUrl?item.docFileName:null,
+        };
+        await localPut(state.user.uid, localItem);
+        if(item.docStoragePath){
+          try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){}
+        }
+        try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',item.id)); }catch(e){}
+      }
+      await updateDoc(doc(db,'users',state.user.uid), {
+        itemCount: 0,
+        storageMode: 'local',
+      });
+      attachItemsListener(state.user.uid);
+    }
+    toast('Perkelta ✓');
+  }catch(e){
+    console.warn('Storage mode migration error:', e);
+    toast('Klaida perkeliant duomenis – patikrinkite sąrašą, kai kurie įrašai gali būti nepilnai perkelti');
+  }finally{
+    state.migratingStorage = false;
+  }
+}
+
+async function confirmDeleteAccount(){
+  if(!confirm('Ar tikrai norite ištrinti paskyrą? Visi jūsų duomenys (garantijos, nuotraukos) bus negrįžtamai ištrinti.'))return;
+  if(!confirm('Šis veiksmas negrįžtamas. Tikrai tęsti?'))return;
+
+  const uid = state.user.uid;
+  const items = state.items.slice();
+  const wasCloud = state.storageMode === 'cloud';
+
+  // Firestore/Storage security rules require request.auth.uid to match —
+  // once the Auth account is deleted, request.auth becomes null and these
+  // calls would be rejected. So we must delete the data WHILE still
+  // authenticated, then delete the Auth account last.
+  let cleanupFailed = false;
+
+  if(wasCloud){
+    for(const item of items){
+      try{ await deleteDoc(doc(db,'users',uid,'warranties',item.id)); }
+      catch(e){ cleanupFailed = true; }
+      if(item.docStoragePath){
+        try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){ /* non-fatal */ }
+      }
+    }
+  }
+  try{ await deleteDoc(doc(db,'users',uid)); }catch(e){ cleanupFailed = true; }
+
+  if(cleanupFailed){
+    toast('Nepavyko pilnai ištrinti duomenų – bandykite vėliau dar kartą');
+    return; // don't delete the Auth account if cleanup was incomplete,
+            // otherwise any leftover docs become permanently unreachable
+  }
+
+  // Local-mode (or already-migrated) IndexedDB data belongs to this device,
+  // not Firestore — clean it up regardless of which mode was active, since
+  // a user might have switched modes earlier and left orphaned local data.
+  try{ await localDeleteDatabase(uid); }catch(e){ /* best-effort */ }
+
+  try{
+    await state.user.delete();
+    toast('Paskyra ištrinta');
+  }catch(e){
+    if(e.code==='auth/requires-recent-login'){
+      toast('Duomenys ištrinti. Dėl saugumo prisijunkite iš naujo, kad pabaigtumėte paskyros trynimą.');
+      await doLogout();
+    }else{
+      toast('Duomenys ištrinti, bet paskyros pašalinti nepavyko – susisiekite su mumis');
+    }
+  }
+}
+
+// Premium isn't truly "unlimited" — that would mean unbounded exposure on
+// our own Anthropic billing if a Premium account is compromised, scripted,
+// or simply misused. Premium gets a generous but hard cap instead.
 async function analyzeDoc(b64,mime){
+  const isPremium = state.userDoc?.plan==='premium';
+  const usesLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
+
+  if(!isPremium && usesLeft<=0){
+    toast(`Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.`);
+    return;
+  }
+
+  // Premium: check (and lazily reset) the day/month counters client-side
+  // before calling out, so we don't waste a Worker round-trip when we
+  // already know the cap is hit. The Worker/Firestore rules still enforce
+  // this server-side too — this is just the fast local pre-check.
+  if(isPremium){
+    const today = new Date().toISOString().slice(0,10);
+    const month = today.slice(0,7);
+    const dayKey = state.userDoc?.aiDayKey;
+    const monthKey = state.userDoc?.aiMonthKey;
+    const dayCount = dayKey===today ? (state.userDoc?.aiDayCount||0) : 0;
+    const monthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0) : 0;
+    if(dayCount >= PREMIUM_DAILY_LIMIT){
+      toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT}/d.). Pabandykite rytoj.`);
+      return;
+    }
+    if(monthCount >= PREMIUM_MONTHLY_LIMIT){
+      toast(`Pasiektas mėnesio limitas (${PREMIUM_MONTHLY_LIMIT}/mėn.).`);
+      return;
+    }
+  }
+
   try{
     const idToken = await state.user.getIdToken();
     const res=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
@@ -995,8 +1531,30 @@ warrantyMonths: 6/12/24/36/60 pagal produktą. Nežinant – 24.`}
     });
     if(res.status===401){toast('Sesija pasibaigė, prisijunkite iš naujo');return;}
     if(res.status===403){toast('Patvirtinkite el. paštą, kad naudotumėte AI analizę');return;}
-    if(res.status===429){toast('Pasiektas dienos AI analizių limitas (10/d.)');return;}
+    if(res.status===429){toast('Pasiektas AI analizių limitas');return;}
     if(!res.ok)return;
+
+    // Successful call — consume quota. Free: lifetime counter -1.
+    // Premium: bump day/month counters (resetting them first if the
+    // day/month rolled over since the last recorded use).
+    if(!isPremium){
+      try{ await updateDoc(doc(db,'users',state.user.uid), { aiUsesRemaining: increment(-1) }); }
+      catch(e){ console.warn('Failed to decrement AI usage counter:', e); }
+    }else{
+      const today = new Date().toISOString().slice(0,10);
+      const month = today.slice(0,7);
+      const dayKey = state.userDoc?.aiDayKey;
+      const monthKey = state.userDoc?.aiMonthKey;
+      const update = {
+        aiDayKey: today,
+        aiDayCount: dayKey===today ? increment(1) : 1,
+        aiMonthKey: month,
+        aiMonthCount: monthKey===month ? increment(1) : 1,
+      };
+      try{ await updateDoc(doc(db,'users',state.user.uid), update); }
+      catch(e){ console.warn('Failed to bump Premium AI usage counters:', e); }
+    }
+
     const data=await res.json();
     const p=JSON.parse((data.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
     if(typeof p.name==='string')state.form.name=p.name.slice(0,200);
