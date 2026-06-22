@@ -65,6 +65,9 @@ applyTheme();
 
 function emptyForm(){return{name:'',category:'Elektronika',shop:'',purchaseDate:today(),warrantyEnd:addMonths(today(),24),warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true};}
 
+// Admin vartotojai automatiškai gauna premium teises (AI limitas, cloud sync)
+function isPremiumUser(){ return state.userDoc?.plan==='premium' || state.userDoc?.role==='admin'; }
+
 // Resets everything tied to "adding one new item" — the form fields plus
 // the per-item AI retry counter and pending-charge flag. Centralized here
 // so every entry point (tap +, long-press +, picker) stays in sync.
@@ -553,7 +556,7 @@ function renderList(){
   const expired =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d<0;}).length;
   const expiring=items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0&&d<=30;}).length;
   const valid   =items.length-expired;
-  const isPremium = userDoc?.plan==='premium';
+  const isPremium = isPremiumUser();
 
   const filtered=items
     .filter(i=>filterCat==='Visos'||i.category===filterCat)
@@ -666,7 +669,7 @@ function renderSearch(){
 
 // ── Add picker ─────────────────────────────────────────────────────────────
 function renderPicker(){
-  const isPremium = state.userDoc?.plan==='premium';
+  const isPremium = isPremiumUser();
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const aiExhausted = !isPremium && aiLeft<=0;
 
@@ -829,7 +832,7 @@ function renderDetail(){
 // ── Settings ───────────────────────────────────────────────────────────────
 function renderSettings(){
   const u = state.user;
-  const isPremium = state.userDoc?.plan==='premium';
+  const isPremium = isPremiumUser();
   const isAdmin = state.userDoc?.role==='admin';
   const notifyOn = state.userDoc?.notifyEnabled !== false; // default true
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
@@ -847,7 +850,7 @@ function renderSettings(){
       <div class="settings-profile-info">
         <div class="settings-profile-email">${esc(u.displayName||u.email)}</div>
         <div class="settings-profile-plan${isPremium?' premium':''}">
-          ${isPremium?'<i class="ti ti-crown" style="font-size:13px"></i> Premium narys':`Nemokamas planas · ${state.items.length} įrašų`}
+          ${state.userDoc?.role==='admin' ? '<i class="ti ti-shield-check" style="font-size:13px"></i> Administratorius' : isPremium ? '<i class="ti ti-crown" style="font-size:13px"></i> Premium narys' : `Nemokamas planas · ${state.items.length} įrašų`}
         </div>
       </div>
     </div>
@@ -1268,7 +1271,7 @@ async function saveItem(){
   // user is actually keeping. Scans that were retried/discarded never
   // reach this point, so they never cost quota — only a kept result does.
   if(state.pendingAiCharge){
-    const isPremium = state.userDoc?.plan==='premium';
+    const isPremium = isPremiumUser();
     try{
       if(!isPremium){
         await updateDoc(doc(db,'users',state.user.uid), { aiUsesRemaining: increment(-1) });
@@ -1648,7 +1651,7 @@ async function toggleNotify(){
 
 async function toggleStorageMode(){
   if(!state.user)return;
-  const isPremium = state.userDoc?.plan==='premium';
+  const isPremium = isPremiumUser();
   const wantsCloud = state.storageMode !== 'cloud';
 
   if(wantsCloud && !isPremium){
@@ -1812,7 +1815,7 @@ async function confirmDeleteAccount(){
 // our own Anthropic billing if a Premium account is compromised, scripted,
 // or simply misused. Premium gets a generous but hard cap instead.
 async function analyzeDoc(b64,mime){
-  const isPremium = state.userDoc?.plan==='premium';
+  const isPremium = isPremiumUser();
   const usesLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
 
   const MAX_RETRIES_PER_ITEM = 2;
