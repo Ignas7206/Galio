@@ -1599,7 +1599,7 @@ async function saveItem(){
   state.uploadPct=null;
   state.form=emptyForm();state.docError='';state.addMode=null;state.view='list';
   render();
-  toast('Išsaugota ✓');
+}
 
 async function saveMultiItems(){
   const r = state.multiItemReceipt;
