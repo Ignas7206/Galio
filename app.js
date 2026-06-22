@@ -619,13 +619,15 @@ function renderAuth(){
   </div></div>`;
 }
 function attachAuthEvents(){
+  // { once: true } — listener automatiškai pašalinamas po pirmo iššaukimo,
+  // taip išvengiama kaupimosi per kelis render() iškvietimus
+  const once=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn,{once:true});};
   const e1=document.getElementById('authEmail'),p1=document.getElementById('authPwd'),p2=document.getElementById('authPwd2');
-  document.getElementById('googleBtn')?.addEventListener('click',doGoogleLogin);
-  document.getElementById('authSubmit')?.addEventListener('click',()=>{
+  once('googleBtn','click',doGoogleLogin);
+  once('authSubmit','click',()=>{
     const email=e1?.value.trim()||'';
     const pwd=p1?.value||'';
     const pwd2=p2?.value||'';
-    // Išsaugom state'e kad po render() laukai liktų užpildyti
     state.authEmail=email;
     if(state.authMode==='register'){
       const consent = document.getElementById('consentCheck');
@@ -635,7 +637,7 @@ function attachAuthEvents(){
         render();
         return;
       }
-      state.authPwd=''; state.authPwd2=''; // išvalome slaptažodžius prieš siųsdami
+      state.authPwd=''; state.authPwd2='';
       doRegister(email,pwd,pwd2);
     }
     else if(state.authMode==='reset') doReset(email);
@@ -644,9 +646,9 @@ function attachAuthEvents(){
       doLogin(email,pwd);
     }
   });
-  document.getElementById('toRegister')?.addEventListener('click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='register';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
-  document.getElementById('toLogin')?.addEventListener('click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='login';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
-  document.getElementById('toReset')?.addEventListener('click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='reset';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
+  once('toRegister','click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='register';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
+  once('toLogin','click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='login';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
+  once('toReset','click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='reset';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
   [e1,p1,p2].forEach(el=>el?.addEventListener('keydown',ev=>{if(ev.key==='Enter')document.getElementById('authSubmit')?.click();}));
   setTimeout(()=>e1?.focus(),50);
 }
