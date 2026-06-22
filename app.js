@@ -661,7 +661,7 @@ function renderList(){
   const{items,filterCat,sortBy,userDoc}=state;
   const expired =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d<0;}).length;
   const expiring=items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0&&d<=30;}).length;
-  const valid   =items.length-expired;
+  const valid   =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0;}).length;
   const isPremium = isPremiumUser();
 
   const filtered=items
@@ -1151,43 +1151,42 @@ function renderMultiSelect(){
   const r = state.multiItemReceipt;
   if(!r){ state.view='list'; return ''; }
   const selectedCount = r.items.filter(i=>i.selected).length;
-  return `<div>
-    <div class="page-header-sm">
-      <button class="back-btn" id="multiBackBtn"><i class="ti ti-x"></i></button>
-      <h2>Rastos prekės</h2>
-    </div>
-    <div style="padding:16px 16px 8px">
-      <p style="font-size:16px;color:var(--text2);margin:0 0 4px">Čekyje rasta <b style="color:var(--text)">${r.items.length} prekių</b>. Pasirinkite kurias išsaugoti:</p>
-      ${r.shop?`<p style="font-size:14px;color:var(--text3);margin:0">${esc(r.shop)}${r.purchaseDate?' · '+fmtDate(r.purchaseDate):''}</p>`:''}
-    </div>
-    <div class="form-section" style="margin:0 16px 20px">
-      ${r.items.map((item,idx)=>{
-        const catOptions = CATEGORIES.map(c=>`<option value="${esc(c)}"${c===item.category?' selected':''}>${esc(c)}</option>`).join('');
-        return `<div style="padding:14px 16px;border-bottom:0.5px solid var(--border);display:flex;gap:12px;align-items:flex-start">
-          <button class="multi-check${item.selected?' checked':''}" data-midx="${idx}" style="flex-shrink:0;margin-top:3px;width:24px;height:24px;border-radius:6px;border:2px solid ${item.selected?'var(--accent)':'var(--border2)'};background:${item.selected?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;cursor:pointer">
-            ${item.selected?`<i class="ti ti-check" style="font-size:13px;color:#fff"></i>`:''}
-          </button>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">${esc(item.name)}</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <select class="multi-cat" data-midx="${idx}" style="font-size:13px;background:var(--bg3);border:none;border-radius:8px;padding:4px 8px;color:var(--text2);appearance:none;-webkit-appearance:none">
-                <option value="">Kategorija...</option>${catOptions}
-              </select>
-              ${item.warrantyApplies===false
-                ? `<span style="font-size:12px;color:var(--orange);background:var(--orange-bg);padding:3px 8px;border-radius:6px">Garantija netaikoma</span>`
-                : `<span style="font-size:12px;color:var(--green);background:var(--green-bg);padding:3px 8px;border-radius:6px">${item.warrantyMonths?item.warrantyMonths+' mėn.':'Garantija'}</span>`
-              }
-              ${item.price?`<span style="font-size:12px;color:var(--text3)">${esc(String(item.price))}</span>`:''}
-            </div>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-    <div style="padding:0 16px 32px;display:flex;flex-direction:column;gap:10px">
-      <button id="multiSaveBtn" class="btn-primary" ${selectedCount===0?'disabled':''} style="font-size:16px;padding:14px">
-        <i class="ti ti-device-floppy"></i> Išsaugoti ${selectedCount} ${selectedCount===1?'prekę':selectedCount<10?'prekes':'prekių'}
+
+  const rows = r.items.map((item,idx)=>{
+    const noWarranty = item.warrantyApplies===false;
+    const dimmed = noWarranty && !item.selected;
+    return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-bottom:0.5px solid var(--border);cursor:pointer" class="multi-row" data-midx="${idx}">
+      <div style="width:24px;height:24px;border-radius:6px;border:2px solid ${item.selected?'var(--accent)':'var(--border2)'};background:${item.selected?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s">
+        ${item.selected?`<i class="ti ti-check" style="font-size:13px;color:#fff"></i>`:''}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:600;color:${dimmed?'var(--text3)':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.name)}</div>
+        <div style="font-size:13px;color:var(--text3);margin-top:2px;display:flex;align-items:center;gap:6px">
+          ${item.category?`<span>${esc(item.category)}</span>`:''}
+          ${!noWarranty?`<span style="color:var(--green)">${item.warrantyMonths||24} mėn.</span>`:''}
+          ${item.price?`<span>${esc(String(item.price))} €</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div style="display:flex;flex-direction:column;height:100vh;overflow:hidden">
+    <div style="padding:12px 16px;border-bottom:0.5px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">${esc(r.shop||'')}</div>
+        <div style="font-size:13px;color:var(--text2)">${r.purchaseDate?fmtDate(r.purchaseDate):''}</div>
+      </div>
+      <button id="multiSaveBtn" ${selectedCount===0?'disabled':''} style="background:var(--accent);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;opacity:${selectedCount===0?'0.4':'1'}">
+        Išsaugoti ${selectedCount>0?`(${selectedCount})`:''}
       </button>
-      <button id="multiCancelBtn" style="background:none;border:none;color:var(--text3);font-size:14px;padding:8px;cursor:pointer">Atšaukti</button>
+    </div>
+    <div style="flex:1;overflow-y:auto">
+      <div style="background:var(--card);border-radius:var(--radius);margin:12px 16px;overflow:hidden">
+        ${rows}
+      </div>
+    </div>
+    <div style="padding:12px 16px;border-top:0.5px solid var(--border)">
+      <button id="multiCancelBtn" style="background:none;border:none;color:var(--text3);font-size:14px;width:100%;padding:8px;cursor:pointer">Atšaukti</button>
     </div>
   </div>`;
 }
@@ -1398,9 +1397,10 @@ function attachEvents(){
   });
   on('settingsLogoutBtn2','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('deleteAccountBtn','click',confirmDeleteAccount);
+  on('multiConfirmBtn','click',()=>{ if(state.multiItemReceipt) state.multiItemReceipt.confirmed=true; render(); });
   on('multiBackBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
   on('multiCancelBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
-  onAll('.multi-check','click',e=>{
+  onAll('.multi-row','click',e=>{
     const idx=parseInt(e.currentTarget.dataset.midx);
     if(state.multiItemReceipt) state.multiItemReceipt.items[idx].selected=!state.multiItemReceipt.items[idx].selected;
     render();
@@ -2255,11 +2255,13 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     if(items.length===1){
       applyAiItemToForm(items[0], p);
     }else{
-      // Kelios prekės — rodome pasirinkimo ekraną
+      const warrantyCount = items.filter(i=>i.warrantyApplies!==false).length;
       state.multiItemReceipt = {
-        items: items.map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _docType:p.docType, _docNumber:p.docNumber, selected:true})),
+        items: items.map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _docType:p.docType, _docNumber:p.docNumber, selected:it.warrantyApplies!==false})),
         shop: p.shop, purchaseDate: p.purchaseDate, docType: p.docType, docNumber: p.docNumber,
-        docData: state.form.docData, docMime: state.form.docMime, docFileName: state.form.docFileName
+        docData: state.form.docData, docMime: state.form.docMime, docFileName: state.form.docFileName,
+        warrantyCount,
+        confirmed: false,
       };
       state.view='multi-select';
     }
