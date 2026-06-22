@@ -32,10 +32,11 @@ let state = {
   view:'list', addMode:null,
   items:[], itemsUnsub:null,
   selected:null,
-  search:'', filterCat:'Visos', sortBy:'newest',
+  search:'', filterCat:'Visos', sortBy:'newest', sortDropOpen:false,
   form:emptyForm(),
   lightbox:null, analyzing:false, uploadPct:null,
   authMode:'login', authError:'', authInfo:'', authBusy:false,
+  authEmail:'', authPwd:'', authPwd2:'',
   docError:'', showWarranty:false,
   online: navigator.onLine,
   onboardSlide: 0,
@@ -66,8 +67,8 @@ applyTheme();
 
 function emptyForm(){return{name:'',category:'Elektronika',shop:'',purchaseDate:today(),warrantyEnd:addMonths(today(),24),warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true};}
 
-// Admin ir tester vartotojai automatiškai gauna premium teises
-function isPremiumUser(){ return ['premium','tester'].includes(state.userDoc?.plan) || state.userDoc?.role==='admin'; }
+// Admin, tester ir friend vartotojai automatiškai gauna premium teises
+function isPremiumUser(){ return ['premium','tester','friend'].includes(state.userDoc?.plan) || state.userDoc?.role==='admin'; }
 
 // Resets everything tied to "adding one new item" — the form fields plus
 // the per-item AI retry counter and pending-charge flag. Centralized here
@@ -309,15 +310,19 @@ function attachItemsListener(uid, retryCount=0){
 
 async function doRegister(email,pwd,pwd2){
   state.authError='';state.authInfo='';
-  if(!email||!pwd){state.authError='Užpildykite visus laukus';render();return;}
-  if(pwd.length<6){state.authError='Slaptažodis turi būti bent 6 simbolių';render();return;}
-  if(pwd!==pwd2){state.authError='Slaptažodžiai nesutampa';render();return;}
+  state.authEmail=email;
+  if(!email||!pwd){state.authError='Užpildykite visus laukus';state.authPwd='';state.authPwd2='';render();return;}
+  if(pwd.length<6){state.authError='Slaptažodis turi būti bent 6 simbolių';state.authPwd='';state.authPwd2='';render();return;}
+  if(pwd!==pwd2){state.authError='Slaptažodžiai nesutampa';state.authPwd='';state.authPwd2='';render();return;}
   state.authBusy=true;render();
   try{
     const cred = await createUserWithEmailAndPassword(auth,email,pwd);
     await sendEmailVerification(cred.user);
     state.authInfo='Paskyra sukurta! Patikrinkite el. paštą patvirtinimui.';
-  }catch(e){ state.authError=friendlyAuthError(e.code); }
+    state.authEmail='';
+  }catch(e){
+    state.authError=friendlyAuthError(e.code);
+  }
   state.authBusy=false;render();
 }
 async function doLogin(email,pwd){
@@ -509,9 +514,9 @@ function renderAuth(){
     ${m!=='login'?`<p style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:14px">Tęsdami sutinkate su <a href="terms.html" target="_blank" style="color:var(--accent)">Naudojimo sąlygomis</a> ir <a href="privacy.html" target="_blank" style="color:var(--accent)">Privatumo politika</a></p>`:''}
     <div class="login-divider">arba</div>`:''}
 
-    <input type="email" id="authEmail" class="login-input" placeholder="El. paštas" autocomplete="email" />
-    ${m!=='reset'?`<input type="password" id="authPwd" class="login-input" placeholder="Slaptažodis" autocomplete="${m==='register'?'new-password':'current-password'}" />`:''}
-    ${m==='register'?`<input type="password" id="authPwd2" class="login-input" placeholder="Pakartokite slaptažodį" autocomplete="new-password" />`:''}
+    <input type="email" id="authEmail" class="login-input" placeholder="El. paštas" autocomplete="email" value="${state.authEmail||''}" />
+    ${m!=='reset'?`<input type="password" id="authPwd" class="login-input" placeholder="Slaptažodis" autocomplete="${m==='register'?'new-password':'current-password'}" value="${state.authPwd||''}" />`:''}
+    ${m==='register'?`<input type="password" id="authPwd2" class="login-input" placeholder="Pakartokite slaptažodį" autocomplete="new-password" value="${state.authPwd2||''}" />`:''}
 
     ${m==='register'?`<label class="consent-row">
       <input type="checkbox" id="consentCheck" />
@@ -538,21 +543,30 @@ function attachAuthEvents(){
   document.getElementById('googleBtn')?.addEventListener('click',doGoogleLogin);
   document.getElementById('authSubmit')?.addEventListener('click',()=>{
     const email=e1?.value.trim()||'';
+    const pwd=p1?.value||'';
+    const pwd2=p2?.value||'';
+    // Išsaugom state'e kad po render() laukai liktų užpildyti
+    state.authEmail=email;
     if(state.authMode==='register'){
       const consent = document.getElementById('consentCheck');
       if(!consent?.checked){
+        state.authPwd=pwd; state.authPwd2=pwd2;
         state.authError='Turite sutikti su Naudojimo sąlygomis ir Privatumo politika';
         render();
         return;
       }
-      doRegister(email,p1?.value||'',p2?.value||'');
+      state.authPwd=''; state.authPwd2=''; // išvalome slaptažodžius prieš siųsdami
+      doRegister(email,pwd,pwd2);
     }
     else if(state.authMode==='reset') doReset(email);
-    else doLogin(email,p1?.value||'');
+    else {
+      state.authPwd='';
+      doLogin(email,pwd);
+    }
   });
-  document.getElementById('toRegister')?.addEventListener('click',()=>{state.authMode='register';state.authError='';state.authInfo='';render();});
-  document.getElementById('toLogin')?.addEventListener('click',()=>{state.authMode='login';state.authError='';state.authInfo='';render();});
-  document.getElementById('toReset')?.addEventListener('click',()=>{state.authMode='reset';state.authError='';state.authInfo='';render();});
+  document.getElementById('toRegister')?.addEventListener('click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='register';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
+  document.getElementById('toLogin')?.addEventListener('click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='login';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
+  document.getElementById('toReset')?.addEventListener('click',()=>{state.authEmail=e1?.value.trim()||state.authEmail;state.authMode='reset';state.authError='';state.authInfo='';state.authPwd='';state.authPwd2='';render();});
   [e1,p1,p2].forEach(el=>el?.addEventListener('keydown',ev=>{if(ev.key==='Enter')document.getElementById('authSubmit')?.click();}));
   setTimeout(()=>e1?.focus(),50);
 }
@@ -634,12 +648,19 @@ function renderList(){
     ${verifyBanner}
     ${planBanner}
     <div class="chips">${chips}</div>
-    <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:12px;color:var(--text3);flex-shrink:0">Rikiuoti:</span>
-      <button class="chip${sortBy==='newest'?' active':''}" data-sort="newest">Naujausi</button>
-      <button class="chip${sortBy==='expiring'?' active':''}" data-sort="expiring">Baigiasi</button>
-      <button class="chip${sortBy==='name'?' active':''}" data-sort="name">A–Z</button>
+    <div style="padding:0 16px 10px;display:flex;align-items:center;justify-content:flex-end">
+      <button id="sortDropBtn" style="background:none;border:1px solid var(--border2);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer">
+        <i class="ti ti-arrows-sort" style="font-size:13px"></i>
+        ${ sortBy==='newest' ? 'Naujausi' : sortBy==='expiring' ? 'Baigiasi' : 'A–Z' }
+        <i class="ti ti-chevron-down" style="font-size:11px"></i>
+      </button>
     </div>
+    ${state.sortDropOpen ? `<div id="sortDropOverlay" style="position:fixed;inset:0;z-index:99" ></div>
+    <div style="position:fixed;right:16px;top:auto;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.12);min-width:160px;overflow:hidden" id="sortDropMenu">
+      <button class="sort-drop-item${sortBy==='newest'?' active':''}" data-sort="newest"><i class="ti ti-clock" style="font-size:14px"></i>Naujausi</button>
+      <button class="sort-drop-item${sortBy==='expiring'?' active':''}" data-sort="expiring"><i class="ti ti-hourglass" style="font-size:14px"></i>Baigiasi pirmi</button>
+      <button class="sort-drop-item${sortBy==='name'?' active':''}" data-sort="name"><i class="ti ti-sort-a-z" style="font-size:14px"></i>A–Z</button>
+    </div>` : ''}
     <div class="cards">${emptyHtml}${cardsHtml}</div>
     <div style="height:8px"></div>
   </div>`;
@@ -856,7 +877,7 @@ function renderSettings(){
       <div class="settings-profile-info">
         <div class="settings-profile-email">${esc(u.displayName||u.email)}</div>
         <div class="settings-profile-plan${isPremium?' premium':''}">
-          ${state.userDoc?.role==='admin' ? '<i class="ti ti-shield-check" style="font-size:13px"></i> Administratorius' : state.userDoc?.plan==='tester' ? '<i class="ti ti-flask" style="font-size:13px"></i> Testeris' : isPremium ? '<i class="ti ti-crown" style="font-size:13px"></i> Premium narys' : `Nemokamas planas · ${state.items.length} įrašų`}
+          ${state.userDoc?.role==='admin' ? '<i class="ti ti-shield-check" style="font-size:13px"></i> Administratorius' : state.userDoc?.plan==='tester' ? '<i class="ti ti-flask" style="font-size:13px"></i> Testeris' : state.userDoc?.plan==='friend' ? '<i class="ti ti-heart" style="font-size:13px"></i> Draugas' : isPremium ? '<i class="ti ti-crown" style="font-size:13px"></i> Premium narys' : `Nemokamas planas · ${state.items.length} įrašų`}
         </div>
       </div>
     </div>
@@ -1025,19 +1046,19 @@ function renderAdminStats(){
     <div class="form-section" style="margin:0 16px 16px;padding:0">
       ${users.length===0 ? `<div style="padding:16px;text-align:center;color:var(--text3);font-size:14px">Nėra vartotojų</div>` :
         users.map(u => {
-          const planLabel = u.plan==='premium' ? '👑 Premium' : u.plan==='tester' ? '🧪 Testeris' : 'Nemokamas';
-          const planColor = u.plan==='premium' ? 'var(--gold)' : u.plan==='tester' ? 'var(--accent)' : 'var(--text3)';
+          const planLabel = u.plan==='premium' ? '👑 Premium' : u.plan==='tester' ? '🧪 Testeris' : u.plan==='friend' ? '❤️ Draugas' : 'Nemokamas';
+          const planColor = u.plan==='premium' ? 'var(--gold)' : u.plan==='tester' ? 'var(--accent)' : u.plan==='friend' ? 'var(--red)' : 'var(--text3)';
           const isTester = u.plan==='tester';
+          const isFriend = u.plan==='friend';
           const isAdminUser = u.role==='admin';
           return `<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding:12px 14px">
-            <div style="display:flex;width:100%;align-items:center;gap:8px">
+            <div style="display:flex;width:100%;align-items:center;gap:6px">
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email}</div>
                 <div style="font-size:11px;color:${planColor};margin-top:2px">${planLabel}${isAdminUser?' · Admin':''}${u.emailVerified?' · ✓':''} · ${u.itemCount||0} įrašų</div>
               </div>
-              ${!isAdminUser ? `<button class="chip${isTester?' active':''}" data-uid="${u.uid}" data-action="toggleTester" style="font-size:11px;padding:3px 10px;flex-shrink:0">
-                ${isTester ? 'Atimti testerį' : 'Testeris'}
-              </button>` : ''}
+              ${!isAdminUser ? `<button class="chip${isTester?' active':''}" data-uid="${u.uid}" data-action="toggleTester" style="font-size:11px;padding:3px 8px;flex-shrink:0">${isTester?'✓ Testeris':'Testeris'}</button>
+              <button class="chip${isFriend?' active':''}" data-uid="${u.uid}" data-action="toggleFriend" style="font-size:11px;padding:3px 8px;flex-shrink:0">${isFriend?'✓ Draugas':'Draugas'}</button>` : ''}
             </div>
           </div>`;
         }).join('')
@@ -1056,17 +1077,28 @@ async function loadAdminStats(){
     let totalUsers=0, premiumUsers=0, testerUsers=0, activeUsers=0, totalItems=0, verifiedUsers=0, newLast7Days=0;
     const weekAgoMs = Date.now() - 7*86400000;
     const usersList = [];
-    snap.forEach(d=>{
+
+    // Skaičiuojam tikrą warranties kiekį iš subkolekcijos kiekvienam vartotojui
+    await Promise.all(snap.docs.map(async d=>{
       const u = d.data();
       totalUsers++;
       if(u.plan==='premium') premiumUsers++;
       if(u.plan==='tester') testerUsers++;
-      if((u.itemCount||0)>0) activeUsers++;
-      totalItems += (u.itemCount||0);
       if(u.emailVerified) verifiedUsers++;
-      if(u.createdAt && u.createdAt.toMillis && u.createdAt.toMillis() > weekAgoMs) newLast7Days++;
-      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', role: u.role||'', itemCount: u.itemCount||0, emailVerified: !!u.emailVerified });
-    });
+      if(u.createdAt?.toMillis && u.createdAt.toMillis() > weekAgoMs) newLast7Days++;
+
+      // Tikras įrašų skaičius iš warranties subkolekcijos
+      let realCount = 0;
+      try{
+        const wSnap = await getDocs(collection(db,'users',d.id,'warranties'));
+        realCount = wSnap.size;
+      }catch(e){ realCount = u.itemCount||0; } // fallback į cached jei nepavyksta
+
+      if(realCount > 0) activeUsers++;
+      totalItems += realCount;
+      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified });
+    }));
+
     usersList.sort((a,b)=>a.email.localeCompare(b.email));
     state.adminStats = { totalUsers, premiumUsers, testerUsers, activeUsers, totalItems, verifiedUsers, newLast7Days };
     state.adminUsers = usersList;
@@ -1140,7 +1172,9 @@ function attachEvents(){
   on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
   on('upgradeBtn3','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});
-  onAll('.chip[data-sort],.sort-btn[data-sort]','click',e=>{state.sortBy=e.currentTarget.dataset.sort;render();});
+  on('sortDropBtn','click',e=>{ e.stopPropagation(); state.sortDropOpen=!state.sortDropOpen; render(); });
+  on('sortDropOverlay','click',()=>{ state.sortDropOpen=false; render(); });
+  onAll('.sort-drop-item','click',e=>{ state.sortBy=e.currentTarget.dataset.sort; state.sortDropOpen=false; render(); });
   onAll('.card[data-id]','click',e=>{
     if(state.swipe.justSwiped){state.swipe.justSwiped=false;return;}
     state.selected=e.currentTarget.dataset.id;state.view='detail';render();
@@ -1229,16 +1263,26 @@ function attachEvents(){
     const user = state.adminUsers?.find(u=>u.uid===uid);
     if(!user) return;
     const newPlan = user.plan==='tester' ? 'free' : 'tester';
-    const label = newPlan==='tester' ? 'suteikti testerio planą' : 'atimti testerio planą';
-    if(!confirm(`Ar tikrai norite ${label} vartotojui ${user.email}?`)) return;
+    if(!confirm(`${newPlan==='tester'?'Suteikti testerio planą':'Atimti testerio planą'} vartotojui ${user.email}?`)) return;
     try{
       await updateDoc(doc(db,'users',uid), { plan: newPlan });
       user.plan = newPlan;
       toast(newPlan==='tester' ? `✓ ${user.email} dabar testeris` : `✓ ${user.email} grąžintas į nemokamą planą`);
       render();
-    }catch(err){
-      toast('Nepavyko pakeisti plano — ' + (err.message||'klaida'));
-    }
+    }catch(err){ toast('Nepavyko — ' + (err.message||'klaida')); }
+  });
+  onAll('[data-action="toggleFriend"]','click', async e=>{
+    const uid = e.currentTarget.dataset.uid;
+    const user = state.adminUsers?.find(u=>u.uid===uid);
+    if(!user) return;
+    const newPlan = user.plan==='friend' ? 'free' : 'friend';
+    if(!confirm(`${newPlan==='friend'?'Suteikti draugo planą':'Atimti draugo planą'} vartotojui ${user.email}?`)) return;
+    try{
+      await updateDoc(doc(db,'users',uid), { plan: newPlan });
+      user.plan = newPlan;
+      toast(newPlan==='friend' ? `✓ ${user.email} dabar draugas` : `✓ ${user.email} grąžintas į nemokamą planą`);
+      render();
+    }catch(err){ toast('Nepavyko — ' + (err.message||'klaida')); }
   });
 }
 
