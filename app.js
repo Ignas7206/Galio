@@ -712,7 +712,7 @@ function renderPicker(){
         <div><h3>Rankiniu būdu</h3><p>Suveskite informaciją patys – visada nemokama. Dokumentą galima prisegti be AI</p></div>
       </button>
     </div>
-    ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium – iki ${PREMIUM_DAILY_LIMIT}/d.</div><button id="upgradeBtn3">Premium</button></div>`:''}
+    ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
   </div>`;
 }
 
@@ -870,7 +870,10 @@ function renderSettings(){
     : initials;
 
   return `<div>
-    <div class="page-header"><span class="page-title">Nustatymai</span></div>
+    <div class="page-header">
+      <span class="page-title">Nustatymai</span>
+      <button class="icon-btn" id="settingsLogoutBtn2"><i class="ti ti-logout" style="font-size:18px"></i></button>
+    </div>
 
     <div class="settings-profile">
       <div class="settings-avatar">${avatarHtml}</div>
@@ -884,7 +887,7 @@ function renderSettings(){
 
     ${!isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
-      <div class="pb-text">Atsinaujinkite į Premium – iki ${PREMIUM_DAILY_LIMIT} AI analizių/d. ir cloud sinchronizacija</div>
+      <div class="pb-text">Atsinaujinkite į Premium – cloud sinchronizacija ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
 
@@ -949,9 +952,6 @@ function renderSettings(){
     <div class="form-section" style="margin:0 16px 20px">
       <button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
         <i class="ti ti-lock row-icon"></i><span class="settings-row-label">Pakeisti slaptažodį</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
-      </button>
-      <button class="settings-row tappable" id="settingsLogoutBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-logout row-icon"></i><span class="settings-row-label">Atsijungti</span>
       </button>
     </div>
 
@@ -1247,7 +1247,7 @@ function attachEvents(){
       .then(()=>toast('Nuoroda slaptažodžiui keisti išsiųsta į el. paštą'))
       .catch(()=>toast('Klaida siunčiant laišką'));
   });
-  on('settingsLogoutBtn','click',()=>{if(confirm('Atsijungti?'))doLogout();});
+  on('settingsLogoutBtn2','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('deleteAccountBtn','click',confirmDeleteAccount);
   on('adminPanelBtn','click',()=>{state.view='admin-stats';loadAdminStats();});
   on('helpContactBtn','click',()=>{
@@ -1927,7 +1927,7 @@ async function analyzeDoc(b64,mime){
     const dayCount = dayKey===today ? (state.userDoc?.aiDayCount||0) : 0;
     const monthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0) : 0;
     if(dayCount >= PREMIUM_DAILY_LIMIT){
-      toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT}/d.). Pabandykite rytoj.`);
+      toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT} analizių). Pabandykite rytoj.`);
       return;
     }
     if(monthCount >= PREMIUM_MONTHLY_LIMIT){
