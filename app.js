@@ -648,13 +648,13 @@ function renderList(){
     ${verifyBanner}
     ${planBanner}
     <div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
-      <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
-        <i class="ti ti-filter" style="font-size:13px;flex-shrink:0"></i>
+      <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
+        <i class="ti ti-filter" style="font-size:15px;flex-shrink:0"></i>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${filterCat}</span>
         <i class="ti ti-chevron-down" style="font-size:11px;flex-shrink:0"></i>
       </button>
-      <button id="sortDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
-        <i class="ti ti-arrows-sort" style="font-size:13px;flex-shrink:0"></i>
+      <button id="sortDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
+        <i class="ti ti-arrows-sort" style="font-size:15px;flex-shrink:0"></i>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sortBy==='newest'?'Naujausi':sortBy==='expiring'?'Baigiasi':'A–Z'}</span>
         <i class="ti ti-chevron-down" style="font-size:11px;flex-shrink:0"></i>
       </button>
