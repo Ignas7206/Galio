@@ -625,11 +625,11 @@ function renderList(){
     ${verifyBanner}
     ${planBanner}
     <div class="chips">${chips}</div>
-    <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center">
-      <span style="font-size:12px;color:var(--text3)">Rikiuoti:</span>
-      <button class="chip${sortBy==='newest'?' active':''}" data-sort="newest" style="font-size:12px;padding:4px 10px">Naujausi</button>
-      <button class="chip${sortBy==='expiring'?' active':''}" data-sort="expiring" style="font-size:12px;padding:4px 10px">Baigiasi</button>
-      <button class="chip${sortBy==='name'?' active':''}" data-sort="name" style="font-size:12px;padding:4px 10px">A–Z</button>
+    <div style="padding:0 16px 10px;display:flex;gap:6px;align-items:center">
+      <span style="font-size:12px;color:var(--text3);margin-right:2px">Rikiuoti:</span>
+      <button class="sort-btn${sortBy==='newest'?' active':''}" data-sort="newest">Naujausi</button>
+      <button class="sort-btn${sortBy==='expiring'?' active':''}" data-sort="expiring">Baigiasi</button>
+      <button class="sort-btn${sortBy==='name'?' active':''}" data-sort="name">A–Z</button>
     </div>
     <div class="cards">${emptyHtml}${cardsHtml}</div>
     <div style="height:8px"></div>
@@ -695,7 +695,7 @@ function renderAdd(){
   const hasImg=f.docData&&f.docMime!=='application/pdf';
 
   let docAreaHtml='';
-  const qrButtonHtml = !f.docData ? `<button type="button" class="qr-link-btn" id="qrScanBtn"><i class="ti ti-qrcode"></i>Nuskaityti QR kodą iš čekio</button>` : '';
+  const qrButtonHtml = !f.docData ? `<button type="button" class="qr-link-btn" disabled style="opacity:0.5;cursor:default"><i class="ti ti-qrcode"></i>QR skanavimas — netrukus</button>` : '';
   if(hasPdf){
     docAreaHtml=`<div class="doc-preview-pdf"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(f.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">PDF pridėtas</div></div></div>`;
   }else if(hasImg){
@@ -934,10 +934,10 @@ function renderSettings(){
 
     <p class="form-label-section" style="margin:0 16px 8px">Teisinė informacija</p>
     <div class="form-section" style="margin:0 16px 20px">
-      <a class="settings-row tappable" href="privacy.html" target="_blank" style="text-decoration:none;color:inherit;display:flex">
+      <a class="settings-row tappable" href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:flex">
         <i class="ti ti-shield-lock row-icon"></i><span class="settings-row-label">Privatumo politika</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
       </a>
-      <a class="settings-row tappable" href="terms.html" target="_blank" style="text-decoration:none;color:inherit;display:flex">
+      <a class="settings-row tappable" href="terms.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:flex">
         <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Naudojimo sąlygos</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
       </a>
     </div>
@@ -1066,10 +1066,10 @@ function attachEvents(){
     };
     const cancelPress=()=>{ clearTimeout(pressTimer); };
     navAdd.addEventListener('touchstart',startPress,{passive:true});
-    navAdd.addEventListener('touchend',e=>{ cancelPress(); if(!longPressed){ startNewItem(null);render(); } });
+    navAdd.addEventListener('touchend',e=>{ cancelPress(); if(!longPressed){ startNewItem('photo');render(); } });
     navAdd.addEventListener('touchcancel',cancelPress);
     navAdd.addEventListener('mousedown',startPress);
-    navAdd.addEventListener('mouseup',e=>{ cancelPress(); if(!longPressed){ startNewItem(null);render(); } });
+    navAdd.addEventListener('mouseup',e=>{ cancelPress(); if(!longPressed){ startNewItem('photo');render(); } });
   }
 
   // Swipe-to-delete on list cards
@@ -1106,7 +1106,7 @@ function attachEvents(){
   on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
   on('upgradeBtn3','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});
-  onAll('.chip[data-sort]','click',e=>{state.sortBy=e.currentTarget.dataset.sort;render();});
+  onAll('.chip[data-sort],.sort-btn[data-sort]','click',e=>{state.sortBy=e.currentTarget.dataset.sort;render();});
   onAll('.card[data-id]','click',e=>{
     if(state.swipe.justSwiped){state.swipe.justSwiped=false;return;}
     state.selected=e.currentTarget.dataset.id;state.view='detail';render();
@@ -1272,6 +1272,8 @@ async function saveItem(){
     try{
       if(!isPremium){
         await updateDoc(doc(db,'users',state.user.uid), { aiUsesRemaining: increment(-1) });
+        // Atnaujinti lokaliai iš karto — onSnapshot gali vėluoti dėl cache
+        if(state.userDoc) state.userDoc.aiUsesRemaining = Math.max(0, (state.userDoc.aiUsesRemaining ?? AI_FREE_USES) - 1);
       }else{
         const today = new Date().toISOString().slice(0,10);
         const month = today.slice(0,7);
