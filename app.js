@@ -32,7 +32,7 @@ let state = {
   view:'list', addMode:null,
   items:[], itemsUnsub:null,
   selected:null,
-  search:'', filterCat:'Visos', sortBy:'newest', sortDropOpen:false,
+  search:'', filterCat:'Visos', sortBy:'newest', sortDropOpen:false, catDropOpen:false,
   form:emptyForm(),
   lightbox:null, analyzing:false, uploadPct:null,
   authMode:'login', authError:'', authInfo:'', authBusy:false,
@@ -647,16 +647,24 @@ function renderList(){
     ${statsHtml}
     ${verifyBanner}
     ${planBanner}
-    <div class="chips">${chips}</div>
-    <div style="padding:0 16px 10px;display:flex;align-items:center;justify-content:flex-end">
-      <button id="sortDropBtn" style="background:none;border:1px solid var(--border2);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer">
-        <i class="ti ti-arrows-sort" style="font-size:13px"></i>
-        ${ sortBy==='newest' ? 'Naujausi' : sortBy==='expiring' ? 'Baigiasi' : 'A–Z' }
-        <i class="ti ti-chevron-down" style="font-size:11px"></i>
+    <div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
+      <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
+        <i class="ti ti-filter" style="font-size:13px;flex-shrink:0"></i>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${filterCat}</span>
+        <i class="ti ti-chevron-down" style="font-size:11px;flex-shrink:0"></i>
+      </button>
+      <button id="sortDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
+        <i class="ti ti-arrows-sort" style="font-size:13px;flex-shrink:0"></i>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sortBy==='newest'?'Naujausi':sortBy==='expiring'?'Baigiasi':'A–Z'}</span>
+        <i class="ti ti-chevron-down" style="font-size:11px;flex-shrink:0"></i>
       </button>
     </div>
-    ${state.sortDropOpen ? `<div id="sortDropOverlay" style="position:fixed;inset:0;z-index:99" ></div>
-    <div style="position:fixed;right:16px;top:auto;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.12);min-width:160px;overflow:hidden" id="sortDropMenu">
+    ${state.catDropOpen ? `<div id="catDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
+    <div style="position:fixed;left:16px;top:auto;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.12);min-width:160px;overflow:hidden">
+      ${['Visos',...CATEGORIES].map(c=>`<button class="sort-drop-item${filterCat===c?' active':''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
+    </div>` : ''}
+    ${state.sortDropOpen ? `<div id="sortDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
+    <div style="position:fixed;right:16px;top:auto;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.12);min-width:160px;overflow:hidden">
       <button class="sort-drop-item${sortBy==='newest'?' active':''}" data-sort="newest"><i class="ti ti-clock" style="font-size:14px"></i>Naujausi</button>
       <button class="sort-drop-item${sortBy==='expiring'?' active':''}" data-sort="expiring"><i class="ti ti-hourglass" style="font-size:14px"></i>Baigiasi pirmi</button>
       <button class="sort-drop-item${sortBy==='name'?' active':''}" data-sort="name"><i class="ti ti-sort-a-z" style="font-size:14px"></i>A–Z</button>
@@ -1171,10 +1179,12 @@ function attachEvents(){
   on('resendVerifyBtn','click',resendVerification);
   on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
   on('upgradeBtn3','click',()=>toast('Premium netrukus! 🚀'));
-  onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});
-  on('sortDropBtn','click',e=>{ e.stopPropagation(); state.sortDropOpen=!state.sortDropOpen; render(); });
+  onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});  on('catDropBtn','click',e=>{ e.stopPropagation(); state.catDropOpen=!state.catDropOpen; state.sortDropOpen=false; render(); });
+  on('catDropOverlay','click',()=>{ state.catDropOpen=false; render(); });
+  onAll('[data-cat]','click',e=>{ state.filterCat=e.currentTarget.dataset.cat; state.catDropOpen=false; render(); });
+  on('sortDropBtn','click',e=>{ e.stopPropagation(); state.sortDropOpen=!state.sortDropOpen; state.catDropOpen=false; render(); });
   on('sortDropOverlay','click',()=>{ state.sortDropOpen=false; render(); });
-  onAll('.sort-drop-item','click',e=>{ state.sortBy=e.currentTarget.dataset.sort; state.sortDropOpen=false; render(); });
+  onAll('.sort-drop-item[data-sort]','click',e=>{ state.sortBy=e.currentTarget.dataset.sort; state.sortDropOpen=false; render(); });
   onAll('.card[data-id]','click',e=>{
     if(state.swipe.justSwiped){state.swipe.justSwiped=false;return;}
     state.selected=e.currentTarget.dataset.id;state.view='detail';render();
