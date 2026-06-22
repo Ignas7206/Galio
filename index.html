@@ -405,5 +405,13 @@
 
 <script type="module" src="firebase-config.js"></script>
 <script type="module" src="app.js"></script>
+<script>
+  // Nav mygtukų listener'iai — vieną kartą, ne kiekvieno render'o metu
+  document.addEventListener('DOMContentLoaded', ()=>{
+    document.getElementById('navList')?.addEventListener('click',()=>{ window._appNav('list'); });
+    document.getElementById('navSearch')?.addEventListener('click',()=>{ window._appNav('search'); });
+    document.getElementById('navSettings')?.addEventListener('click',()=>{ window._appNav('settings'); });
+  });
+</script>
 </body>
 </html>
