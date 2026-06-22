@@ -627,7 +627,6 @@ function renderList(){
   return`<div>
     <div class="page-header">
       <span class="page-title">Garantijos</span>
-      <button class="icon-btn" id="logoutBtn"><i class="ti ti-logout" style="font-size:18px"></i></button>
     </div>
     <div style="height:14px"></div>
     ${statsHtml}
@@ -1110,7 +1109,6 @@ function attachEvents(){
     state.swipe={id:null,startX:0,currentX:0,dragging:false};
   });
 
-  on('logoutBtn','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('resendVerifyBtn','click',resendVerification);
   on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
   on('upgradeBtn3','click',()=>toast('Premium netrukus! 🚀'));
