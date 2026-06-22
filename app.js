@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
-  setDoc, getDoc, getDocs, serverTimestamp, increment
+  setDoc, getDoc, getDocs, getDocsFromServer, serverTimestamp, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   ref, uploadBytes, getDownloadURL, deleteObject
@@ -21,7 +21,7 @@ const CATEGORIES    = ['Elektronika','Buitinė technika','Avalynė / drabužiai'
 const DOC_TYPES     = ['Kvitas / čekis','Sąskaita-faktūra (SF)','Banko išrašas','Kita'];
 const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
-const MAX_IMG       = 4*1024*1024;
+const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos; compression brings this down before upload
 const MAX_PDF       = 5*1024*1024;
 const AI_FREE_USES  = 5; // lifetime AI document-analysis uses before Premium is required
 const PREMIUM_DAILY_LIMIT   = 30;  // Premium is capped, not unlimited — bounds our Anthropic billing exposure
@@ -39,15 +39,19 @@ let state = {
   docError:'', showWarranty:false,
   online: navigator.onLine,
   onboardSlide: 0,
-  showOnboarding: !localStorage.getItem('garantijos_onboarded'),
+  showOnboarding: !localStorage.getItem('galio_onboarded'),
   swipe: { id:null, startX:0, currentX:0, dragging:false },
   addPulse: false,
   qrScanning: false, qrStream: null,
+  aiRetriesUsedThisItem: 0, // resets each time the add-form is freshly opened; max 2 scan attempts before quota is charged on save
+  pendingAiCharge: false, // true once a scan succeeds — saveItem() consumes one quota unit if this is set
+  aiMultiItems: [], // remaining un-applied items when a receipt had multiple products
   adminStats: null,
   storageMode: 'local', // 'local' | 'cloud' — driven by userDoc.storageMode once loaded
   migratingStorage: false, // true while toggleStorageMode() is mid-flight; suppresses auto-reattach
   policyChecking: false, policyResult: null, policyResultFor: null,
-  theme: localStorage.getItem('garantijos_theme') || 'auto',
+  contactBusy: false, contactSent: false, contactError: '', contactDraft: '',
+  theme: localStorage.getItem('galio_theme') || 'auto',
 };
 
 function applyTheme(){
@@ -60,8 +64,22 @@ function applyTheme(){
 applyTheme();
 
 function emptyForm(){return{name:'',category:'Elektronika',shop:'',purchaseDate:today(),warrantyEnd:addMonths(today(),24),warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true};}
+
+// Resets everything tied to "adding one new item" — the form fields plus
+// the per-item AI retry counter and pending-charge flag. Centralized here
+// so every entry point (tap +, long-press +, picker) stays in sync.
+function startNewItem(mode){
+  state.form=emptyForm();
+  state.docError='';
+  state.addMode=mode;
+  state.view='add';
+  state.aiRetriesUsedThisItem=0;
+  state.pendingAiCharge=false;
+  state.aiMultiItems=[];
+}
 function today(){return new Date().toISOString().slice(0,10);}
 function addMonths(d,m){if(!d)return '';const r=new Date(d);r.setMonth(r.getMonth()+m);return r.toISOString().slice(0,10);}
+function addDays(d,n){if(!d)return '';const r=new Date(d);r.setDate(r.getDate()+n);return r.toISOString().slice(0,10);}
 
 // ── Network status ───────────────────────────────────────────────────────
 window.addEventListener('online',()=>{state.online=true;render();});
@@ -101,6 +119,7 @@ function friendlyAuthError(code){
 // ── Auth ───────────────────────────────────────────────────────────────────
 onAuthStateChanged(auth, async (user)=>{
   state.booted=true;
+  const wasLoggedIn = !!state.user;
   state.user=user;
   if(user){
     await ensureUserDoc(user);
@@ -111,6 +130,14 @@ onAuthStateChanged(auth, async (user)=>{
     state.items=[];
     state.userDoc=null;
     stopEmailVerifyPoll();
+    // Firebase automatically signs the user out after a password change
+    // (it revokes existing sessions as a security measure) — without this
+    // message, the user just sees a blank login screen and can easily
+    // mistake it for "my data is gone", when really nothing was deleted;
+    // they just need to log back in with the new password.
+    if(wasLoggedIn){
+      state.authInfo='Dėl saugumo buvote atjungti (pvz. po slaptažodžio keitimo). Prisijunkite iš naujo — jūsų duomenys saugūs ir niekur nedingo.';
+    }
   }
   render();
 });
@@ -180,15 +207,52 @@ async function ensureUserDoc(user){
 // In 'cloud' mode, items live in Firestore and sync in real time.
 // In 'local' mode, items live only in this browser's IndexedDB — nothing
 // is ever sent to Firestore/Storage for the warranty content itself.
-function attachItemsListener(uid){
+function attachItemsListener(uid, retryCount=0){
   if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
   state.loadingItems = true;
 
   if(state.storageMode === 'cloud'){
-    const q = query(collection(db,'users',uid,'warranties'), orderBy('createdAtMs','desc'));
+    // IMPORTANT: we intentionally do NOT use orderBy('createdAtMs') in the
+    // query itself. Per Firestore's documented behavior, an orderBy()
+    // clause also filters for existence of that field — any document
+    // missing createdAtMs (e.g. one created by an older app version, or
+    // edited manually) would be silently excluded from the results
+    // entirely, even though it's still physically in the collection. This
+    // was one root cause of "I can see the photo in the database console
+    // but the app shows nothing" reports. We fetch the full collection
+    // unsorted and sort client-side instead, with a safe fallback for any
+    // document that happens to be missing the field.
+    const q = query(collection(db,'users',uid,'warranties'));
+
+    // ALSO IMPORTANT: Firestore keeps its own IndexedDB cache that is "not
+    // automatically cleared between sessions" (per Firebase's own docs).
+    // If a document was ever modified outside the normal app flow (e.g.
+    // directly in the Firebase console, or during a login retry sequence
+    // after a failed password attempt), the very first onSnapshot can
+    // serve a stale/empty result straight from that local cache before
+    // it has a chance to reconcile with the server — this was the second
+    // root cause behind "data visible in the console but not in the app"
+    // reports. To guard against that, we do one explicit server-only read
+    // first (bypassing the cache entirely) to warm state.items correctly,
+    // and only then attach the live onSnapshot listener for ongoing sync.
+    getDocsFromServer(q).then(snap=>{
+      if(state.storageMode!=='cloud') return; // mode may have changed while this was in flight
+      state.items = snap.docs
+        .map(d=>({id:d.id,...d.data()}))
+        .sort((a,b)=>(b.createdAtMs||0)-(a.createdAtMs||0));
+      state.loadingItems = false;
+      render();
+    }).catch(err=>{
+      // Non-fatal — the onSnapshot listener below will still populate the
+      // list once it resolves; this is just a best-effort cache bypass.
+      console.warn('Server-first fetch failed (will rely on onSnapshot):', err);
+    });
+
     state.itemsUnsub = onSnapshot(q, snap=>{
       const wasEmpty = state.loadingItems;
-      state.items = snap.docs.map(d=>({id:d.id,...d.data()}));
+      state.items = snap.docs
+        .map(d=>({id:d.id,...d.data()}))
+        .sort((a,b)=>(b.createdAtMs||0)-(a.createdAtMs||0));
       state.loadingItems = false;
       if(wasEmpty && state.items.length===0 && !state.addPulse){
         state.addPulse = true;
@@ -196,8 +260,21 @@ function attachItemsListener(uid){
       }
       render();
     }, err=>{
-      state.loadingItems = false;
       console.warn('Items listener error:', err);
+      // Right after a fresh login (especially one forced by a password
+      // change), the freshly-issued ID token can take a brief moment to
+      // propagate to Firestore's backend, causing a transient
+      // permission-denied even though the rules and data are fine. Retry
+      // once automatically before bothering the user with an error — if
+      // it still fails after that, something is actually wrong and we
+      // show it instead of silently leaving an empty list on screen.
+      if(err.code==='permission-denied' && retryCount<2){
+        setTimeout(()=>attachItemsListener(uid, retryCount+1), 800);
+        return;
+      }
+      state.loadingItems = false;
+      toast('Nepavyko įkelti garantijų sąrašo — patikrinkite interneto ryšį arba pabandykite atsijungti ir prisijungti iš naujo');
+      render();
     });
   }else{
     // Local mode: just load once from IndexedDB. There's no live listener
@@ -288,13 +365,45 @@ async function doLogout(){
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
+// ── PWA back-button handling ────────────────────────────────────────────
+// Without this, pressing the phone's back button/gesture has nothing in
+// browser history to "go back" to (since this is a single-page app that
+// never changes the URL), so Android closes the whole PWA on the very
+// first back-press from the list screen — which feels like a crash.
+// We push a history entry every time the visible "screen" changes, and on
+// popstate we navigate within the app (back to list) instead of letting
+// the browser/OS unload the page.
+let lastHistoryView = null;
+function pushHistoryIfNeeded(currentViewKey){
+  if(currentViewKey === lastHistoryView) return;
+  if(lastHistoryView !== null){
+    // Only push once we've rendered at least one screen — the very first
+    // render shouldn't add an extra history entry before the user has done
+    // anything.
+    history.pushState({ view: currentViewKey }, '', location.href);
+  }
+  lastHistoryView = currentViewKey;
+}
+window.addEventListener('popstate', () => {
+  // Any back navigation while inside the app (lightbox, qr scanner, add
+  // form, detail, settings, search) returns to the main list rather than
+  // exiting — matches the in-app back button's behavior.
+  if(state.lightbox){ state.lightbox=null; render(); return; }
+  if(state.qrScanning){ stopQrScanner(); return; }
+  if(state.view==='add'&&state.addMode){ state.addMode=null; render(); return; }
+  if(state.view!=='list'){ state.view='list'; render(); return; }
+  // Already at the list screen with nothing else open — let the OS handle
+  // it from here (this will actually exit/background the app, same as a
+  // native app's root screen would).
+});
+
 function render(){
   const scr=document.getElementById('screen');
   const nav=document.getElementById('bottomNav');
 
   if(!state.booted){ scr.innerHTML='<div class="center-loader"><div class="spinner"></div></div>'; nav.style.display='none'; return; }
-  if(state.qrScanning){ scr.innerHTML=renderQrScanner(); nav.style.display='none'; document.getElementById('qrCloseBtn')?.addEventListener('click',stopQrScanner); return; }
-  if(state.lightbox){scr.innerHTML=renderLightbox();nav.style.display='none';attachLightboxEvents();return;}
+  if(state.qrScanning){ scr.innerHTML=renderQrScanner(); nav.style.display='none'; document.getElementById('qrCloseBtn')?.addEventListener('click',stopQrScanner); pushHistoryIfNeeded('qr'); return; }
+  if(state.lightbox){scr.innerHTML=renderLightbox();nav.style.display='none';attachLightboxEvents();pushHistoryIfNeeded('lightbox');return;}
   if(!state.user){
     if(state.showOnboarding){ scr.innerHTML=renderOnboarding(); nav.style.display='none'; attachOnboardingEvents(); return; }
     scr.innerHTML=renderAuth();nav.style.display='none';attachAuthEvents();return;
@@ -302,13 +411,17 @@ function render(){
 
   nav.style.display='flex';
   let html='';
+  let viewKey = state.view;
   if(state.view==='list')          html=renderList();
   else if(state.view==='search')   html=renderSearch();
-  else if(state.view==='add'&&!state.addMode) html=renderPicker();
-  else if(state.view==='add')      html=renderAdd();
+  else if(state.view==='add'&&!state.addMode) { html=renderPicker(); viewKey='add-picker'; }
+  else if(state.view==='add')      { html=renderAdd(); viewKey='add-form'; }
   else if(state.view==='detail')   html=renderDetail();
   else if(state.view==='settings') html=renderSettings();
+  else if(state.view==='contact')  html=renderContact();
   else if(state.view==='admin-stats') html=renderAdminStats();
+
+  pushHistoryIfNeeded(viewKey);
 
   const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto · veikia lokaliai'}</div>`;
   scr.innerHTML = (state.online?'':syncPill) + html;
@@ -345,7 +458,7 @@ function renderOnboarding(){
 }
 function attachOnboardingEvents(){
   const track = document.getElementById('onboardSlides');
-  const finish = ()=>{ state.showOnboarding=false; localStorage.setItem('garantijos_onboarded','1'); render(); };
+  const finish = ()=>{ state.showOnboarding=false; localStorage.setItem('galio_onboarded','1'); render(); };
   document.getElementById('onboardNext')?.addEventListener('click',()=>{
     if(state.onboardSlide < ONBOARD_SLIDES.length-1){
       state.onboardSlide++; render();
@@ -591,9 +704,15 @@ function renderAdd(){
     docAreaHtml=`${qrButtonHtml}<label class="doc-drop-zone" for="docInput">
       <i class="ti ti-${isPhoto?'camera':'paperclip'}"></i>
       <p>${isPhoto?'Fotografuoti arba įkelti':'Prisegti dokumentą (neprivaloma)'}</p>
-      <small>JPG, PNG, PDF · max 4MB / 5MB PDF</small>
+      <small>JPG, PNG, PDF · max 10MB / 5MB PDF</small>
     </label>`;
   }
+
+  const multiItemBanner = state.aiMultiItems.length>0 ? `<div class="plan-banner" style="background:var(--accent-bg);margin-bottom:14px">
+    <i class="ti ti-list-details" style="color:var(--accent)"></i>
+    <div class="pb-text" style="color:var(--text)">Šiame čekyje rasta dar <b style="color:var(--accent)">${state.aiMultiItems.length}</b> prekė(-ių). Išsaugokite šią, tada pridėkite kitas be pakartotinio skenavimo.</div>
+    <button id="nextMultiItemBtn">Kita prekė</button>
+  </div>` : '';
 
   const warrantySheet=state.showWarranty?`<div class="warranty-sheet" id="warrantySheet">
     <div class="warranty-overlay" id="warrantyOverlay"></div>
@@ -608,6 +727,7 @@ function renderAdd(){
     <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-arrow-left"></i></button><h2>${isPhoto?'Pridėti su dokumentu':'Įvesti rankiniu būdu'}</h2></div>
     <div class="form-body">
       ${!state.user.emailVerified&&isPhoto?`<div class="plan-banner" style="margin-bottom:14px"><i class="ti ti-mail-exclamation"></i><div class="pb-text">Patvirtinkite el. paštą, kad galėtumėte naudoti AI analizę</div></div>`:''}
+      ${multiItemBanner}
       <div class="doc-upload-area">
         ${docAreaHtml}
         <input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto?'capture="environment"':''} style="display:none" />
@@ -618,7 +738,7 @@ function renderAdd(){
 
       <p class="form-label-section">Pagrindinė informacija</p>
       <div class="form-section">
-        <div class="form-row"><label>Pavadinimas</label><input type="text" id="f_name" placeholder="Būtina" value="${esc(f.name)}" /></div>
+        <div class="form-row"><label>Prekės pavadinimas</label><input type="text" id="f_name" placeholder="Būtina" value="${esc(f.name)}" /></div>
         <div class="form-row"><label>Parduotuvė</label><input type="text" id="f_shop" placeholder="Neprivaloma" value="${esc(f.shop)}" /></div>
         <div class="form-row"><label>Kategorija</label><select id="f_category">${CATEGORIES.map(c=>`<option${c===f.category?' selected':''}>${esc(c)}</option>`).join('')}</select><i class="ti ti-chevron-right form-row-chevron"></i></div>
       </div>
@@ -628,6 +748,7 @@ function renderAdd(){
         <div class="form-row"><label>Pirkimo data</label><input type="date" id="f_purchaseDate" value="${esc(f.purchaseDate)}" /></div>
         <div class="form-row" id="warrantyBtn" style="cursor:pointer"><label>Garantija</label><span style="font-size:15px;color:var(--text2)">${esc(selOpt.l)}</span><i class="ti ti-chevron-right form-row-chevron"></i></div>
         ${f.warrantyMonths===null?`<div class="form-row"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
+        ${f.purchaseDate?`<div class="form-row"><label>14 d. grąžinimas iki</label><span style="font-size:15px;color:var(--text2)">${fmtDate(addDays(f.purchaseDate,14))}</span></div>`:''}
       </div>
 
       <p class="form-label-section">Dokumentas</p>
@@ -667,13 +788,14 @@ function renderDetail(){
   }
 
   const rows=[
-    {i:'ti-tag',l:'Pavadinimas',v:item.name},
+    {i:'ti-tag',l:'Prekės pavadinimas',v:item.name},
     {i:'ti-building-store',l:'Parduotuvė',v:item.shop||'—'},
     {i:'ti-category',l:'Kategorija',v:item.category},
     {i:'ti-file-description',l:'Dok. tipas',v:item.docType||'—'},
     {i:'ti-hash',l:'Dok. numeris',v:item.docNumber||'—'},
     {i:'ti-calendar',l:'Pirkimo data',v:fmtDate(item.purchaseDate)},
     {i:'ti-calendar-due',l:'Garantija iki',v:fmtDate(item.warrantyEnd)},
+    ...(item.returnDeadline ? [{i:'ti-rotate-2',l:'14 d. grąžinimas iki',v:fmtDate(item.returnDeadline)}] : []),
   ].map(r=>`<div class="detail-row"><i class="ti ${r.i}"></i><span class="dr-label">${esc(r.l)}</span><span class="dr-val">${esc(r.v)}</span></div>`).join('');
 
   const policySection = `<div class="detail-section">
@@ -805,9 +927,9 @@ function renderSettings(){
 
     <p class="form-label-section" style="margin:0 16px 8px">Pagalba</p>
     <div class="form-section" style="margin:0 16px 20px">
-      <a class="settings-row tappable" id="helpMailLink" href="#" style="text-decoration:none;color:inherit;display:flex">
-        <i class="ti ti-help-circle row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Susisiekti su pagalba<small>ltdigitaltools@gmail.com</small></span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
-      </a>
+      <button class="settings-row tappable" id="helpContactBtn" style="width:100%;background:none;border:none;text-align:left">
+        <i class="ti ti-help-circle row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Susisiekti su pagalba<small>Rašykite mums tiesiogiai</small></span>
+      </button>
     </div>
 
     <p class="form-label-section" style="margin:0 16px 8px">Teisinė informacija</p>
@@ -827,6 +949,43 @@ function renderSettings(){
     </div>
 
     <p style="text-align:center;font-size:11px;color:var(--text3);padding:0 16px 24px">Galio v1.0 · Duomenys saugomi debesyje</p>
+  </div>`;
+}
+
+// ── Contact form ────────────────────────────────────────────────────────────
+function renderContact(){
+  const busy = state.contactBusy;
+  const sent = state.contactSent;
+  return `<div>
+    <div class="detail-header" style="display:flex;align-items:center;gap:10px;padding:16px 16px 0">
+      <button id="contactBackBtn" style="background:none;border:none;padding:4px;cursor:pointer;color:var(--text1)"><i class="ti ti-arrow-left" style="font-size:20px"></i></button>
+      <span style="font-size:17px;font-weight:600">Susisiekti su pagalba</span>
+    </div>
+    ${sent ? `
+    <div style="padding:48px 24px;text-align:center">
+      <i class="ti ti-circle-check" style="font-size:48px;color:var(--green)"></i>
+      <p style="font-size:16px;font-weight:600;margin:16px 0 8px">Žinutė išsiųsta!</p>
+      <p style="font-size:14px;color:var(--text2);margin:0 0 24px">Atsakysime į <strong>${state.user?.email||''}</strong> kuo greičiau.</p>
+      <button class="btn-primary" id="contactBackBtn2" style="width:auto;padding:10px 28px">Grįžti</button>
+    </div>
+    ` : `
+    <div style="padding:16px">
+      <p style="font-size:14px;color:var(--text2);margin:0 0 20px">Turite klausimą ar problemą? Parašykite mums — atsakysime el. paštu.</p>
+      <p class="form-label-section" style="margin:0 0 6px">El. paštas</p>
+      <div class="form-section" style="margin:0 0 12px;padding:12px 14px">
+        <input id="contactEmail" type="email" placeholder="jusu@pastas.lt" style="width:100%;background:none;border:none;outline:none;font-size:15px;color:var(--text1);box-sizing:border-box"
+          value="${(state.user?.email||'').replace(/"/g,'&quot;')}">
+      </div>
+      <p class="form-label-section" style="margin:0 0 6px">Žinutė</p>
+      <div class="form-section" style="margin:0 0 20px;padding:12px 14px">
+        <textarea id="contactMsg" rows="5" placeholder="Aprašykite problemą arba klausimą..." style="width:100%;background:none;border:none;outline:none;font-size:15px;color:var(--text1);resize:none;box-sizing:border-box">${state.contactDraft||''}</textarea>
+      </div>
+      ${state.contactError ? `<p style="color:var(--red);font-size:13px;margin:0 0 12px">${state.contactError}</p>` : ''}
+      <button id="contactSendBtn" class="btn-primary" style="width:100%" ${busy?'disabled':''}>
+        ${busy ? '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin:0 auto"></span>' : '<i class="ti ti-send"></i> Siųsti'}
+      </button>
+    </div>
+    `}
   </div>`;
 }
 
@@ -901,16 +1060,16 @@ function attachEvents(){
       pressTimer=setTimeout(()=>{
         longPressed=true;
         if(navigator.vibrate)navigator.vibrate(12);
-        state.form=emptyForm();state.docError='';state.addMode='photo';state.view='add';render();
+        startNewItem('photo');render();
         setTimeout(()=>document.getElementById('docInput')?.click(),60);
       },480);
     };
     const cancelPress=()=>{ clearTimeout(pressTimer); };
     navAdd.addEventListener('touchstart',startPress,{passive:true});
-    navAdd.addEventListener('touchend',e=>{ cancelPress(); if(!longPressed){ state.form=emptyForm();state.docError='';state.addMode=null;state.view='add';render(); } });
+    navAdd.addEventListener('touchend',e=>{ cancelPress(); if(!longPressed){ startNewItem(null);render(); } });
     navAdd.addEventListener('touchcancel',cancelPress);
     navAdd.addEventListener('mousedown',startPress);
-    navAdd.addEventListener('mouseup',e=>{ cancelPress(); if(!longPressed){ state.form=emptyForm();state.docError='';state.addMode=null;state.view='add';render(); } });
+    navAdd.addEventListener('mouseup',e=>{ cancelPress(); if(!longPressed){ startNewItem(null);render(); } });
   }
 
   // Swipe-to-delete on list cards
@@ -955,7 +1114,13 @@ function attachEvents(){
 
   on('searchInput','input',e=>{state.search=e.target.value;render();});
 
-  on('modePhoto','click',()=>{state.addMode='photo';render();});
+  on('modePhoto','click',()=>{
+    if(document.getElementById('modePhoto')?.disabled)return;
+    state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];render();
+    // Jump straight into the camera/file picker instead of making the user
+    // tap the upload zone again on the next screen — one less step.
+    setTimeout(()=>document.getElementById('docInput')?.click(), 50);
+  });
   on('modeManual','click',()=>{state.addMode='manual';render();});
 
   on('backBtn','click',()=>{
@@ -985,6 +1150,17 @@ function attachEvents(){
   on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it?.docUrl)state.lightbox=it.docUrl;render();});
 
   on('saveBtn','click',saveItem);
+  on('nextMultiItemBtn','click',()=>{
+    if(state.aiMultiItems.length===0)return;
+    const next = state.aiMultiItems.shift();
+    state.form = emptyForm();
+    state.aiRetriesUsedThisItem = 0;
+    // No new AI call/charge here — this item's data already came from the
+    // original scan, we're just stepping to the next product from it.
+    state.pendingAiCharge = false;
+    applyAiItemToForm(next, {shop: next._shop, purchaseDate: next._purchaseDate, docType: next._docType, docNumber: next._docNumber});
+    render();
+  });
   on('deleteBtn','click',()=>deleteItem(state.selected));
   on('deleteBtn2','click',()=>deleteItem(state.selected));
   on('checkPolicyBtn','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it)checkPolicy(it);});
@@ -993,7 +1169,7 @@ function attachEvents(){
   on('upgradeBtnSettings','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.theme-opt','click',e=>{
     const t=e.currentTarget.dataset.theme;
-    state.theme=t; localStorage.setItem('garantijos_theme',t); applyTheme(); render();
+    state.theme=t; localStorage.setItem('galio_theme',t); applyTheme(); render();
   });
   on('notifyToggle','click',toggleNotify);
   on('storageModeToggle','click',toggleStorageMode);
@@ -1006,18 +1182,58 @@ function attachEvents(){
   on('settingsLogoutBtn','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('deleteAccountBtn','click',confirmDeleteAccount);
   on('adminPanelBtn','click',()=>{state.view='admin-stats';loadAdminStats();});
-  on('helpMailLink','click',e=>{
-    e.preventDefault();
-    const u = state.user;
-    const plan = state.userDoc?.plan || 'free';
-    const mode = state.storageMode || 'local';
-    const body = encodeURIComponent(
-      `\n\n---\nDiagnostinė informacija (nereikia trinti, padeda greičiau išspręsti):\nEl. paštas: ${u?.email||'—'}\nVartotojo ID: ${u?.uid||'—'}\nPlanas: ${plan}\nSaugojimo būdas: ${mode}\nEl. paštas patvirtintas: ${u?.emailVerified?'taip':'ne'}\nVersija: Galio v1.0`
-    );
-    const subject = encodeURIComponent('Galio – pagalbos užklausa');
-    window.location.href = `mailto:ltdigitaltools@gmail.com?subject=${subject}&body=${body}`;
+  on('helpContactBtn','click',()=>{
+    state.contactSent=false; state.contactError=''; state.contactDraft='';
+    state.view='contact'; render();
   });
+  on('contactBackBtn','click',()=>{ state.view='settings'; render(); });
+  on('contactBackBtn2','click',()=>{ state.view='settings'; render(); });
+  on('contactSendBtn','click', sendContactMessage);
   on('adminBackBtn','click',()=>{state.view='settings';render();});
+}
+
+async function sendContactMessage(){
+  const emailEl = document.getElementById('contactEmail');
+  const msgEl   = document.getElementById('contactMsg');
+  const email   = (emailEl?.value||'').trim();
+  const message = (msgEl?.value||'').trim();
+
+  if(!email || !message){
+    state.contactError = 'Prašome užpildyti el. paštą ir žinutę.';
+    render(); return;
+  }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    state.contactError = 'Neteisingas el. pašto formatas.';
+    render(); return;
+  }
+
+  // Preserve draft in case of error
+  state.contactDraft  = message;
+  state.contactBusy   = true;
+  state.contactError  = '';
+  render();
+
+  const u    = state.user;
+  const plan = state.userDoc?.plan || 'free';
+  const mode = state.storageMode  || 'local';
+  const diag = `El. paštas: ${u?.email||'—'} | UID: ${u?.uid||'—'} | Planas: ${plan} | Saugojimas: ${mode} | Patvirtintas: ${u?.emailVerified?'taip':'ne'} | v1.0`;
+
+  try {
+    const res = await fetch(WORKER_URL + '/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, message, diag }),
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Klaida');
+    state.contactSent  = true;
+    state.contactDraft = '';
+  } catch(e){
+    state.contactError = e.message || 'Nepavyko išsiųsti. Bandykite vėliau.';
+  } finally {
+    state.contactBusy = false;
+    render();
+  }
 }
 
 function syncSave(){const b=document.getElementById('saveBtn');if(b)b.disabled=!state.form.name.trim();}
@@ -1048,11 +1264,35 @@ async function saveItem(){
   const f=state.form;
   const isCloud = state.storageMode==='cloud';
 
+  // Charge AI quota now, only if this save includes AI-assisted data the
+  // user is actually keeping. Scans that were retried/discarded never
+  // reach this point, so they never cost quota — only a kept result does.
+  if(state.pendingAiCharge){
+    const isPremium = state.userDoc?.plan==='premium';
+    try{
+      if(!isPremium){
+        await updateDoc(doc(db,'users',state.user.uid), { aiUsesRemaining: increment(-1) });
+      }else{
+        const today = new Date().toISOString().slice(0,10);
+        const month = today.slice(0,7);
+        const dayKey = state.userDoc?.aiDayKey;
+        const monthKey = state.userDoc?.aiMonthKey;
+        await updateDoc(doc(db,'users',state.user.uid), {
+          aiDayKey: today,
+          aiDayCount: dayKey===today ? increment(1) : 1,
+          aiMonthKey: month,
+          aiMonthCount: monthKey===month ? increment(1) : 1,
+        });
+      }
+    }catch(e){ console.warn('Failed to charge AI quota on save:', e); }
+  }
+
   const payload={
     name:f.name.trim().slice(0,200), category:f.category, shop:(f.shop||'').slice(0,100),
     purchaseDate:f.purchaseDate, warrantyEnd:f.warrantyEnd, warrantyMonths:f.warrantyMonths,
     docType:f.docType, docNumber:(f.docNumber||'').slice(0,100), notes:(f.notes||'').slice(0,1000),
     notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+    returnDeadline: f.purchaseDate ? addDays(f.purchaseDate,14) : null,
     createdAtMs: Date.now(),
   };
 
@@ -1100,7 +1340,21 @@ async function saveItem(){
   }
 
   state.uploadPct=null;
-  state.form=emptyForm();state.docError='';state.addMode=null;state.view='list';render();
+  if(state.aiMultiItems.length>0){
+    // More products were recognized on this same receipt — jump straight
+    // to the next one instead of dropping back to the list, so the user
+    // can save them all in one flow without re-scanning.
+    const next = state.aiMultiItems.shift();
+    state.form = emptyForm();
+    state.aiRetriesUsedThisItem = 0;
+    state.pendingAiCharge = false;
+    applyAiItemToForm(next, {shop: next._shop, purchaseDate: next._purchaseDate, docType: next._docType, docNumber: next._docNumber});
+    state.docError='';
+    toast(`Pridėkite kitą rastą prekę (${state.aiMultiItems.length} liko po šios)`);
+  }else{
+    state.form=emptyForm();state.docError='';state.addMode=null;state.view='list';
+  }
+  render();
 }
 
 function base64ToBlob(b64,mime){
@@ -1119,6 +1373,7 @@ function renderQrScanner(){
   return `<div class="qr-scanner" id="qrScannerOverlay">
     <div class="qr-scanner-bar">
       <button class="back-btn" id="qrCloseBtn"><i class="ti ti-x"></i></button>
+      <div class="qr-scanning-badge"><span class="qr-pulse-dot"></span>Skenuojama</div>
     </div>
     <video id="qrVideo" autoplay playsinline muted></video>
     <div class="qr-scanner-overlay" id="qrOverlayBox"><div class="qr-scan-line" id="qrScanLine"></div></div>
@@ -1254,14 +1509,65 @@ function compressImage(dataUrl, maxDim=1600, quality=0.82){
   });
 }
 
+// Detects HEIC/HEIF files by their actual file signature (magic bytes),
+// not just the reported MIME type — many browsers report HEIC files with
+// an empty or generic MIME type, especially on Android. This matters
+// because almost no browser except Safari 17+ can decode HEIC through the
+// Image/Canvas APIs we use for compression: Chrome, Firefox, Edge, Opera,
+// and Samsung Internet all fail silently (img.onerror fires) for HEIC,
+// which previously surfaced as a generic "couldn't process this photo"
+// message that gave the user no idea what was actually wrong or how to
+// fix it. iPhones default to shooting HEIC, so this is a very common case.
+async function looksLikeHeic(file){
+  if(file.type==='image/heic'||file.type==='image/heif') return true;
+  try{
+    const buf = await file.slice(0,12).arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    // ISOBMFF 'ftyp' box: bytes 4-7 spell "ftyp", brand follows at 8-11
+    if(bytes[4]===0x66&&bytes[5]===0x74&&bytes[6]===0x79&&bytes[7]===0x70){
+      const brand = String.fromCharCode(bytes[8],bytes[9],bytes[10],bytes[11]);
+      return ['heic','heix','hevc','hevx','mif1','msf1'].includes(brand);
+    }
+  }catch(e){ /* fall through */ }
+  return false;
+}
+
 function handleDoc(e){
   const file=e.target.files[0];if(!file)return;
   const isPdf=file.type==='application/pdf';
   const isImg=ALLOWED_IMG.includes(file.type);
   if(!isPdf&&!isImg){state.docError='Leidžiami formatai: JPG, PNG, WebP, HEIC, PDF';render();return;}
   if(isPdf&&file.size>MAX_PDF){state.docError=`PDF per didelis (max 5MB, jūsų: ${fmtSize(file.size)})`;render();return;}
-  if(isImg&&file.size>MAX_IMG){state.docError=`Per didelė (max 4MB, jūsų: ${fmtSize(file.size)})`;render();return;}
+  // NOTE: for images we deliberately do NOT reject based on the original
+  // file size here. Modern phone cameras routinely produce 10-20MB photos
+  // (especially HEIC/4K), but compressImage() below brings any of them
+  // down to ~150-400KB before we ever touch Storage or the AI call. The
+  // previous version rejected large originals BEFORE compression, which
+  // meant many real phone photos were silently refused even though the
+  // compressed result would have been tiny — this was one root cause of
+  // "photos won't upload" reports. We still cap originals at a generous
+  // 20MB just to avoid the browser choking on something absurd, but the
+  // real, user-facing limit is enforced post-compression instead.
+  const MAX_ORIGINAL_IMG = 20*1024*1024;
+  if(isImg&&file.size>MAX_ORIGINAL_IMG){state.docError=`Failas per didelis (max 20MB, jūsų: ${fmtSize(file.size)})`;render();return;}
   state.docError='';
+
+  (async()=>{
+    if(isImg && await looksLikeHeic(file)){
+      // Most browsers (everything except Safari 17+) cannot decode HEIC
+      // through the canvas pipeline we use for compression — this is a
+      // hard browser limitation, not a bug we can silently work around.
+      // Tell the user exactly what's happening and how to fix it, rather
+      // than a generic "failed to process" message.
+      state.docError='HEIC formato nuotraukos šioje naršyklėje nepalaikomos. Telefono Nustatymuose → Kamera → Formatai pasirinkite "Suderinamas" (JPEG), arba naudokite Safari naršyklę (jei iPhone su naujausia iOS).';
+      render();
+      return;
+    }
+    proceedWithFile(file, isPdf);
+  })();
+}
+
+function proceedWithFile(file, isPdf){
   const reader=new FileReader();
   reader.onload=async ev=>{
     const dataUrl=ev.target.result;
@@ -1274,13 +1580,27 @@ function handleDoc(e){
         await new Promise((res,rej)=>{ const t=new Image(); t.onload=res; t.onerror=rej; t.src=dataUrl; });
         const compressed = await compressImage(dataUrl);
         const compB64 = compressed.split(',')[1];
+        // Sanity-check the compressed result actually came out reasonably
+        // sized — if compression somehow failed to shrink a huge image,
+        // surface that clearly instead of silently uploading something
+        // oversized.
+        const compressedBytes = Math.ceil(compB64.length * 0.75);
+        if(compressedBytes > MAX_IMG){
+          state.docError=`Nuotrauka per didelė net po suspaudimo (${fmtSize(compressedBytes)}). Pabandykite kitą nuotrauką.`;
+          render();
+          return;
+        }
         state.form.docData=compressed; state.form.docMime='image/jpeg'; state.form.docFileName=file.name.replace(/\.[^.]+$/,'.jpg');
         if(state.addMode==='photo'){state.analyzing=true;render();await analyzeDoc(compB64,'image/jpeg');state.analyzing=false;}
         render();
       }catch(err){
-        state.docError='Failas neatpažintas kaip nuotrauka';render();
+        console.warn('Image processing failed:', err);
+        state.docError='Nepavyko apdoroti nuotraukos — pabandykite dar kartą arba kitą failą (jei tai HEIC formatas, pakeiskite kameros nustatymus į JPEG)';render();
       }
     }
+  };
+  reader.onerror=()=>{
+    state.docError='Nepavyko nuskaityti failo';render();
   };
   reader.readAsDataURL(file);
 }
@@ -1493,15 +1813,16 @@ async function analyzeDoc(b64,mime){
   const isPremium = state.userDoc?.plan==='premium';
   const usesLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
 
+  const MAX_RETRIES_PER_ITEM = 2;
+  if(state.aiRetriesUsedThisItem >= MAX_RETRIES_PER_ITEM){
+    toast(`Pasiektas bandymų limitas (${MAX_RETRIES_PER_ITEM}) šiam įrašui. Įveskite duomenis rankiniu būdu arba pradėkite naują įrašą.`);
+    return;
+  }
   if(!isPremium && usesLeft<=0){
     toast(`Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.`);
     return;
   }
 
-  // Premium: check (and lazily reset) the day/month counters client-side
-  // before calling out, so we don't waste a Worker round-trip when we
-  // already know the cap is hit. The Worker/Firestore rules still enforce
-  // this server-side too — this is just the fast local pre-check.
   if(isPremium){
     const today = new Date().toISOString().slice(0,10);
     const month = today.slice(0,7);
@@ -1519,14 +1840,37 @@ async function analyzeDoc(b64,mime){
     }
   }
 
+  state.aiRetriesUsedThisItem++;
+
   try{
     const idToken = await state.user.getIdToken();
     const res=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
-      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:[
+      body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,messages:[{role:'user',content:[
         {type:'image',source:{type:'base64',media_type:mime,data:b64}},
-        {type:'text',text:`Pirkimo dokumentas. Grąžink TIK JSON be markdown:
-{"name":"produktas","shop":"parduotuvė arba null","purchaseDate":"YYYY-MM-DD arba null","docNumber":"dok.nr arba null","docType":"Kvitas / čekis|Sąskaita-faktūra (SF)|Banko išrašas|Kita","price":"kaina arba null","warrantyMonths":24}
-warrantyMonths: 6/12/24/36/60 pagal produktą. Nežinant – 24.`}
+        {type:'text',text:`Tai pirkimo dokumentas (čekis, sąskaita-faktūra ar banko išrašas). Atidžiai išanalizuok TIK tai, kas faktiškai matoma dokumente.
+
+GRIEŽTOS TAISYKL�ĖS (svarbiausia):
+1. NIEKADA negalvok/nespėliok informacijos, kurios nematai dokumente. Jei laukas neaiškus ar nematomas – grąžink null, NE spėjimą.
+2. Pavadinimą imk TIK iš dokumento teksto (prekės eilutės), niekada negalvok pavadinimo iš konteksto ar nuojautos.
+3. Jei dokumente NĖRA pardavėjo pavadinimo/rekvizitų (pvz. nufotografuota tik dalis čekio) – shop lauke grąžink null, neišgalvok parduotuvės pavadinimo.
+4. Jei dokumentas neryškus, apkarpytas, ar dalis teksto neįskaitoma – privalai tai nurodyti quality lauke, nepaisant to stenkis ištraukti ką gali.
+5. Jei čekyje/sąskaitoje YRA KELIOS atskiros prekės (ne paslaugos) – grąžink KIEKVIENĄ atskirai items masyve. Paslaugos (pristatymas, montavimas, garantijos pratęsimas ir pan.) NĖRA prekės – jų neįtrauk į items, bet gali paminėti notes lauke.
+6. Kiekvienai prekei nurodyk, ar jai paprastai taikoma vartotojo garantija pagal ES/LT teisę (warrantyApplies). Drabužiai, avalynė, baldai, elektronika, technika – paprastai TAIP. Greitai gendantys maisto produktai, vienkartinio naudojimo higienos priemonės, paslaugos – paprastai NE.
+
+Grąžink TIK JSON be markdown, šios struktūros:
+{
+  "shop": "parduotuvės/pardavėjo pavadinimas arba null jei nematomas dokumente",
+  "purchaseDate": "YYYY-MM-DD arba null",
+  "docNumber": "dokumento/kvito numeris arba null",
+  "docType": "Kvitas / čekis|Sąskaita-faktūra (SF)|Banko išrašas|Kita",
+  "quality": "good|blurry|partial|unclear",
+  "qualityNote": "trumpas paaiškinimas jei quality nėra 'good', pvz. 'Trūksta apatinės čekio dalies' arba null",
+  "items": [
+    {"name":"tikslus prekės pavadinimas iš dokumento","price":"kaina arba null","warrantyMonths":24,"warrantyApplies":true}
+  ]
+}
+warrantyMonths kiekvienai prekei: 6/12/24/36/60 mėn. pagal produkto tipą, jei warrantyApplies=true. Jei warrantyApplies=false, warrantyMonths=null.
+Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tuščią masyvą [].`}
       ]}]})
     });
     if(res.status===401){toast('Sesija pasibaigė, prisijunkite iš naujo');return;}
@@ -1534,38 +1878,59 @@ warrantyMonths: 6/12/24/36/60 pagal produktą. Nežinant – 24.`}
     if(res.status===429){toast('Pasiektas AI analizių limitas');return;}
     if(!res.ok)return;
 
-    // Successful call — consume quota. Free: lifetime counter -1.
-    // Premium: bump day/month counters (resetting them first if the
-    // day/month rolled over since the last recorded use).
-    if(!isPremium){
-      try{ await updateDoc(doc(db,'users',state.user.uid), { aiUsesRemaining: increment(-1) }); }
-      catch(e){ console.warn('Failed to decrement AI usage counter:', e); }
-    }else{
-      const today = new Date().toISOString().slice(0,10);
-      const month = today.slice(0,7);
-      const dayKey = state.userDoc?.aiDayKey;
-      const monthKey = state.userDoc?.aiMonthKey;
-      const update = {
-        aiDayKey: today,
-        aiDayCount: dayKey===today ? increment(1) : 1,
-        aiMonthKey: month,
-        aiMonthCount: monthKey===month ? increment(1) : 1,
-      };
-      try{ await updateDoc(doc(db,'users',state.user.uid), update); }
-      catch(e){ console.warn('Failed to bump Premium AI usage counters:', e); }
-    }
+    state.pendingAiCharge = true;
 
     const data=await res.json();
     const p=JSON.parse((data.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
-    if(typeof p.name==='string')state.form.name=p.name.slice(0,200);
-    if(typeof p.shop==='string')state.form.shop=p.shop.slice(0,100);
-    if(typeof p.purchaseDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(p.purchaseDate))state.form.purchaseDate=p.purchaseDate;
-    if(typeof p.docNumber==='string')state.form.docNumber=p.docNumber.slice(0,100);
-    if(DOC_TYPES.includes(p.docType))state.form.docType=p.docType;
-    const wm=WARRANTY_OPTS.find(o=>o.m===p.warrantyMonths);
-    if(wm){state.form.warrantyMonths=p.warrantyMonths;if(state.form.purchaseDate)state.form.warrantyEnd=addMonths(state.form.purchaseDate,p.warrantyMonths);}
-    if(p.price)state.form.notes=`Kaina: ${String(p.price).slice(0,50)}`;
+
+    // Quality warning — surfaced to the user, not silently swallowed.
+    if(p.quality && p.quality!=='good'){
+      const qualityLabels = {blurry:'Nuotrauka neryški',partial:'Matoma tik dalis dokumento',unclear:'Sunku įskaityti tekstą'};
+      toast(`⚠️ ${qualityLabels[p.quality]||'Dokumento kokybė nepakankama'}${p.qualityNote?': '+p.qualityNote:''} — patikrinkite duomenis`);
+    }
+
+    const items = Array.isArray(p.items) ? p.items.filter(it=>it && typeof it.name==='string' && it.name.trim()) : [];
+
+    if(items.length===0){
+      // Nothing usable was recognized — don't silently fabricate a name.
+      toast('AI nerado atpažįstamos prekės šiame dokumente. Įveskite duomenis rankiniu būdu.');
+      if(typeof p.shop==='string')state.form.shop=p.shop.slice(0,100);
+      if(typeof p.purchaseDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(p.purchaseDate))state.form.purchaseDate=p.purchaseDate;
+      if(DOC_TYPES.includes(p.docType))state.form.docType=p.docType;
+      return;
+    }
+
+    if(items.length===1){
+      applyAiItemToForm(items[0], p);
+    }else{
+      // Multiple products on one receipt — stash the rest so the user can
+      // step through and create separate entries without re-scanning.
+      state.aiMultiItems = items.slice(1).map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _docType:p.docType, _docNumber:p.docNumber}));
+      applyAiItemToForm(items[0], p);
+      toast(`Rasta ${items.length} prekių šiame dokumente — pirma įkelta, likusias galėsite pridėti atskirai`);
+    }
   }catch(err){console.warn('AI:',err);}
+}
+
+// Applies one recognized line-item (plus shared receipt-level fields) to
+// the current form. Used both for single-item scans and for stepping
+// through a multi-item receipt one product at a time.
+function applyAiItemToForm(item, receiptMeta){
+  if(typeof item.name==='string')state.form.name=item.name.slice(0,200);
+  if(typeof receiptMeta.shop==='string')state.form.shop=receiptMeta.shop.slice(0,100);
+  if(typeof receiptMeta.purchaseDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(receiptMeta.purchaseDate))state.form.purchaseDate=receiptMeta.purchaseDate;
+  if(typeof receiptMeta.docNumber==='string')state.form.docNumber=receiptMeta.docNumber.slice(0,100);
+  if(DOC_TYPES.includes(receiptMeta.docType))state.form.docType=receiptMeta.docType;
+
+  if(item.warrantyApplies===false){
+    state.form.warrantyMonths=null;
+    state.form.warrantyEnd='';
+    state.form.notes=[state.form.notes,'AI: šiai prekei paprastai garantija netaikoma (pvz. greitai gendanti/vienkartinė prekė) — patikrinkite patys.'].filter(Boolean).join('\n');
+  }else{
+    const wm=WARRANTY_OPTS.find(o=>o.m===item.warrantyMonths);
+    if(wm){state.form.warrantyMonths=item.warrantyMonths;if(state.form.purchaseDate)state.form.warrantyEnd=addMonths(state.form.purchaseDate,item.warrantyMonths);}
+  }
+  if(item.price)state.form.notes=[state.form.notes,`Kaina: ${String(item.price).slice(0,50)}`].filter(Boolean).join('\n');
 }
 
 render();

@@ -341,6 +341,9 @@
     .qr-scanner-status span { font-size: 13px; color: #fff; font-weight: 500; }
     .qr-scan-line { position: absolute; left: 8%; right: 8%; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); top: 0; animation: qrScanLine 2s ease-in-out infinite; }
     @keyframes qrScanLine { 0%,100% { top: 8%; } 50% { top: 92%; } }
+    .qr-scanning-badge { display: flex; align-items: center; gap: 7px; background: rgba(0,0,0,0.55); color: #fff; font-size: 13px; font-weight: 500; padding: 7px 14px; border-radius: 20px; }
+    .qr-pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: qrPulseDot 1.2s ease-in-out infinite; }
+    @keyframes qrPulseDot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
 
     /* ── Settings screen ── */
     .settings-profile { margin: 16px; background: var(--bg2); border-radius: var(--radius-lg); padding: 18px; display: flex; align-items: center; gap: 14px; }
