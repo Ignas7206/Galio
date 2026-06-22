@@ -65,7 +65,7 @@ function applyTheme(){
 }
 applyTheme();
 
-function emptyForm(){return{name:'',category:'Elektronika',shop:'',purchaseDate:today(),warrantyEnd:addMonths(today(),24),warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true};}
+function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true};}
 
 // Admin, tester ir friend vartotojai automatiškai gauna premium teises
 function isPremiumUser(){ return ['premium','tester','friend'].includes(state.userDoc?.plan) || state.userDoc?.role==='admin'; }
@@ -121,9 +121,57 @@ function friendlyAuthError(code){
   return map[code]||'Įvyko klaida. Bandykite dar kartą';
 }
 
-// ── Auth ───────────────────────────────────────────────────────────────────
+// ── Watchdog: savigelbėjimo mechanizmai ────────────────────────────────────
+
+// 1. Boot watchdog — jei per 10s nepasikrovė, rodo "Bandyti iš naujo"
+const _bootWatchdog = setTimeout(()=>{
+  if(!state.booted){
+    const scr = document.getElementById('screen');
+    if(scr) scr.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;padding:32px;text-align:center">
+        <i class="ti ti-wifi-off" style="font-size:48px;color:var(--text3)"></i>
+        <p style="font-size:16px;font-weight:600;color:var(--text1)">Nepavyko prisijungti</p>
+        <p style="font-size:14px;color:var(--text2)">Patikrinkite interneto ryšį ir bandykite iš naujo</p>
+        <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 28px;font-size:15px;font-weight:600;cursor:pointer">Bandyti iš naujo</button>
+      </div>`;
+  }
+}, 10000);
+
+// 2. Analyzing watchdog — jei AI analizė užtrunka >35s, automatiškai atšaukia
+let _analyzeWatchdog = null;
+function startAnalyzeWatchdog(){
+  clearAnalyzeWatchdog();
+  _analyzeWatchdog = setTimeout(()=>{
+    if(state.analyzing){
+      state.analyzing = false;
+      state.uploadPct = null;
+      render();
+      // toast importuojamas vėliau, naudojam tiesioginį DOM
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.textContent = 'AI analizė užtruko per ilgai — bandykite dar kartą';
+      document.body.appendChild(t);
+      setTimeout(()=>t.remove(), 4000);
+    }
+  }, 35000);
+}
+function clearAnalyzeWatchdog(){ if(_analyzeWatchdog){ clearTimeout(_analyzeWatchdog); _analyzeWatchdog=null; } }
+
+// 3. View stuck watchdog — jei per 15s nepavyko įkrauti admin stats, grįžta atgal
+let _viewWatchdog = null;
+function startViewWatchdog(view){
+  clearViewWatchdog();
+  _viewWatchdog = setTimeout(()=>{
+    if(state.view===view && !state.adminStats && view==='admin-stats'){
+      state.view='settings';
+      render();
+    }
+  }, 15000);
+}
+function clearViewWatchdog(){ if(_viewWatchdog){ clearTimeout(_viewWatchdog); _viewWatchdog=null; } }
 onAuthStateChanged(auth, async (user)=>{
   state.booted=true;
+  clearTimeout(_bootWatchdog);
   const wasLoggedIn = !!state.user;
   state.user=user;
   if(user){
@@ -145,6 +193,7 @@ onAuthStateChanged(auth, async (user)=>{
     }
   }
   render();
+  if(user) setTimeout(initNavAdd, 100);
 });
 
 let verifyPollTimer=null;
@@ -412,7 +461,33 @@ window.addEventListener('popstate', () => {
   // native app's root screen would).
 });
 
-function render(){
+// Nav handler — vienkartinis, iš index.html
+window._appNav = (tab) => { state.view=tab; render(); };
+
+// navAdd — vienkartinis init (long-press = kamera, tap = picker)
+function initNavAdd(){
+  const navAdd = document.getElementById('navAdd');
+  if(!navAdd) return;
+  let pressTimer=null, longPressed=false;
+  const startPress=()=>{
+    longPressed=false;
+    pressTimer=setTimeout(()=>{
+      longPressed=true;
+      if(navigator.vibrate)navigator.vibrate(12);
+      startNewItem('photo'); renderSync();
+      setTimeout(()=>document.getElementById('docInput')?.click(),60);
+    },480);
+  };
+  const cancelPress=()=>{ clearTimeout(pressTimer); };
+  navAdd.addEventListener('touchstart',startPress,{passive:true});
+  navAdd.addEventListener('touchend',e=>{ cancelPress(); if(!longPressed){ startNewItem(null);render(); } });
+  navAdd.addEventListener('touchcancel',cancelPress);
+  navAdd.addEventListener('mousedown',startPress);
+  navAdd.addEventListener('mouseup',()=>{ cancelPress(); if(!longPressed){ startNewItem(null);render(); } });
+}
+function renderSync(){ _doRender(); }
+
+function _doRender(){
   const scr=document.getElementById('screen');
   const nav=document.getElementById('bottomNav');
 
@@ -778,7 +853,7 @@ function renderAdd(){
       <div class="form-section">
         <div class="form-row"><label>Prekės pavadinimas</label><input type="text" id="f_name" placeholder="Būtina" value="${esc(f.name)}" /></div>
         <div class="form-row"><label>Parduotuvė</label><input type="text" id="f_shop" placeholder="Neprivaloma" value="${esc(f.shop)}" /></div>
-        <div class="form-row"><label>Kategorija</label><select id="f_category">${CATEGORIES.map(c=>`<option${c===f.category?' selected':''}>${esc(c)}</option>`).join('')}</select><i class="ti ti-chevron-right form-row-chevron"></i></div>
+        <div class="form-row"><label>Kategorija</label><select id="f_category"><option value="" ${!f.category?'selected':''}>Pasirinkite...</option>${CATEGORIES.map(c=>`<option value="${esc(c)}"${c===f.category?' selected':''}>${esc(c)}</option>`).join('')}</select><i class="ti ti-chevron-right form-row-chevron"></i></div>
       </div>
 
       <p class="form-label-section">Datos</p>
@@ -1122,31 +1197,6 @@ function attachEvents(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn);};
   const onAll=(sel,ev,fn)=>document.querySelectorAll(sel).forEach(el=>el.addEventListener(ev,fn));
 
-  document.getElementById('navList')?.addEventListener('click',()=>{state.view='list';render();});
-  document.getElementById('navSearch')?.addEventListener('click',()=>{state.view='search';render();});
-  document.getElementById('navSettings')?.addEventListener('click',()=>{state.view='settings';render();});
-
-  // Add button: tap = picker, long-press = jump straight to camera
-  const navAdd = document.getElementById('navAdd');
-  if(navAdd){
-    let pressTimer=null, longPressed=false;
-    const startPress=(e)=>{
-      longPressed=false;
-      pressTimer=setTimeout(()=>{
-        longPressed=true;
-        if(navigator.vibrate)navigator.vibrate(12);
-        startNewItem('photo');render();
-        setTimeout(()=>document.getElementById('docInput')?.click(),60);
-      },480);
-    };
-    const cancelPress=()=>{ clearTimeout(pressTimer); };
-    navAdd.addEventListener('touchstart',startPress,{passive:true});
-    navAdd.addEventListener('touchend',e=>{ cancelPress(); if(!longPressed){ startNewItem('photo');render(); } });
-    navAdd.addEventListener('touchcancel',cancelPress);
-    navAdd.addEventListener('mousedown',startPress);
-    navAdd.addEventListener('mouseup',e=>{ cancelPress(); if(!longPressed){ startNewItem('photo');render(); } });
-  }
-
   // Swipe-to-delete on list cards
   onAll('.swipe-wrap','touchstart',e=>{
     const id=e.currentTarget.dataset.swipeId;
@@ -1194,10 +1244,9 @@ function attachEvents(){
 
   on('modePhoto','click',()=>{
     if(document.getElementById('modePhoto')?.disabled)return;
-    state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];render();
-    // Jump straight into the camera/file picker instead of making the user
-    // tap the upload zone again on the next screen — one less step.
-    setTimeout(()=>document.getElementById('docInput')?.click(), 50);
+    state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];
+    renderSync();
+    requestAnimationFrame(()=>{ document.getElementById('docInput')?.click(); });
   });
   on('modeManual','click',()=>{state.addMode='manual';render();});
 
@@ -1259,7 +1308,7 @@ function attachEvents(){
   });
   on('settingsLogoutBtn2','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('deleteAccountBtn','click',confirmDeleteAccount);
-  on('adminPanelBtn','click',()=>{state.view='admin-stats';loadAdminStats();});
+  on('adminPanelBtn','click',()=>{state.view='admin-stats';startViewWatchdog('admin-stats');loadAdminStats();});
   on('helpContactBtn','click',()=>{
     state.contactSent=false; state.contactError=''; state.contactDraft='';
     state.view='contact'; render();
@@ -1697,7 +1746,7 @@ function proceedWithFile(file, isPdf){
           return;
         }
         state.form.docData=compressed; state.form.docMime='image/jpeg'; state.form.docFileName=file.name.replace(/\.[^.]+$/,'.jpg');
-        if(state.addMode==='photo'){state.analyzing=true;render();await analyzeDoc(compB64,'image/jpeg');state.analyzing=false;}
+        if(state.addMode==='photo'){state.analyzing=true;startAnalyzeWatchdog();render();await analyzeDoc(compB64,'image/jpeg');clearAnalyzeWatchdog();state.analyzing=false;}
         render();
       }catch(err){
         console.warn('Image processing failed:', err);
