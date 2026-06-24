@@ -48,6 +48,7 @@ let state = {
   pendingAiCharge: false, // true once a scan succeeds — saveItem() consumes one quota unit if this is set
   aiMultiItems: [],
   multiItemReceipt: null,
+  multiEditIdx: null,
   adminStats: null,
   storageMode: 'local', // 'local' | 'cloud' — driven by userDoc.storageMode once loaded
   migratingStorage: false, // true while toggleStorageMode() is mid-flight; suppresses auto-reattach
@@ -854,10 +855,10 @@ function renderAdd(){
       <p class="form-label-section">Pagrindinė informacija</p>
       ${f.qualityWarning ? `<div style="background:var(--orange-bg);border-radius:var(--radius);margin:0 0 16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start">
         <i class="ti ti-alert-triangle" style="font-size:20px;color:var(--orange);flex-shrink:0;margin-top:1px"></i>
-        <div>
+        <div style="min-width:0">
           <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px">${esc(f.qualityWarning)}</div>
-          <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Duomenys gali būti nevisiškai tikslūs. Rekomenduojame nufotografuoti iš naujo.</div>
-          <button id="rescanBtn" style="background:var(--orange);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">
+          <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Rekomenduojame nufotografuoti iš naujo.</div>
+          <button id="rescanBtn" style="background:var(--orange);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
             <i class="ti ti-camera"></i> Fotografuoti iš naujo
           </button>
         </div>
@@ -1160,7 +1161,7 @@ function renderMultiSelect(){
   const rows = r.items.map((item,idx)=>{
     const noWarranty = item.warrantyApplies===false;
     const dimmed = noWarranty && !item.selected;
-    return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-bottom:0.5px solid var(--border);cursor:pointer" class="multi-row" data-midx="${idx}">
+    return `<div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:0.5px solid var(--border)" class="multi-row" data-midx="${idx}">
       <div style="width:24px;height:24px;border-radius:6px;border:2px solid ${item.selected?'var(--accent)':'var(--border2)'};background:${item.selected?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s">
         ${item.selected?`<i class="ti ti-check" style="font-size:13px;color:#fff"></i>`:''}
       </div>
@@ -1172,6 +1173,9 @@ function renderMultiSelect(){
           ${item.price?`<span>${esc(String(item.price))} €</span>`:''}
         </div>
       </div>
+      <button class="multi-edit-btn" data-midx="${idx}" style="background:none;border:none;padding:6px;color:var(--text3);cursor:pointer;flex-shrink:0" onclick="event.stopPropagation()">
+        <i class="ti ti-pencil" style="font-size:17px"></i>
+      </button>
     </div>`;
   }).join('');
 
@@ -1186,7 +1190,7 @@ function renderMultiSelect(){
           Išsaugoti${selectedCount>0?` (${selectedCount})`:''}
         </button>
       </div>
-      <p style="font-size:13px;color:var(--text3);margin:0;line-height:1.4">Rastos prekės šiame čekyje. Garantinės pažymėtos — atžymėkite ko nereikia.</p>
+      <p style="font-size:13px;color:var(--text3);margin:0;line-height:1.4">Pasirinkite ką išsaugoti.</p>
     </div>
     <div style="flex:1;overflow-y:auto">
       <div style="background:var(--card);border-radius:var(--radius);margin:12px 16px;overflow:hidden">
@@ -1349,8 +1353,14 @@ function attachEvents(){
   on('modeManual','click',()=>{state.addMode='manual';render();});
 
   on('backBtn','click',()=>{
-    if(state.view==='add'&&state.addMode){state.addMode=null;render();}
-    else{state.view='list';render();}
+    if(state.view==='add' && state.multiEditIdx!=null){
+      // Grįžtame į multi-select sąrašą
+      state.view='multi-select'; state.addMode=null; state.multiEditIdx=null; render();
+    } else if(state.view==='add'&&state.addMode){
+      state.addMode=null;render();
+    } else {
+      state.view='list';render();
+    }
   });
 
   on('warrantyBtn','click',()=>{state.showWarranty=true;render();});
@@ -1374,7 +1384,25 @@ function attachEvents(){
   on('docThumb','click',()=>{if(state.form.docData)state.lightbox=state.form.docData;render();});
   on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it?.docUrl)state.lightbox=it.docUrl;render();});
 
-  on('saveBtn','click',saveItem);
+  on('saveBtn','click',()=>{
+    if(state.multiEditIdx!=null){
+      // Atnaujiname prekę multi sąraše
+      const idx=state.multiEditIdx;
+      const r=state.multiItemReceipt;
+      const f=state.form;
+      if(r&&r.items[idx]){
+        r.items[idx].name=f.name;
+        r.items[idx].category=f.category;
+        r.items[idx].warrantyMonths=f.warrantyMonths;
+        r.items[idx].warrantyApplies=f.warrantyMonths!==null;
+        r.items[idx].price=f.notes.match(/Kaina: (.+)/)?.[1]||r.items[idx].price;
+      }
+      state.view='multi-select'; state.addMode=null; state.multiEditIdx=null;
+      render();
+    } else {
+      saveItem();
+    }
+  });
   on('nextMultiItemBtn','click',()=>{
     if(state.aiMultiItems.length===0)return;
     const next = state.aiMultiItems.shift();
@@ -1410,8 +1438,35 @@ function attachEvents(){
   on('multiBackBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
   on('multiCancelBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
+    if(e.target.closest('.multi-edit-btn')) return; // edit mygtuko netrukdyti
     const idx=parseInt(e.currentTarget.dataset.midx);
     if(state.multiItemReceipt) state.multiItemReceipt.items[idx].selected=!state.multiItemReceipt.items[idx].selected;
+    render();
+  });
+  onAll('.multi-edit-btn','click',e=>{
+    e.stopPropagation();
+    const idx=parseInt(e.currentTarget.dataset.midx);
+    const r=state.multiItemReceipt;
+    if(!r) return;
+    const item=r.items[idx];
+    // Užpildome formą šios prekės duomenimis
+    state.form=emptyForm();
+    state.form.name=item.name||'';
+    state.form.category=item.category||'';
+    state.form.shop=r.shop||'';
+    state.form.purchaseDate=r.purchaseDate||'';
+    state.form.warrantyMonths=item.warrantyApplies===false?null:(item.warrantyMonths||24);
+    state.form.warrantyEnd=item.warrantyApplies===false?'':(r.purchaseDate&&item.warrantyMonths?addMonths(r.purchaseDate,item.warrantyMonths):'');
+    state.form.docType=r.docType||'Kvitas / čekis';
+    state.form.docNumber=r.docNumber||'';
+    state.form.notes=item.price?`Kaina: ${item.price}`:'';
+    state.form.docData=r.docData||null;
+    state.form.docMime=r.docMime||null;
+    state.form.docFileName=r.docFileName||null;
+    state.form.warrantyAppliesWarning=item.warrantyApplies===false;
+    state.multiEditIdx=idx;
+    state.addMode='manual';
+    state.view='add';
     render();
   });
   onAll('.multi-cat','change',e=>{
