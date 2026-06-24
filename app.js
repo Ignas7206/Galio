@@ -1753,15 +1753,15 @@ async function requestPushPermission(){
     const perm = await Notification.requestPermission();
     if(perm !== 'granted') return false;
 
-    // Gauti FCM token
-    const { messaging, getToken, VAPID_KEY } = await import('./firebase-config.js');
-    const token = await getToken(messaging, {
+    const { getMessaging, getToken } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js');
+    const { firebaseApp, VAPID_KEY } = await import('./firebase-config.js');
+    const fcmMessaging = getMessaging(firebaseApp);
+    const token = await getToken(fcmMessaging, {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: await navigator.serviceWorker.ready,
     });
     if(!token) return false;
 
-    // Išsaugoti token Firestore'e
     await updateDoc(doc(db,'users',state.user.uid), { fcmToken: token, notifyEnabled: true });
     return true;
   }catch(e){

@@ -3,7 +3,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBHYfvHY2Bs0xPcwdjlQ86uYWGGH9NITLM",
@@ -20,11 +19,8 @@ export const VAPID_KEY = "BOQH_YMvcD5Yc6ziqPno_Y2g0SkQBpuJuLKdNjS01VG4H8Q6YgJKeD
 export const firebaseApp = initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
 
-// Firestore with offline persistence – works offline, syncs when back online
 export const db = initializeFirestore(firebaseApp, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
 
 export const storage = getStorage(firebaseApp);
-export const messaging = getMessaging(firebaseApp);
-export { getToken, onMessage };
