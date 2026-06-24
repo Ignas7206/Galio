@@ -144,8 +144,9 @@
     .chips::-webkit-scrollbar { display: none; }
     .chip { flex-shrink: 0; font-size: 13px; font-weight: 500; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border2); background: transparent; color: var(--text2); transition: all 0.15s; }
     .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .sort-drop-item { display:flex; align-items:center; gap:8px; width:100%; padding:11px 14px; background:none; border:none; font-size:13px; font-weight:500; color:var(--text2); cursor:pointer; text-align:left; }
-    .sort-drop-item:hover { background:var(--hover); }
+    .sort-drop-item { display:flex; align-items:center; gap:10px; width:100%; padding:13px 16px; background:none; border:none; font-size:15px; font-weight:500; color:var(--text); cursor:pointer; text-align:left; border-bottom:0.5px solid var(--border); }
+    .sort-drop-item:last-child { border-bottom:none; }
+    .sort-drop-item:active { background:var(--bg3); }
     .sort-drop-item.active { color:var(--accent); font-weight:600; }
 
     .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; padding: 0 16px 16px; }

@@ -66,7 +66,7 @@ function applyTheme(){
 }
 applyTheme();
 
-function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false};}
+function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
 
 // Admin, tester ir friend vartotojai automatiškai gauna premium teises
 function isPremiumUser(){ return ['premium','tester','friend'].includes(state.userDoc?.plan) || state.userDoc?.role==='admin'; }
@@ -193,9 +193,10 @@ onAuthStateChanged(auth, async (user)=>{
     // message, the user just sees a blank login screen and can easily
     // mistake it for "my data is gone", when really nothing was deleted;
     // they just need to log back in with the new password.
-    if(wasLoggedIn){
-      state.authInfo='Dėl saugumo buvote atjungti (pvz. po slaptažodžio keitimo). Prisijunkite iš naujo — jūsų duomenys saugūs ir niekur nedingo.';
+    if(wasLoggedIn && !state._intentionalLogout){
+      state.authInfo='Prisijunkite iš naujo — jūsų duomenys saugūs ir niekur nedingo.';
     }
+    state._intentionalLogout = false;
   }
   render();
   if(user) render();
@@ -423,6 +424,7 @@ async function doLogout(){
   if(state.itemsUnsub){state.itemsUnsub();state.itemsUnsub=null;}
   stopEmailVerifyPoll();
   if(state.qrStream){state.qrStream.getTracks().forEach(t=>t.stop());state.qrStream=null;}
+  state._intentionalLogout = true;
   await signOut(auth);
   // Reset all per-session state so a different account logging in on the
   // same device never briefly sees stale data from the previous user.
@@ -510,7 +512,12 @@ function _doRender(){
 
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.view));
   const addCircle = document.querySelector('.nav-add-circle');
-  if(addCircle) addCircle.classList.toggle('pulse', state.addPulse && state.view==='list');
+  if(addCircle){
+    addCircle.classList.toggle('pulse', state.addPulse && state.view==='list');
+    const hasItems = state.items.length > 0;
+    addCircle.style.background = hasItems ? 'var(--bg3)' : 'var(--accent)';
+    addCircle.querySelector('i').style.color = hasItems ? 'var(--text2)' : '#fff';
+  }
   attachEvents();
 }
 
@@ -519,7 +526,7 @@ const ONBOARD_SLIDES = [
   { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok čekį', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
   { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'Sąskaita kompiuteryje?', text:'Ne bėda — atidaryk ją ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotrauką.' },
   { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Niekada nepraleisk garantijos', text:'Matykite iš karto, kurių daiktų garantija baigiasi greitai, ir nepraraskite teisės į nemokamą remontą.' },
-  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Duomenys saugomi debesyje su jūsų paskyra ir pasiekiami iš bet kurio įrenginio, net be interneto.' },
+  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Duomenys saugomi jūsų paskyroje ir pasiekiami iš bet kurio įrenginio, net be interneto.' },
 ];
 function renderOnboarding(){
   const slides = ONBOARD_SLIDES.map(s=>`
@@ -730,11 +737,11 @@ function renderList(){
       </button>
     </div>
     ${state.catDropOpen ? `<div id="catDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
-    <div style="position:fixed;left:16px;top:auto;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.12);min-width:160px;overflow:hidden">
+    <div style="position:fixed;left:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       ${['Visos',...CATEGORIES].map(c=>`<button class="sort-drop-item${filterCat===c?' active':''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
     </div>` : ''}
     ${state.sortDropOpen ? `<div id="sortDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
-    <div style="position:fixed;right:16px;top:auto;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.12);min-width:160px;overflow:hidden">
+    <div style="position:fixed;right:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       <button class="sort-drop-item${sortBy==='newest'?' active':''}" data-sort="newest"><i class="ti ti-clock" style="font-size:14px"></i>Naujausi</button>
       <button class="sort-drop-item${sortBy==='expiring'?' active':''}" data-sort="expiring"><i class="ti ti-hourglass" style="font-size:14px"></i>Baigiasi pirmi</button>
       <button class="sort-drop-item${sortBy==='name'?' active':''}" data-sort="name"><i class="ti ti-sort-a-z" style="font-size:14px"></i>A–Z</button>
@@ -845,6 +852,16 @@ function renderAdd(){
       </div>
 
       <p class="form-label-section">Pagrindinė informacija</p>
+      ${f.qualityWarning ? `<div style="background:var(--orange-bg);border-radius:var(--radius);margin:0 0 16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start">
+        <i class="ti ti-alert-triangle" style="font-size:20px;color:var(--orange);flex-shrink:0;margin-top:1px"></i>
+        <div>
+          <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px">${esc(f.qualityWarning)}</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Duomenys gali būti nevisiškai tikslūs. Rekomenduojame nufotografuoti iš naujo.</div>
+          <button id="rescanBtn" style="background:var(--orange);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer">
+            <i class="ti ti-camera"></i> Fotografuoti iš naujo
+          </button>
+        </div>
+      </div>` : ''}
       <div class="form-section">
         <div class="form-field">
           <label>Prekės pavadinimas</label>
@@ -903,9 +920,12 @@ function renderAdd(){
 
       ${state.uploadPct!==null?`<div class="upload-progress-row"><div class="upload-progress-bar"><div class="upload-progress-fill" style="width:${state.uploadPct}%"></div></div><span style="font-size:14px;color:var(--text2)">${state.uploadPct}%</span></div>`:''}
 
-      <button class="save-btn" id="saveBtn" ${f.name.trim()&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
+      <div style="height:80px"></div>
     </div>
     ${warrantySheet}
+    <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
+      <button class="save-btn" id="saveBtn" ${f.name.trim()&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
+    </div>
   </div>`;
 }
 
@@ -999,7 +1019,7 @@ function renderSettings(){
 
     ${!isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
-      <div class="pb-text">Atsinaujinkite į Premium – cloud sinchronizacija ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
+      <div class="pb-text">Atsinaujinkite į Premium – paskyros sinchronizacija ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
 
@@ -1007,12 +1027,12 @@ function renderSettings(){
     <div class="form-section" style="margin:0 16px 8px">
       <div class="settings-row">
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label">${isCloud?'Cloud sinchronizacija':'Saugoma šiame įrenginyje'}<small>${isCloud?'Matoma iš bet kurio įrenginio · reikia Premium':'Duomenys lieka tik šiame telefone, nemokama'}</small></div>
+        <div class="settings-row-label">${isCloud?'Paskyros saugykla':'Įrenginio saugykla'}<small>${isCloud?'Sinchronizuojama su paskyra, prieinama iš bet kur':'Saugoma tik šiame telefone, nemokama'}</small></div>
         <button class="toggle-switch${isCloud?' on':''}" id="storageModeToggle"><div class="knob"></div></button>
       </div>
     </div>
     <p style="font-size:11.5px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Cloud režimas reikalauja Premium. Jei atsinaujinsite atgal į Free, įjunkite šį nustatymą atgal į lokalų.':'Norėdami sinchronizuoti duomenis tarp įrenginių, įjunkite cloud saugojimą (reikalinga Premium prenumerata).'}
+      ${isCloud?'Paskyros saugykla prieinama Premium nariams. Jei keičiate planą, pirmiausia perkelkite duomenis į įrenginį.':'Norėdami pasiekti duomenis iš kitų įrenginių, įjunkite paskyros saugyklą (reikalinga Premium prenumerata).'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -1156,14 +1176,17 @@ function renderMultiSelect(){
   }).join('');
 
   return `<div style="display:flex;flex-direction:column;height:100vh;overflow:hidden">
-    <div style="padding:12px 16px;border-bottom:0.5px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:space-between;gap:12px">
-      <div>
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">${esc(r.shop||'')}</div>
-        <div style="font-size:13px;color:var(--text2)">${r.purchaseDate?fmtDate(r.purchaseDate):''}</div>
+    <div style="padding:12px 16px 10px;border-bottom:0.5px solid var(--border);background:var(--bg)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(r.shop||'')}</div>
+          <div style="font-size:12px;color:var(--text3)">${r.purchaseDate?fmtDate(r.purchaseDate):''}</div>
+        </div>
+        <button id="multiSaveBtn" ${selectedCount===0?'disabled':''} style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:8px 18px;font-size:14px;font-weight:600;cursor:pointer;opacity:${selectedCount===0?'0.4':'1'};transition:opacity 0.15s">
+          Išsaugoti${selectedCount>0?` (${selectedCount})`:''}
+        </button>
       </div>
-      <button id="multiSaveBtn" ${selectedCount===0?'disabled':''} style="background:var(--accent);color:#fff;border:none;border-radius:20px;padding:9px 20px;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0;opacity:${selectedCount===0?'0.4':'1'}">
-        Išsaugoti ${selectedCount>0?`(${selectedCount})`:''}
-      </button>
+      <p style="font-size:13px;color:var(--text3);margin:0;line-height:1.4">Rastos prekės šiame čekyje. Garantinės pažymėtos — atžymėkite ko nereikia.</p>
     </div>
     <div style="flex:1;overflow-y:auto">
       <div style="background:var(--card);border-radius:var(--radius);margin:12px 16px;overflow:hidden">
@@ -1316,6 +1339,7 @@ function attachEvents(){
 
   on('searchInput','input',e=>{state.search=e.target.value;render();});
 
+  on('rescanBtn','click',()=>{ state.form.qualityWarning=null; state.form.docData=null; state.form.docMime=null; state.form.docFileName=null; renderSync(); document.getElementById('docInput')?.click(); });
   on('modePhoto','click',()=>{
     if(document.getElementById('modePhoto')?.disabled)return;
     state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];
@@ -1986,14 +2010,19 @@ async function toggleStorageMode(){
   const wantsCloud = state.storageMode !== 'cloud';
 
   if(wantsCloud && !isPremium){
-    toast('Cloud saugojimui reikalingas Premium planas');
+    toast('Paskyros sinchronizacija prieinama tik Premium nariams');
     return;
   }
 
   const confirmMsg = wantsCloud
-    ? `Perkelti ${state.items.length} įrašų į cloud? Jie bus pasiekiami iš bet kurio įrenginio.`
-    : `Perkelti ${state.items.length} įrašų į šį įrenginį? Jie nebebus matomi kituose įrenginiuose.`;
-  if(state.items.length>0 && !confirm(confirmMsg)) return;
+    ? `Perkelti įrašus į paskyros saugyklą?\n\nJie bus susieti su jūsų paskyra ir pasiekiami iš bet kurio įrenginio.`
+    : `Perjungti į įrenginio saugyklą?\n\nJūsų ${state.items.length} įrašai bus perkelti į šį telefoną ir pašalinti iš paskyros. Kituose įrenginiuose jų nebebus — ir jei telefonas bus prarastas ar sugadintas, duomenys dingsta kartu su juo.`;
+  if(!confirm(confirmMsg)) return;
+
+  // Antras patvirtinimas local atveju
+  if(!wantsCloud){
+    if(!confirm('Patvirtinkite: pašalinti iš paskyros ir saugoti tik šiame telefone.')) return;
+  }
 
   const itemsToMigrate = state.items.slice();
   toast('Perkeliama...');
@@ -2222,8 +2251,8 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
 
     // Quality warning — surfaced to the user, not silently swallowed.
     if(p.quality && p.quality!=='good'){
-      const qualityLabels = {blurry:'Nuotrauka neryški',partial:'Matoma tik dalis dokumento',unclear:'Sunku įskaityti tekstą'};
-      toast(`⚠️ ${qualityLabels[p.quality]||'Dokumento kokybė nepakankama'}${p.qualityNote?': '+p.qualityNote:''} — patikrinkite duomenis`);
+      const qualityLabels = {blurry:'Nuotrauka neryški',partial:'Matomas ne visas dokumentas',unclear:'Tekstas sunkiai įskaitomas'};
+      state.form.qualityWarning = `${qualityLabels[p.quality]||'Dokumento kokybė nepakankama'}${p.qualityNote?': '+p.qualityNote:''}`;
     }
 
     const items = Array.isArray(p.items) ? p.items.filter(it=>it && typeof it.name==='string' && it.name.trim()) : [];
