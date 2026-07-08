@@ -907,7 +907,7 @@ function renderAdd(){
       <p class="form-label-section">Dokumentas</p>
       <div class="form-section">
         <div class="form-field">
-          <label>Tipo</label>
+          <label>Tipas</label>
           <select id="f_docType">${DOC_TYPES.map(d=>`<option${d===f.docType?' selected':''}>${esc(d)}</option>`).join('')}</select>
         </div>
         <div class="form-field">
@@ -1133,10 +1133,10 @@ function suggestNotifDays(warrantyMonths, hasReturn){
   return days;
 }
 
-function showNotifModal(itemId){
+function showNotifModal(itemId, itemData){
   if(!itemId){ state.view='list'; render(); return; }
-  const item = state.items.find(i=>i.id===itemId) ||
-               { id:itemId, warrantyMonths:state._lastWarrantyMonths, warrantyEnd:state._lastWarrantyEnd, returnDeadline:state._lastReturnDeadline };
+  const item = itemData || state.items.find(i=>i.id===itemId);
+  if(!item){ state.view='list'; render(); return; }
 
   const suggested = suggestNotifDays(item?.warrantyMonths, !!item?.returnDeadline);
   // Naudoti paskutinius nustatymus jei yra, kitaip siūlomus
@@ -1251,7 +1251,7 @@ function renderMultiSelect(){
         ${item.selected?`<i class="ti ti-check" style="font-size:13px;color:#fff"></i>`:''}
       </div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:15px;font-weight:600;color:${dimmed?'var(--text3)':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.name)}</div>
+        <div data-mname style="font-size:15px;font-weight:600;color:${dimmed?'var(--text3)':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.name)}</div>
         <div style="font-size:13px;color:var(--text3);margin-top:2px;display:flex;align-items:center;gap:6px">
           ${item.category?`<span>${esc(item.category)}</span>`:''}
           ${!noWarranty?`<span style="color:var(--green)">${item.warrantyMonths||24} mėn.</span>`:''}
@@ -1421,7 +1421,15 @@ function attachEvents(){
     state.selected=e.currentTarget.dataset.id;state.view='detail';render();
   });
 
-  on('searchInput','input',e=>{state.search=e.target.value;render();});
+  on('searchInput','input',e=>{
+    state.search=e.target.value;
+    clearTimeout(state._searchDebounce);
+    state._searchDebounce=setTimeout(()=>{
+      render();
+      const inp=document.getElementById('searchInput');
+      if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length); }
+    },200);
+  });
 
   on('rescanBtn','click',()=>{ state.form.qualityWarning=null; state.form.docData=null; state.form.docMime=null; state.form.docFileName=null; renderSync(); document.getElementById('docInput')?.click(); });
   on('modePhoto','click',()=>{
@@ -1523,7 +1531,6 @@ function attachEvents(){
     state.view = 'add';
     render();
   });
-  on('deleteBtn','click',()=>deleteItem(state.selected));
   on('deleteBtn2','click',()=>deleteItem(state.selected));
   on('checkPolicyBtn','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it)checkPolicy(it);});
 
@@ -1543,14 +1550,36 @@ function attachEvents(){
   });
   on('settingsLogoutBtn2','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('deleteAccountBtn','click',confirmDeleteAccount);
-  on('multiConfirmBtn','click',()=>{ if(state.multiItemReceipt) state.multiItemReceipt.confirmed=true; render(); });
   on('multiBackBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
   on('multiCancelBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
-    if(e.target.closest('.multi-edit-btn')) return; // edit mygtuko netrukdyti
+    if(e.target.closest('.multi-edit-btn')) return;
     const idx=parseInt(e.currentTarget.dataset.midx);
-    if(state.multiItemReceipt) state.multiItemReceipt.items[idx].selected=!state.multiItemReceipt.items[idx].selected;
-    render();
+    const r=state.multiItemReceipt;
+    if(!r) return;
+    const item=r.items[idx];
+    item.selected=!item.selected;
+
+    // Atnaujinti tik šią eilutę ir mygtuką — be pilno re-render (greitis su ilgais čekiais)
+    const row=e.currentTarget;
+    const box=row.querySelector('div');
+    if(box){
+      box.style.border=`2px solid ${item.selected?'var(--accent)':'var(--border2)'}`;
+      box.style.background=item.selected?'var(--accent)':'transparent';
+      box.innerHTML=item.selected?'<i class="ti ti-check" style="font-size:13px;color:#fff"></i>':'';
+    }
+    const nameEl=row.querySelector('[data-mname]');
+    if(nameEl){
+      const noWarranty=item.warrantyApplies===false;
+      nameEl.style.color=(noWarranty&&!item.selected)?'var(--text3)':'var(--text)';
+    }
+    const btn=document.getElementById('multiSaveBtn');
+    if(btn){
+      const n=r.items.filter(i=>i.selected).length;
+      btn.disabled=n===0;
+      btn.style.opacity=n===0?'0.4':'1';
+      btn.textContent=`Išsaugoti${n>0?` (${n})`:''}`;
+    }
   });
   onAll('.multi-edit-btn','click',e=>{
     e.stopPropagation();
@@ -1890,11 +1919,19 @@ async function saveItem(){
   }
 
   state.uploadPct=null;
+  const savedForm = {...state.form};
   state.form=emptyForm();state.docError='';state.addMode=null;
 
-  // Rodyti notifikacijų nustatymų modalą po išsaugojimo
-  const lastSavedItem = state.items[0] || state.storageMode==='cloud' ? null : state.items[0];
-  showNotifModal(state._lastSavedId);
+  // Rodyti priminimų modalą tik jei yra ką priminti (garantija arba grąžinimas)
+  if(state._lastSavedId && (savedForm.warrantyEnd || savedForm.purchaseDate)){
+    showNotifModal(state._lastSavedId, {
+      warrantyMonths: savedForm.warrantyMonths,
+      warrantyEnd: savedForm.warrantyEnd,
+      returnDeadline: savedForm.purchaseDate ? addDays(savedForm.purchaseDate,14) : null,
+    });
+  }else{
+    state.view='list'; render();
+  }
   state._lastSavedId = null;
 }
 
@@ -1936,6 +1973,9 @@ async function saveMultiItems(){
         notes:item.price?`Kaina: ${String(item.price).slice(0,50)}`:'',
         notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
         returnDeadline: r.purchaseDate ? addDays(r.purchaseDate,14) : null,
+        // Numatytieji priminimai pagal garantijos ilgį (vartotojas gali keisti redaguodamas)
+        notifyDays: item.warrantyApplies===false ? [] : suggestNotifDays(item.warrantyMonths||24),
+        notifyReturnDays: r.purchaseDate ? [3] : [],
         createdAtMs: Date.now(),
       };
 
@@ -2556,6 +2596,11 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
 
     if(items.length===1){
       applyAiItemToForm(items[0], p);
+      // Dublikato patikrinimas: dok. numeris (patikimiausia) arba pavadinimas + data
+      const dup = state.items.find(i=>
+        (p.docNumber && i.docNumber && i.docNumber===p.docNumber && i.name?.toLowerCase()===items[0].name?.toLowerCase()) ||
+        (i.name?.toLowerCase()===items[0].name?.toLowerCase() && i.purchaseDate && i.purchaseDate===p.purchaseDate));
+      if(dup) toast('Panašus įrašas jau yra — patikrinkite ar ne dublikatas');
     }else{
       const warrantyCount = items.filter(i=>i.warrantyApplies!==false).length;
       state.multiItemReceipt = {
