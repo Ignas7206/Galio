@@ -1005,6 +1005,20 @@ function renderSettings(){
   const avatarHtml = u.photoURL
     ? `<img src="${esc(u.photoURL)}" alt="" />`
     : initials;
+  const accountEmail = state.userDoc?.email || u.email || 'El. paštas nerastas';
+  const accountName = u.displayName || accountEmail;
+  const providers = (u.providerData||[]).map(p=>p.providerId);
+  const providerLabel = providers.includes('google.com') ? 'Google' : 'El. paštas';
+  const uidShort = u.uid ? u.uid.slice(0,8) : '—';
+  const planLabel = state.userDoc?.role==='admin'
+    ? '<i class="ti ti-shield-check" style="font-size:15px"></i> Administratorius'
+    : state.userDoc?.plan==='tester'
+      ? '<i class="ti ti-flask" style="font-size:15px"></i> Testeris · Premium teisės'
+      : state.userDoc?.plan==='friend'
+        ? '<i class="ti ti-heart" style="font-size:15px"></i> Draugas · Premium teisės'
+        : isPremium
+          ? '<i class="ti ti-crown" style="font-size:15px"></i> Premium narys'
+          : `Nemokamas planas · ${state.items.length} įrašų`;
 
   return `<div>
     <div class="page-header">
@@ -1015,10 +1029,12 @@ function renderSettings(){
     <div class="settings-profile">
       <div class="settings-avatar">${avatarHtml}</div>
       <div class="settings-profile-info">
-        <div class="settings-profile-email">${esc(u.displayName||u.email)}</div>
+        <div class="settings-profile-email">${esc(accountName)}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(accountEmail)}</div>
         <div class="settings-profile-plan${isPremium?' premium':''}">
-          ${state.userDoc?.role==='admin' ? '<i class="ti ti-shield-check" style="font-size:15px"></i> Administratorius' : state.userDoc?.plan==='tester' ? '<i class="ti ti-flask" style="font-size:15px"></i> Testeris' : state.userDoc?.plan==='friend' ? '<i class="ti ti-heart" style="font-size:15px"></i> Draugas' : isPremium ? '<i class="ti ti-crown" style="font-size:15px"></i> Premium narys' : `Nemokamas planas · ${state.items.length} įrašų`}
+          ${planLabel}
         </div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">${providerLabel} · ID ${esc(uidShort)}</div>
       </div>
     </div>
 
