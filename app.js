@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 import { auth, db, storage } from './firebase-config.js';
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
@@ -17,14 +17,14 @@ import {
 } from './local-db.js';
 
 const WORKER_URL    = 'https://long-moon-d252.ltdigitaltools.workers.dev';
-const CATEGORIES    = ['Elektronika','BuitinÄ— technika','AvalynÄ— / drabuÅ¾iai','Baldai','Automobiliai','Kita'];
-const DOC_TYPES     = ['Kvitas / Äekis','SÄ…skaita-faktÅ«ra (SF)','Banko iÅ¡raÅ¡as','Kita'];
-const WARRANTY_OPTS = [{l:'6 mÄ—nesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
+const CATEGORIES    = ['Elektronika','Buitinė technika','Avalynė / drabužiai','Baldai','Automobiliai','Kita'];
+const DOC_TYPES     = ['Kvitas / čekis','Sąskaita-faktūra (SF)','Banko išrašas','Kita'];
+const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
 const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos; compression brings this down before upload
 const MAX_PDF       = 5*1024*1024;
 const AI_FREE_USES  = 5; // lifetime AI document-analysis uses before Premium is required
-const PREMIUM_DAILY_LIMIT   = 30;  // Premium is capped, not unlimited â€” bounds our Anthropic billing exposure
+const PREMIUM_DAILY_LIMIT   = 30;  // Premium is capped, not unlimited — bounds our Anthropic billing exposure
 const PREMIUM_MONTHLY_LIMIT = 300;
 
 let state = {
@@ -45,7 +45,7 @@ let state = {
   addPulse: false,
   qrScanning: false, qrStream: null,
   aiRetriesUsedThisItem: 0, // resets each time the add-form is freshly opened; max 2 scan attempts before quota is charged on save
-  pendingAiCharge: false, // true once a scan succeeds â€” saveItem() consumes one quota unit if this is set
+  pendingAiCharge: false, // true once a scan succeeds — saveItem() consumes one quota unit if this is set
   aiMultiItems: [],
   multiItemReceipt: null,
   multiEditIdx: null,
@@ -55,7 +55,7 @@ let state = {
   _lastReturnNotifDays: null,
   _lastSavedId: null,
   adminStats: null,
-  storageMode: 'local', // 'local' | 'cloud' â€” driven by userDoc.storageMode once loaded
+  storageMode: 'local', // 'local' | 'cloud' — driven by userDoc.storageMode once loaded
   migratingStorage: false, // true while toggleStorageMode() is mid-flight; suppresses auto-reattach
   storageError: '',
   policyChecking: false, policyResult: null, policyResultFor: null,
@@ -73,12 +73,12 @@ function applyTheme(){
 }
 applyTheme();
 
-function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,docType:'Kvitas / Äekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
+function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
 
-// Admin, tester ir friend vartotojai automatiÅ¡kai gauna premium teises
+// Admin, tester ir friend vartotojai automatiškai gauna premium teises
 function isPremiumUser(){ return ['premium','tester','friend'].includes(state.userDoc?.plan) || state.userDoc?.role==='admin'; }
 
-// Resets everything tied to "adding one new item" â€” the form fields plus
+// Resets everything tied to "adding one new item" — the form fields plus
 // the per-item AI retry counter and pending-charge flag. Centralized here
 // so every entry point (tap +, long-press +, picker) stays in sync.
 function startNewItem(mode){
@@ -94,18 +94,18 @@ function today(){return new Date().toISOString().slice(0,10);}
 function addMonths(d,m){if(!d)return '';const r=new Date(d);r.setMonth(r.getMonth()+m);return r.toISOString().slice(0,10);}
 function addDays(d,n){if(!d)return '';const r=new Date(d);r.setDate(r.getDate()+n);return r.toISOString().slice(0,10);}
 
-// â”€â”€ Network status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Network status ───────────────────────────────────────────────────────
 window.addEventListener('online',()=>{state.online=true;render();});
 window.addEventListener('offline',()=>{state.online=false;render();});
 
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ────────────────────────────────────────────────────────────────
 function daysLeft(d){if(!d)return null;return Math.ceil((new Date(d)-new Date())/86400000);}
-function fmtDate(d){if(!d)return 'â€”';return new Date(d).toLocaleDateString('lt-LT');}
+function fmtDate(d){if(!d)return '—';return new Date(d).toLocaleDateString('lt-LT');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function fmtSize(b){return b<1024*1024?(b/1024).toFixed(0)+'KB':(b/1024/1024).toFixed(1)+'MB';}
 function badgeHtml(days){
   if(days===null)return '';
-  if(days<0)return`<span class="badge badge-exp">BaigÄ—si</span>`;
+  if(days<0)return`<span class="badge badge-exp">Baigėsi</span>`;
   if(days<=30)return`<span class="badge badge-warn">${days}d.</span>`;
   return`<span class="badge badge-ok">${days}d.</span>`;
 }
@@ -123,22 +123,22 @@ function toast(msg, ms=5200){
 }
 function friendlyAuthError(code){
   const map={
-    'auth/email-already-in-use':'Å is el. paÅ¡tas jau uÅ¾registruotas',
-    'auth/invalid-email':'Neteisingas el. paÅ¡to formatas',
-    'auth/weak-password':'SlaptaÅ¾odis per silpnas (min. 6 simboliai)',
+    'auth/email-already-in-use':'Šis el. paštas jau užregistruotas',
+    'auth/invalid-email':'Neteisingas el. pašto formatas',
+    'auth/weak-password':'Slaptažodis per silpnas (min. 6 simboliai)',
     'auth/user-not-found':'Vartotojas nerastas',
-    'auth/wrong-password':'Neteisingas slaptaÅ¾odis',
-    'auth/invalid-credential':'Neteisingas el. paÅ¡tas arba slaptaÅ¾odis',
-    'auth/too-many-requests':'Per daug bandymÅ³. Pabandykite vÄ—liau',
-    'auth/network-request-failed':'NÄ—ra interneto ryÅ¡io',
+    'auth/wrong-password':'Neteisingas slaptažodis',
+    'auth/invalid-credential':'Neteisingas el. paštas arba slaptažodis',
+    'auth/too-many-requests':'Per daug bandymų. Pabandykite vėliau',
+    'auth/network-request-failed':'Nėra interneto ryšio',
   };
-  return map[code]||'Ä®vyko klaida. Bandykite dar kartÄ…';
+  return map[code]||'Įvyko klaida. Bandykite dar kartą';
 }
 
-// â”€â”€ Watchdog: savigelbÄ—jimo mechanizmai â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Watchdog: savigelbėjimo mechanizmai ────────────────────────────────────
 
-// 1. Boot watchdog â€” jei per 10s nepasikrovÄ—, rodo "Bandyti iÅ¡ naujo"
-// PaleidÅ¾iamas tik po DOMContentLoaded, kad Firebase spÄ—tÅ³ inicializuotis
+// 1. Boot watchdog — jei per 10s nepasikrovė, rodo "Bandyti iš naujo"
+// Paleidžiamas tik po DOMContentLoaded, kad Firebase spėtų inicializuotis
 let _bootWatchdog = null;
 document.addEventListener('DOMContentLoaded', ()=>{
   _bootWatchdog = setTimeout(()=>{
@@ -148,14 +148,14 @@ document.addEventListener('DOMContentLoaded', ()=>{
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;padding:32px;text-align:center">
           <i class="ti ti-wifi-off" style="font-size:48px;color:var(--text3)"></i>
           <p style="font-size:16px;font-weight:600;color:var(--text1)">Nepavyko prisijungti</p>
-          <p style="font-size:14px;color:var(--text2)">Patikrinkite interneto ryÅ¡Ä¯ ir bandykite iÅ¡ naujo</p>
-          <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 28px;font-size:15px;font-weight:600;cursor:pointer">Bandyti iÅ¡ naujo</button>
+          <p style="font-size:14px;color:var(--text2)">Patikrinkite interneto ryšį ir bandykite iš naujo</p>
+          <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 28px;font-size:15px;font-weight:600;cursor:pointer">Bandyti iš naujo</button>
         </div>`;
     }
   }, 10000);
 });
 
-// 2. Analyzing watchdog â€” jei AI analizÄ— uÅ¾trunka >35s, automatiÅ¡kai atÅ¡aukia
+// 2. Analyzing watchdog — jei AI analizė užtrunka >35s, automatiškai atšaukia
 let _analyzeWatchdog = null;
 function startAnalyzeWatchdog(){
   clearAnalyzeWatchdog();
@@ -164,10 +164,10 @@ function startAnalyzeWatchdog(){
       state.analyzing = false;
       state.uploadPct = null;
       render();
-      // toast importuojamas vÄ—liau, naudojam tiesioginÄ¯ DOM
+      // toast importuojamas vėliau, naudojam tiesioginį DOM
       const t = document.createElement('div');
       t.className = 'toast';
-      t.textContent = 'AI analizÄ— uÅ¾truko per ilgai â€” bandykite dar kartÄ…';
+      t.textContent = 'AI analizė užtruko per ilgai — bandykite dar kartą';
       document.body.appendChild(t);
       setTimeout(()=>t.remove(), 4000);
     }
@@ -175,7 +175,7 @@ function startAnalyzeWatchdog(){
 }
 function clearAnalyzeWatchdog(){ if(_analyzeWatchdog){ clearTimeout(_analyzeWatchdog); _analyzeWatchdog=null; } }
 
-// 3. View stuck watchdog â€” jei per 15s nepavyko Ä¯krauti admin stats, grÄ¯Å¾ta atgal
+// 3. View stuck watchdog — jei per 15s nepavyko įkrauti admin stats, grįžta atgal
 let _viewWatchdog = null;
 function startViewWatchdog(view){
   clearViewWatchdog();
@@ -202,12 +202,12 @@ onAuthStateChanged(auth, async (user)=>{
     state.userDoc=null;
     stopEmailVerifyPoll();
     // Firebase automatically signs the user out after a password change
-    // (it revokes existing sessions as a security measure) â€” without this
+    // (it revokes existing sessions as a security measure) — without this
     // message, the user just sees a blank login screen and can easily
     // mistake it for "my data is gone", when really nothing was deleted;
     // they just need to log back in with the new password.
     if(wasLoggedIn && !state._intentionalLogout){
-      state.authInfo='Prisijunkite iÅ¡ naujo â€” jÅ«sÅ³ duomenys saugÅ«s ir niekur nedingo.';
+      state.authInfo='Prisijunkite iš naujo — jūsų duomenys saugūs ir niekur nedingo.';
     }
     state._intentionalLogout = false;
   }
@@ -225,7 +225,7 @@ function startEmailVerifyPoll(user){
       if(user.emailVerified){
         state.user = auth.currentUser;
         stopEmailVerifyPoll();
-        toast('El. paÅ¡tas patvirtintas âœ“');
+        toast('El. paštas patvirtintas ✓');
         render();
       }
     }catch(e){}
@@ -256,7 +256,7 @@ async function ensureUserDoc(user){
       try{ await updateDoc(ref_, { storageMode: 'local' }); }catch(e){}
       state.userDoc.storageMode = 'local';
     }
-    // Atnaujinti emailVerified jei pasikeitÄ— (pvz. vartotojas patvirtino paÅ¡tÄ…)
+    // Atnaujinti emailVerified jei pasikeitė (pvz. vartotojas patvirtino paštą)
     if(state.userDoc.emailVerified !== user.emailVerified){
       try{ await updateDoc(ref_, { emailVerified: user.emailVerified || false }); }catch(e){}
       state.userDoc.emailVerified = user.emailVerified || false;
@@ -270,7 +270,7 @@ async function ensureUserDoc(user){
       state.userDoc = s.data();
       state.storageMode = state.userDoc.storageMode || 'local';
       // If storage mode changed (e.g. user toggled it in Settings), re-attach
-      // the items listener pointed at the correct source â€” but not while
+      // the items listener pointed at the correct source — but not while
       // toggleStorageMode() is mid-migration, since it manages the listener
       // lifecycle itself and an early auto-reattach here would show a
       // partially-migrated list before the migration loop finishes.
@@ -282,9 +282,9 @@ async function ensureUserDoc(user){
   });
 }
 
-// â”€â”€ Items listener abstraction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Items listener abstraction ──────────────────────────────────────────
 // In 'cloud' mode, items live in Firestore and sync in real time.
-// In 'local' mode, items live only in this browser's IndexedDB â€” nothing
+// In 'local' mode, items live only in this browser's IndexedDB — nothing
 // is ever sent to Firestore/Storage for the warranty content itself.
 function attachItemsListener(uid, retryCount=0){
   if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
@@ -293,7 +293,7 @@ function attachItemsListener(uid, retryCount=0){
   if(state.storageMode === 'cloud'){
     // IMPORTANT: we intentionally do NOT use orderBy('createdAtMs') in the
     // query itself. Per Firestore's documented behavior, an orderBy()
-    // clause also filters for existence of that field â€” any document
+    // clause also filters for existence of that field — any document
     // missing createdAtMs (e.g. one created by an older app version, or
     // edited manually) would be silently excluded from the results
     // entirely, even though it's still physically in the collection. This
@@ -309,7 +309,7 @@ function attachItemsListener(uid, retryCount=0){
     // directly in the Firebase console, or during a login retry sequence
     // after a failed password attempt), the very first onSnapshot can
     // serve a stale/empty result straight from that local cache before
-    // it has a chance to reconcile with the server â€” this was the second
+    // it has a chance to reconcile with the server — this was the second
     // root cause behind "data visible in the console but not in the app"
     // reports. To guard against that, we do one explicit server-only read
     // first (bypassing the cache entirely) to warm state.items correctly,
@@ -322,7 +322,7 @@ function attachItemsListener(uid, retryCount=0){
       state.loadingItems = false;
       render();
     }).catch(err=>{
-      // Non-fatal â€” the onSnapshot listener below will still populate the
+      // Non-fatal — the onSnapshot listener below will still populate the
       // list once it resolves; this is just a best-effort cache bypass.
       console.warn('Server-first fetch failed (will rely on onSnapshot):', err);
     });
@@ -344,7 +344,7 @@ function attachItemsListener(uid, retryCount=0){
       // change), the freshly-issued ID token can take a brief moment to
       // propagate to Firestore's backend, causing a transient
       // permission-denied even though the rules and data are fine. Retry
-      // once automatically before bothering the user with an error â€” if
+      // once automatically before bothering the user with an error — if
       // it still fails after that, something is actually wrong and we
       // show it instead of silently leaving an empty list on screen.
       if(err.code==='permission-denied' && retryCount<2){
@@ -352,7 +352,7 @@ function attachItemsListener(uid, retryCount=0){
         return;
       }
       state.loadingItems = false;
-      toast('Nepavyko Ä¯kelti garantijÅ³ sÄ…raÅ¡o â€” patikrinkite interneto ryÅ¡Ä¯ arba pabandykite atsijungti ir prisijungti iÅ¡ naujo');
+      toast('Nepavyko įkelti garantijų sąrašo — patikrinkite interneto ryšį arba pabandykite atsijungti ir prisijungti iš naujo');
       render();
     });
   }else{
@@ -379,14 +379,14 @@ function attachItemsListener(uid, retryCount=0){
 async function doRegister(email,pwd,pwd2){
   state.authError='';state.authInfo='';
   state.authEmail=email;
-  if(!email||!pwd){state.authError='UÅ¾pildykite visus laukus';state.authPwd='';state.authPwd2='';render();return;}
-  if(pwd.length<6){state.authError='SlaptaÅ¾odis turi bÅ«ti bent 6 simboliÅ³';state.authPwd='';state.authPwd2='';render();return;}
-  if(pwd!==pwd2){state.authError='SlaptaÅ¾odÅ¾iai nesutampa';state.authPwd='';state.authPwd2='';render();return;}
+  if(!email||!pwd){state.authError='Užpildykite visus laukus';state.authPwd='';state.authPwd2='';render();return;}
+  if(pwd.length<6){state.authError='Slaptažodis turi būti bent 6 simbolių';state.authPwd='';state.authPwd2='';render();return;}
+  if(pwd!==pwd2){state.authError='Slaptažodžiai nesutampa';state.authPwd='';state.authPwd2='';render();return;}
   state.authBusy=true;render();
   try{
     const cred = await createUserWithEmailAndPassword(auth,email,pwd);
     await sendEmailVerification(cred.user);
-    state.authInfo='Paskyra sukurta! Patikrinkite el. paÅ¡tÄ… patvirtinimui.';
+    state.authInfo='Paskyra sukurta! Patikrinkite el. paštą patvirtinimui.';
     state.authEmail='';
   }catch(e){
     state.authError=friendlyAuthError(e.code);
@@ -395,7 +395,7 @@ async function doRegister(email,pwd,pwd2){
 }
 async function doLogin(email,pwd){
   state.authError='';state.authInfo='';
-  if(!email||!pwd){state.authError='UÅ¾pildykite visus laukus';render();return;}
+  if(!email||!pwd){state.authError='Užpildykite visus laukus';render();return;}
   state.authBusy=true;render();
   try{ await signInWithEmailAndPassword(auth,email,pwd); }
   catch(e){ state.authError=friendlyAuthError(e.code); }
@@ -415,9 +415,9 @@ async function doGoogleLogin(){
 }
 async function doReset(email){
   state.authError='';state.authInfo='';
-  if(!email){state.authError='Ä®veskite el. paÅ¡tÄ…';render();return;}
+  if(!email){state.authError='Įveskite el. paštą';render();return;}
   state.authBusy=true;render();
-  try{ await sendPasswordResetEmail(auth,email); state.authInfo='SlaptaÅ¾odÅ¾io atstatymo nuoroda iÅ¡siÅ³sta Ä¯ el. paÅ¡tÄ…'; }
+  try{ await sendPasswordResetEmail(auth,email); state.authInfo='Slaptažodžio atstatymo nuoroda išsiųsta į el. paštą'; }
   catch(e){ state.authError=friendlyAuthError(e.code); }
   state.authBusy=false;render();
 }
@@ -426,10 +426,10 @@ async function resendVerification(){
   state.authBusy=true;render();
   try{
     await sendEmailVerification(state.user);
-    state.authInfo='LaiÅ¡kas iÅ¡siÅ³stas dar kartÄ…. Patikrinkite Spam aplankÄ….';
-    toast('Patvirtinimo laiÅ¡kas iÅ¡siÅ³stas âœ“');
+    state.authInfo='Laiškas išsiųstas dar kartą. Patikrinkite Spam aplanką.';
+    toast('Patvirtinimo laiškas išsiųstas ✓');
   }catch(e){
-    toast('Klaida siunÄiant laiÅ¡kÄ…, bandykite vÄ—liau');
+    toast('Klaida siunčiant laišką, bandykite vėliau');
   }
   state.authBusy=false;render();
 }
@@ -448,12 +448,12 @@ async function doLogout(){
   state.search=''; state.lightbox=null;
 }
 
-// â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â”€â”€ PWA back-button handling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Render ─────────────────────────────────────────────────────────────────
+// ── PWA back-button handling ────────────────────────────────────────────
 // Without this, pressing the phone's back button/gesture has nothing in
 // browser history to "go back" to (since this is a single-page app that
 // never changes the URL), so Android closes the whole PWA on the very
-// first back-press from the list screen â€” which feels like a crash.
+// first back-press from the list screen — which feels like a crash.
 // We push a history entry every time the visible "screen" changes, and on
 // popstate we navigate within the app (back to list) instead of letting
 // the browser/OS unload the page.
@@ -461,7 +461,7 @@ let lastHistoryView = null;
 function pushHistoryIfNeeded(currentViewKey){
   if(currentViewKey === lastHistoryView) return;
   if(lastHistoryView !== null){
-    // Only push once we've rendered at least one screen â€” the very first
+    // Only push once we've rendered at least one screen — the very first
     // render shouldn't add an extra history entry before the user has done
     // anything.
     history.pushState({ view: currentViewKey }, '', location.href);
@@ -471,17 +471,17 @@ function pushHistoryIfNeeded(currentViewKey){
 window.addEventListener('popstate', () => {
   // Any back navigation while inside the app (lightbox, qr scanner, add
   // form, detail, settings, search) returns to the main list rather than
-  // exiting â€” matches the in-app back button's behavior.
+  // exiting — matches the in-app back button's behavior.
   if(state.lightbox){ state.lightbox=null; render(); return; }
   if(state.qrScanning){ stopQrScanner(); return; }
   if(state.view==='add'&&state.addMode){ state.addMode=null; render(); return; }
   if(state.view!=='list'){ state.view='list'; render(); return; }
-  // Already at the list screen with nothing else open â€” let the OS handle
+  // Already at the list screen with nothing else open — let the OS handle
   // it from here (this will actually exit/background the app, same as a
   // native app's root screen would).
 });
 
-// Nav handler â€” vienkartinis, iÅ¡ index.html
+// Nav handler — vienkartinis, iš index.html
 window._appNav = (tab) => { state.view=tab; render(); };
 window._appStartNewItem = (mode) => {
   startNewItem(mode);
@@ -489,7 +489,7 @@ window._appStartNewItem = (mode) => {
   else render();
 };
 
-// navAdd â€” vienkartinis init (long-press = kamera, tap = picker)
+// navAdd — vienkartinis init (long-press = kamera, tap = picker)
 function render(){ _doRender(); }
 function renderSync(){ _doRender(); }
 
@@ -520,7 +520,7 @@ function _doRender(){
 
   pushHistoryIfNeeded(viewKey);
 
-  const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto Â· veikia lokaliai'}</div>`;
+  const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto · veikia lokaliai'}</div>`;
   scr.innerHTML = (state.online?'':syncPill) + html + (state.notifModal ? renderNotifModal() : '');
 
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.view));
@@ -533,12 +533,12 @@ function _doRender(){
   attachEvents();
 }
 
-// â”€â”€ Onboarding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Onboarding ─────────────────────────────────────────────────────────────
 const ONBOARD_SLIDES = [
-  { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok ÄekÄ¯', text:'AI automatiÅ¡kai atpaÅ¾Ä¯sta produktÄ…, parduotuvÄ™ ir datas iÅ¡ nuotraukos ar PDF per kelias sekundes.' },
-  { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'SÄ…skaita kompiuteryje?', text:'Ne bÄ—da â€” atidaryk jÄ… ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotraukÄ….' },
-  { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Niekada nepraleisk garantijos', text:'Matykite iÅ¡ karto, kuriÅ³ daiktÅ³ garantija baigiasi greitai, ir nepraraskite teisÄ—s Ä¯ nemokamÄ… remontÄ….' },
-  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Duomenys saugomi jÅ«sÅ³ paskyroje ir pasiekiami iÅ¡ bet kurio Ä¯renginio, net be interneto.' },
+  { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok čekį', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
+  { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'Sąskaita kompiuteryje?', text:'Ne bėda — atidaryk ją ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotrauką.' },
+  { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Niekada nepraleisk garantijos', text:'Matykite iš karto, kurių daiktų garantija baigiasi greitai, ir nepraraskite teisės į nemokamą remontą.' },
+  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Duomenys saugomi jūsų paskyroje ir pasiekiami iš bet kurio įrenginio, net be interneto.' },
 ];
 function renderOnboarding(){
   const slides = ONBOARD_SLIDES.map(s=>`
@@ -553,7 +553,7 @@ function renderOnboarding(){
     <div class="onboard-slides" id="onboardSlides">${slides}</div>
     <div class="onboard-dots">${dots}</div>
     <div class="onboard-footer">
-      <button class="login-btn" id="onboardNext">${isLast?'PradÄ—ti':'Toliau'}</button>
+      <button class="login-btn" id="onboardNext">${isLast?'Pradėti':'Toliau'}</button>
       ${!isLast?`<button class="onboard-skip" id="onboardSkip">Praleisti</button>`:''}
     </div>
   </div>`;
@@ -581,53 +581,53 @@ function attachOnboardingEvents(){
   }
 }
 
-// â”€â”€ Lightbox â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Lightbox ───────────────────────────────────────────────────────────────
 function renderLightbox(){return`<div class="lightbox" id="lbOverlay"><div class="lightbox-bar"><button class="lightbox-close" id="lbClose"><i class="ti ti-x"></i></button></div><div class="lightbox-img"><img src="${esc(state.lightbox)}" /></div></div>`;}
 function attachLightboxEvents(){
   document.getElementById('lbClose')?.addEventListener('click',()=>{state.lightbox=null;render();});
   document.getElementById('lbOverlay')?.addEventListener('click',e=>{if(e.target.id==='lbOverlay'){state.lightbox=null;render();}});
 }
 
-// â”€â”€ Auth screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Auth screen ────────────────────────────────────────────────────────────
 function renderAuth(){
   const m=state.authMode;
   return`<div class="login-wrap"><div class="login-card">
-    <div class="login-logo"><span class="shield">ðŸ›¡ï¸</span><h1>Galio</h1><p>${m==='register'?'Susikurkite paskyrÄ…':m==='reset'?'Atstatykite slaptaÅ¾odÄ¯':'Prisijunkite'}</p></div>
+    <div class="login-logo"><span class="shield">🛡️</span><h1>Galio</h1><p>${m==='register'?'Susikurkite paskyrą':m==='reset'?'Atstatykite slaptažodį':'Prisijunkite'}</p></div>
 
     ${m!=='reset'?`<button id="googleBtn" class="login-btn" style="background:var(--bg3);color:var(--text);display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px" ${state.authBusy?'disabled':''}>
       <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.12-.84 2.07-1.79 2.71v2.26h2.9c1.7-1.56 2.68-3.87 2.68-6.61z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.81.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.95 10.7c-.18-.54-.28-1.11-.28-1.7s.1-1.16.28-1.7V4.97H.96A8.99 8.99 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.97l2.99 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
-      TÄ™sti su Google
+      Tęsti su Google
     </button>
-    ${m!=='login'?`<p style="font-size:15px;color:var(--text3);text-align:center;margin-bottom:14px">TÄ™sdami sutinkate su <a href="terms.html" target="_blank" style="color:var(--accent)">Naudojimo sÄ…lygomis</a> ir <a href="privacy.html" target="_blank" style="color:var(--accent)">Privatumo politika</a></p>`:''}
+    ${m!=='login'?`<p style="font-size:15px;color:var(--text3);text-align:center;margin-bottom:14px">Tęsdami sutinkate su <a href="terms.html" target="_blank" style="color:var(--accent)">Naudojimo sąlygomis</a> ir <a href="privacy.html" target="_blank" style="color:var(--accent)">Privatumo politika</a></p>`:''}
     <div class="login-divider">arba</div>`:''}
 
-    <input type="email" id="authEmail" class="login-input" placeholder="El. paÅ¡tas" autocomplete="email" value="${state.authEmail||''}" />
-    ${m!=='reset'?`<input type="password" id="authPwd" class="login-input" placeholder="SlaptaÅ¾odis" autocomplete="${m==='register'?'new-password':'current-password'}" value="${state.authPwd||''}" />`:''}
-    ${m==='register'?`<input type="password" id="authPwd2" class="login-input" placeholder="Pakartokite slaptaÅ¾odÄ¯" autocomplete="new-password" value="${state.authPwd2||''}" />`:''}
+    <input type="email" id="authEmail" class="login-input" placeholder="El. paštas" autocomplete="email" value="${state.authEmail||''}" />
+    ${m!=='reset'?`<input type="password" id="authPwd" class="login-input" placeholder="Slaptažodis" autocomplete="${m==='register'?'new-password':'current-password'}" value="${state.authPwd||''}" />`:''}
+    ${m==='register'?`<input type="password" id="authPwd2" class="login-input" placeholder="Pakartokite slaptažodį" autocomplete="new-password" value="${state.authPwd2||''}" />`:''}
 
     ${m==='register'?`<label class="consent-row">
       <input type="checkbox" id="consentCheck" />
-      <span>Sutinku su <a href="terms.html" target="_blank">Naudojimo sÄ…lygomis</a> ir <a href="privacy.html" target="_blank">Privatumo politika</a></span>
+      <span>Sutinku su <a href="terms.html" target="_blank">Naudojimo sąlygomis</a> ir <a href="privacy.html" target="_blank">Privatumo politika</a></span>
     </label>`:''}
 
     ${state.authError?`<p class="login-error">${esc(state.authError)}</p>`:''}
     ${state.authInfo?`<p class="login-info">${esc(state.authInfo)}</p>`:''}
 
     <button id="authSubmit" class="login-btn" ${state.authBusy?'disabled':''}>
-      ${state.authBusy?'PraÅ¡ome palaukti...':m==='register'?'Sukurti paskyrÄ…':m==='reset'?'SiÅ³sti nuorodÄ…':'Prisijungti'}
+      ${state.authBusy?'Prašome palaukti...':m==='register'?'Sukurti paskyrą':m==='reset'?'Siųsti nuorodą':'Prisijungti'}
     </button>
 
-    ${m==='login'?`<div class="login-switch"><button id="toReset">PamirÅ¡ote slaptaÅ¾odÄ¯?</button></div>`:''}
+    ${m==='login'?`<div class="login-switch"><button id="toReset">Pamiršote slaptažodį?</button></div>`:''}
     <div class="login-switch">
       ${m==='login'?`Neturite paskyros? <button id="toRegister">Registruotis</button>`
-        :m==='register'?`Jau turite paskyrÄ…? <button id="toLogin">Prisijungti</button>`
-        :`<button id="toLogin">GrÄ¯Å¾ti Ä¯ prisijungimÄ…</button>`}
+        :m==='register'?`Jau turite paskyrą? <button id="toLogin">Prisijungti</button>`
+        :`<button id="toLogin">Grįžti į prisijungimą</button>`}
     </div>
   </div></div>`;
 }
 function attachAuthEvents(){
-  // { once: true } â€” listener automatiÅ¡kai paÅ¡alinamas po pirmo iÅ¡Å¡aukimo,
-  // taip iÅ¡vengiama kaupimosi per kelis render() iÅ¡kvietimus
+  // { once: true } — listener automatiškai pašalinamas po pirmo iššaukimo,
+  // taip išvengiama kaupimosi per kelis render() iškvietimus
   const once=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn,{once:true});};
   const e1=document.getElementById('authEmail'),p1=document.getElementById('authPwd'),p2=document.getElementById('authPwd2');
   once('googleBtn','click',doGoogleLogin);
@@ -640,7 +640,7 @@ function attachAuthEvents(){
       const consent = document.getElementById('consentCheck');
       if(!consent?.checked){
         state.authPwd=pwd; state.authPwd2=pwd2;
-        state.authError='Turite sutikti su Naudojimo sÄ…lygomis ir Privatumo politika';
+        state.authError='Turite sutikti su Naudojimo sąlygomis ir Privatumo politika';
         render();
         return;
       }
@@ -660,7 +660,7 @@ function attachAuthEvents(){
   setTimeout(()=>e1?.focus(),50);
 }
 
-// â”€â”€ List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── List ───────────────────────────────────────────────────────────────────
 function renderList(){
   const{items,filterCat,sortBy,userDoc}=state;
   const expired =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d<0;}).length;
@@ -679,20 +679,20 @@ function renderList(){
   const statsHtml=items.length>0?`<div class="stats-row">
     <div class="stat-tile"><div class="n" style="color:var(--green)">${valid}</div><div class="l">Galioja</div></div>
     <div class="stat-tile"><div class="n" style="color:var(--orange)">${expiring}</div><div class="l">Baigiasi</div></div>
-    <div class="stat-tile"><div class="n" style="color:var(--red)">${expired}</div><div class="l">BaigÄ—si</div></div>
+    <div class="stat-tile"><div class="n" style="color:var(--red)">${expired}</div><div class="l">Baigėsi</div></div>
   </div>`:'';
 
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const planBanner = !isPremium ? `<div class="plan-banner">
     <i class="ti ti-sparkles"></i>
-    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'Ä—':'Ä—s'} liko`:'AI analizÄ—s iÅ¡naudotos'} Â· ${state.storageMode==='cloud'?'Cloud saugojimas':'Saugoma Å¡iame Ä¯renginyje'}</div>
+    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · ${state.storageMode==='cloud'?'Cloud saugojimas':'Saugoma šiame įrenginyje'}</div>
     <button id="upgradeBtn">Premium</button>
   </div>`:'';
 
   const verifyBanner = !state.user.emailVerified ? `<div class="plan-banner" style="background:var(--accent-bg)">
     <i class="ti ti-mail-exclamation" style="color:var(--accent)"></i>
-    <div class="pb-text" style="color:var(--accent)">Patvirtinkite el. paÅ¡tÄ…, kad galÄ—tumÄ—te naudoti AI analizÄ™. ${state.authInfo&&state.authInfo.includes('iÅ¡ naujo')?esc(state.authInfo):'Patikrinkite Spam aplankÄ….'}</div>
-    <button id="resendVerifyBtn" style="background:var(--accent)" ${state.authBusy?'disabled':''}>${state.authBusy?'...':'SiÅ³sti dar kartÄ…'}</button>
+    <div class="pb-text" style="color:var(--accent)">Patvirtinkite el. paštą, kad galėtumėte naudoti AI analizę. ${state.authInfo&&state.authInfo.includes('iš naujo')?esc(state.authInfo):'Patikrinkite Spam aplanką.'}</div>
+    <button id="resendVerifyBtn" style="background:var(--accent)" ${state.authBusy?'disabled':''}>${state.authBusy?'...':'Siųsti dar kartą'}</button>
   </div>`:'';
 
   const chips=['Visos',...CATEGORIES].map(c=>`<button class="chip${filterCat===c?' active':''}" data-filter="${esc(c)}">${esc(c)}</button>`).join('');
@@ -724,9 +724,9 @@ function renderList(){
 
   const emptyHtml=state.loadingItems ? skeletonHtml : items.length===0?`<div class="empty-state">
     <div class="empty-icon"><i class="ti ti-shield-check"></i></div>
-    <h3>Dar nÄ—ra garantijÅ³</h3>
-    <p>PridÄ—kite pirmÄ… daiktÄ… paspausdami + mygtukÄ… apaÄioje</p>
-  </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>Pabandykite kitÄ… kategorijÄ…</p></div>`:'';
+    <h3>Dar nėra garantijų</h3>
+    <p>Pridėkite pirmą daiktą paspausdami + mygtuką apačioje</p>
+  </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>Pabandykite kitą kategoriją</p></div>`:'';
 
   return`<div>
     <div class="page-header">
@@ -744,7 +744,7 @@ function renderList(){
       </button>
       <button id="sortDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
         <i class="ti ti-arrows-sort" style="font-size:15px;flex-shrink:0"></i>
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sortBy==='newest'?'Naujausi':sortBy==='expiring'?'Baigiasi':'Aâ€“Z'}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sortBy==='newest'?'Naujausi':sortBy==='expiring'?'Baigiasi':'A–Z'}</span>
         <i class="ti ti-chevron-down" style="font-size:15px;flex-shrink:0"></i>
       </button>
     </div>
@@ -756,14 +756,14 @@ function renderList(){
     <div style="position:fixed;right:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       <button class="sort-drop-item${sortBy==='newest'?' active':''}" data-sort="newest"><i class="ti ti-clock" style="font-size:14px"></i>Naujausi</button>
       <button class="sort-drop-item${sortBy==='expiring'?' active':''}" data-sort="expiring"><i class="ti ti-hourglass" style="font-size:14px"></i>Baigiasi pirmi</button>
-      <button class="sort-drop-item${sortBy==='name'?' active':''}" data-sort="name"><i class="ti ti-sort-a-z" style="font-size:14px"></i>Aâ€“Z</button>
+      <button class="sort-drop-item${sortBy==='name'?' active':''}" data-sort="name"><i class="ti ti-sort-a-z" style="font-size:14px"></i>A–Z</button>
     </div>` : ''}
     <div class="cards">${emptyHtml}${cardsHtml}</div>
     <div style="height:8px"></div>
   </div>`;
 }
 
-// â”€â”€ Search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Search ─────────────────────────────────────────────────────────────────
 function renderSearch(){
   const q=state.search;
   const results=!q?[]:state.items.filter(i=>{const s=q.toLowerCase();return i.name.toLowerCase().includes(s)||(i.shop||'').toLowerCase().includes(s)||(i.docNumber||'').toLowerCase().includes(s)||(i.notes||'').toLowerCase().includes(s);});
@@ -781,39 +781,39 @@ function renderSearch(){
   }).join('');
 
   return`<div>
-    <div class="page-header" style="padding-bottom:14px"><span class="page-title">IeÅ¡koti</span></div>
+    <div class="page-header" style="padding-bottom:14px"><span class="page-title">Ieškoti</span></div>
     <div style="padding:12px 16px 4px">
       <div class="search-bar" style="margin:0"><i class="ti ti-search"></i><input type="search" id="searchInput" placeholder="Pavadinimas, dok. numeris..." value="${esc(q)}" autofocus /></div>
     </div>
     <div class="cards" style="margin-top:12px">
-      ${!q?`<div class="empty-state" style="padding:40px 32px"><div class="empty-icon"><i class="ti ti-search"></i></div><p>Ä®veskite paieÅ¡kos Å¾odÄ¯</p></div>`:results.length===0?`<div class="empty-state" style="padding:40px 32px"><div class="empty-icon"><i class="ti ti-mood-sad"></i></div><h3>Nieko nerasta</h3></div>`:cardsHtml}
+      ${!q?`<div class="empty-state" style="padding:40px 32px"><div class="empty-icon"><i class="ti ti-search"></i></div><p>Įveskite paieškos žodį</p></div>`:results.length===0?`<div class="empty-state" style="padding:40px 32px"><div class="empty-icon"><i class="ti ti-mood-sad"></i></div><h3>Nieko nerasta</h3></div>`:cardsHtml}
     </div>
   </div>`;
 }
 
-// â”€â”€ Add picker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Add picker ─────────────────────────────────────────────────────────────
 function renderPicker(){
   const isPremium = isPremiumUser();
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const aiExhausted = !isPremium && aiLeft<=0;
 
   return`<div>
-    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>PridÄ—ti garantijÄ…</h2></div>
+    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Pridėti garantiją</h2></div>
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Su dokumentu${aiExhausted?'':' + AI'}</h3><p>${aiExhausted?'AI analizÄ—s iÅ¡naudotos â€“ galite vis tiek prisegti dokumentÄ… be automatinio atpaÅ¾inimo':`Nufotografuok arba Ä¯kelk â€“ AI iÅ¡trauks informacijÄ… automatiÅ¡kai${!isPremium?` (liko ${aiLeft})`:''}`}</p></div>
+        <div><h3>Su dokumentu${aiExhausted?'':' + AI'}</h3><p>${aiExhausted?'AI analizės išnaudotos – galite vis tiek prisegti dokumentą be automatinio atpažinimo':`Nufotografuok arba įkelk – AI ištrauks informaciją automatiškai${!isPremium?` (liko ${aiLeft})`:''}`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
-        <div><h3>Rankiniu bÅ«du</h3><p>Suveskite informacijÄ… patys â€“ visada nemokama. DokumentÄ… galima prisegti be AI</p></div>
+        <div><h3>Rankiniu būdu</h3><p>Suveskite informaciją patys – visada nemokama. Dokumentą galima prisegti be AI</p></div>
       </button>
     </div>
-    ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">IÅ¡naudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite Ä¯ Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
+    ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
   </div>`;
 }
 
-// â”€â”€ Add form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Add form ───────────────────────────────────────────────────────────────
 function renderAdd(){
   const f=state.form;
   const isPhoto=state.addMode==='photo';
@@ -822,65 +822,65 @@ function renderAdd(){
   const hasImg=f.docData&&f.docMime!=='application/pdf';
 
   let docAreaHtml='';
-  const qrButtonHtml = !f.docData ? `<button type="button" class="qr-link-btn" disabled style="opacity:0.5;cursor:default"><i class="ti ti-qrcode"></i>QR skanavimas â€” netrukus</button>` : '';
+  const qrButtonHtml = !f.docData ? `<button type="button" class="qr-link-btn" disabled style="opacity:0.5;cursor:default"><i class="ti ti-qrcode"></i>QR skanavimas — netrukus</button>` : '';
   if(hasPdf){
-    docAreaHtml=`<div class="doc-preview-pdf"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(f.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">PDF pridÄ—tas</div></div></div>`;
+    docAreaHtml=`<div class="doc-preview-pdf"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(f.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">PDF pridėtas</div></div></div>`;
   }else if(hasImg){
     docAreaHtml=`<div style="position:relative"><img class="doc-preview-img" id="docThumb" src="${esc(f.docData)}" alt="" /><div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.55);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;pointer-events:none"><i class="ti ti-zoom-in" style="font-size:14px;color:#fff"></i></div></div>`;
   }else{
     docAreaHtml=`${qrButtonHtml}<label class="doc-drop-zone" for="docInput">
       <i class="ti ti-${isPhoto?'camera':'paperclip'}"></i>
-      <p>${isPhoto?'Fotografuoti arba Ä¯kelti':'Prisegti dokumentÄ… (neprivaloma)'}</p>
-      <small>JPG, PNG, PDF Â· max 10MB / 5MB PDF</small>
+      <p>${isPhoto?'Fotografuoti arba įkelti':'Prisegti dokumentą (neprivaloma)'}</p>
+      <small>JPG, PNG, PDF · max 10MB / 5MB PDF</small>
     </label>`;
   }
 
   const multiItemBanner = state.aiMultiItems.length>0 ? `<div class="plan-banner" style="background:var(--accent-bg);margin-bottom:14px">
     <i class="ti ti-list-details" style="color:var(--accent)"></i>
-    <div class="pb-text" style="color:var(--text)">Å iame Äekyje rasta dar <b style="color:var(--accent)">${state.aiMultiItems.length}</b> prekÄ—(-iÅ³). IÅ¡saugokite Å¡iÄ…, tada pridÄ—kite kitas be pakartotinio skenavimo.</div>
-    <button id="nextMultiItemBtn">Kita prekÄ—</button>
+    <div class="pb-text" style="color:var(--text)">Šiame čekyje rasta dar <b style="color:var(--accent)">${state.aiMultiItems.length}</b> prekė(-ių). Išsaugokite šią, tada pridėkite kitas be pakartotinio skenavimo.</div>
+    <button id="nextMultiItemBtn">Kita prekė</button>
   </div>` : '';
 
   const warrantySheet=state.showWarranty?`<div class="warranty-sheet" id="warrantySheet">
     <div class="warranty-overlay" id="warrantyOverlay"></div>
     <div class="warranty-panel">
       <div class="warranty-handle"></div>
-      <div class="warranty-title">Garantijos trukmÄ—</div>
+      <div class="warranty-title">Garantijos trukmė</div>
       ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
     </div>
   </div>`:'';
 
   return`<div>
-    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-arrow-left"></i></button><h2>${isPhoto?'PridÄ—ti su dokumentu':'Ä®vesti rankiniu bÅ«du'}</h2></div>
+    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-arrow-left"></i></button><h2>${isPhoto?'Pridėti su dokumentu':'Įvesti rankiniu būdu'}</h2></div>
     <div class="form-body">
-      ${!state.user.emailVerified&&isPhoto?`<div class="plan-banner" style="margin-bottom:14px"><i class="ti ti-mail-exclamation"></i><div class="pb-text">Patvirtinkite el. paÅ¡tÄ…, kad galÄ—tumÄ—te naudoti AI analizÄ™</div></div>`:''}
+      ${!state.user.emailVerified&&isPhoto?`<div class="plan-banner" style="margin-bottom:14px"><i class="ti ti-mail-exclamation"></i><div class="pb-text">Patvirtinkite el. paštą, kad galėtumėte naudoti AI analizę</div></div>`:''}
       ${multiItemBanner}
       <div class="doc-upload-area">
         ${docAreaHtml}
         <input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto?'capture="environment"':''} style="display:none" />
-        ${f.docData?`<button class="doc-remove-btn" id="removeDoc"><i class="ti ti-trash" style="font-size:14px"></i>PaÅ¡alinti dokumentÄ…</button>`:''}
+        ${f.docData?`<button class="doc-remove-btn" id="removeDoc"><i class="ti ti-trash" style="font-size:14px"></i>Pašalinti dokumentą</button>`:''}
         ${state.docError?`<p class="doc-error">${esc(state.docError)}</p>`:''}
-        ${state.analyzing?`<div class="analyzing-row"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI analizuoja dokumentÄ…...</span></div>`:''}
+        ${state.analyzing?`<div class="analyzing-row"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI analizuoja dokumentą...</span></div>`:''}
       </div>
 
-      <p class="form-label-section">PagrindinÄ— informacija</p>
+      <p class="form-label-section">Pagrindinė informacija</p>
       ${f.qualityWarning ? `<div style="background:var(--orange-bg);border-radius:var(--radius);margin:0 0 16px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start">
         <i class="ti ti-alert-triangle" style="font-size:20px;color:var(--orange);flex-shrink:0;margin-top:1px"></i>
         <div style="min-width:0">
           <div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px">${esc(f.qualityWarning)}</div>
-          <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Rekomenduojame nufotografuoti iÅ¡ naujo.</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:10px">Rekomenduojame nufotografuoti iš naujo.</div>
           <button id="rescanBtn" style="background:var(--orange);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
-            <i class="ti ti-camera"></i> Fotografuoti iÅ¡ naujo
+            <i class="ti ti-camera"></i> Fotografuoti iš naujo
           </button>
         </div>
       </div>` : ''}
       <div class="form-section">
         <div class="form-field">
-          <label>PrekÄ—s pavadinimas</label>
+          <label>Prekės pavadinimas</label>
           <input type="text" id="f_name" placeholder="pvz. Samsung TV 55&quot;" value="${esc(f.name)}" />
         </div>
         <div class="form-field">
-          <label>ParduotuvÄ—</label>
+          <label>Parduotuvė</label>
           <input type="text" id="f_shop" placeholder="pvz. Pigu, Euronics..." value="${esc(f.shop)}" />
         </div>
         <div class="form-field">
@@ -905,10 +905,10 @@ function renderAdd(){
       </div>
       ${f.warrantyAppliesWarning ? `<div class="plan-banner" style="margin-bottom:16px;background:var(--orange-bg)">
         <i class="ti ti-info-circle" style="color:var(--orange);flex-shrink:0"></i>
-        <div class="pb-text" style="color:var(--text);font-size:14px">AI: Å¡iai prekei garantija paprastai netaikoma â€” patikrinkite patys ir koreguokite jei reikia.</div>
+        <div class="pb-text" style="color:var(--text);font-size:14px">AI: šiai prekei garantija paprastai netaikoma — patikrinkite patys ir koreguokite jei reikia.</div>
       </div>` : ''}
         ${f.warrantyMonths===null?`<div class="form-field"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
-        ${f.purchaseDate?`<div class="form-field"><label>14 d. grÄ…Å¾inimas iki</label><span style="font-size:16px;color:var(--text2)">${fmtDate(addDays(f.purchaseDate,14))}</span></div>`:''}
+        ${f.purchaseDate?`<div class="form-field"><label>14 d. grąžinimas iki</label><span style="font-size:16px;color:var(--text2)">${fmtDate(addDays(f.purchaseDate,14))}</span></div>`:''}
       </div>
 
       <p class="form-label-section">Dokumentas</p>
@@ -936,19 +936,19 @@ function renderAdd(){
     </div>
     ${warrantySheet}
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
-      <button class="save-btn" id="saveBtn" ${f.name.trim()&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'IÅ¡saugoti'}</button>
+      <button class="save-btn" id="saveBtn" ${f.name.trim()&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
     </div>
   </div>`;
 }
 
-// â”€â”€ Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Detail ─────────────────────────────────────────────────────────────────
 function renderDetail(){
   const item=state.items.find(i=>i.id===state.selected);
   if(!item){state.view='list';render();return '';}
   const days=daysLeft(item.warrantyEnd);
   let sc,si,sv;
   if(days===null){sc='var(--bg2)';si='ti-shield';sv='Nenurodyta';}
-  else if(days<0){sc='var(--red-bg)';si='ti-shield-x';sv='Garantija baigÄ—si';}
+  else if(days<0){sc='var(--red-bg)';si='ti-shield-x';sv='Garantija baigėsi';}
   else if(days<=30){sc='var(--orange-bg)';si='ti-shield-exclamation';sv=`Liko ${days} d.`;}
   else{sc='var(--green-bg)';si='ti-shield-check';sv=`Liko ${days} d.`;}
   const textColor=days===null?'var(--text2)':days<0?'var(--red)':days<=30?'var(--orange)':'var(--green)';
@@ -956,29 +956,29 @@ function renderDetail(){
 
   let docHtml='';
   if(item.docUrl&&item.docMime==='application/pdf'){
-    docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${esc(item.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(item.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite perÅ¾iÅ«rÄ—ti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
+    docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${esc(item.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(item.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
   }else if(item.docUrl){
     docHtml=`<div class="detail-section"><img src="${esc(item.docUrl)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
   }
 
   const rows=[
-    {i:'ti-tag',l:'PrekÄ—s pavadinimas',v:item.name},
-    {i:'ti-building-store',l:'ParduotuvÄ—',v:item.shop||'â€”'},
+    {i:'ti-tag',l:'Prekės pavadinimas',v:item.name},
+    {i:'ti-building-store',l:'Parduotuvė',v:item.shop||'—'},
     {i:'ti-category',l:'Kategorija',v:item.category},
-    {i:'ti-file-description',l:'Dok. tipas',v:item.docType||'â€”'},
-    {i:'ti-hash',l:'Dok. numeris',v:item.docNumber||'â€”'},
+    {i:'ti-file-description',l:'Dok. tipas',v:item.docType||'—'},
+    {i:'ti-hash',l:'Dok. numeris',v:item.docNumber||'—'},
     {i:'ti-calendar',l:'Pirkimo data',v:fmtDate(item.purchaseDate)},
     {i:'ti-calendar-due',l:'Garantija iki',v:fmtDate(item.warrantyEnd)},
-    ...(item.returnDeadline ? [{i:'ti-rotate-2',l:'14 d. grÄ…Å¾inimas iki',v:fmtDate(item.returnDeadline)}] : []),
+    ...(item.returnDeadline ? [{i:'ti-rotate-2',l:'14 d. grąžinimas iki',v:fmtDate(item.returnDeadline)}] : []),
   ].map(r=>`<div class="detail-row"><i class="ti ${r.i}"></i><span class="dr-label">${esc(r.l)}</span><span class="dr-val">${esc(r.v)}</span></div>`).join('');
 
   const policySection = isPremium ? `<div class="detail-section">
-    ${state.policyChecking ? `<div class="analyzing-row" style="justify-content:center"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI tikrina garantijos politikÄ…...</span></div>`
+    ${state.policyChecking ? `<div class="analyzing-row" style="justify-content:center"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI tikrina garantijos politiką...</span></div>`
       : state.policyResult && state.policyResultFor===item.id ? `<div class="plan-banner" style="background:var(--accent-bg);align-items:flex-start">
           <i class="ti ti-info-circle" style="color:var(--accent);margin-top:2px;flex-shrink:0"></i>
-          <div class="pb-text" style="color:var(--text);font-size:14px;line-height:1.5"><b style="color:var(--accent)">AI pasiÅ«lymas (patikrinkite patys):</b><br/>${esc(state.policyResult.replace(/\*\*/g,'').replace(/\*/g,''))}</div>
+          <div class="pb-text" style="color:var(--text);font-size:14px;line-height:1.5"><b style="color:var(--accent)">AI pasiūlymas (patikrinkite patys):</b><br/>${esc(state.policyResult.replace(/\*\*/g,'').replace(/\*/g,''))}</div>
         </div>`
-      : `<button class="qr-link-btn" id="checkPolicyBtn"><i class="ti ti-sparkles"></i>Patikrinti gamintojo garantijÄ… su AI</button>`}
+      : `<button class="qr-link-btn" id="checkPolicyBtn"><i class="ti ti-sparkles"></i>Patikrinti gamintojo garantiją su AI</button>`}
   </div>` : '';
 
   return`<div>
@@ -995,12 +995,12 @@ function renderDetail(){
     <div class="detail-section"><div class="detail-rows">${rows}</div></div>
     ${item.notes?`<div class="detail-section"><div class="notes-card"><div class="nc-label">Pastabos</div><p>${esc(item.notes)}</p></div></div>`:''}
     ${policySection}
-    <div class="detail-section"><button class="delete-btn" id="deleteBtn2"><i class="ti ti-trash"></i>IÅ¡trinti Ä¯raÅ¡Ä…</button></div>
+    <div class="detail-section"><button class="delete-btn" id="deleteBtn2"><i class="ti ti-trash"></i>Ištrinti įrašą</button></div>
     <div style="height:8px"></div>
   </div>`;
 }
 
-// â”€â”€ Settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Settings ───────────────────────────────────────────────────────────────
 function renderSettings(){
   const u = state.user;
   const isPremium = isPremiumUser();
@@ -1012,20 +1012,20 @@ function renderSettings(){
   const avatarHtml = u.photoURL
     ? `<img src="${esc(u.photoURL)}" alt="" />`
     : initials;
-  const accountEmail = state.userDoc?.email || u.email || 'El. paÅ¡tas nerastas';
+  const accountEmail = state.userDoc?.email || u.email || 'El. paštas nerastas';
   const accountName = u.displayName || accountEmail;
   const providers = (u.providerData||[]).map(p=>p.providerId);
-  const providerLabel = providers.includes('google.com') ? 'Google' : 'El. paÅ¡tas';
-  const uidShort = u.uid ? u.uid.slice(0,8) : 'â€”';
+  const providerLabel = providers.includes('google.com') ? 'Google' : 'El. paštas';
+  const uidShort = u.uid ? u.uid.slice(0,8) : '—';
   const planLabel = state.userDoc?.role==='admin'
     ? '<i class="ti ti-shield-check" style="font-size:15px"></i> Administratorius'
     : state.userDoc?.plan==='tester'
-      ? '<i class="ti ti-flask" style="font-size:15px"></i> Testeris Â· Premium teisÄ—s'
+      ? '<i class="ti ti-flask" style="font-size:15px"></i> Testeris · Premium teisės'
       : state.userDoc?.plan==='friend'
-        ? '<i class="ti ti-heart" style="font-size:15px"></i> Draugas Â· Premium teisÄ—s'
+        ? '<i class="ti ti-heart" style="font-size:15px"></i> Draugas · Premium teisės'
         : isPremium
           ? '<i class="ti ti-crown" style="font-size:15px"></i> Premium narys'
-          : `Nemokamas planas Â· ${state.items.length} Ä¯raÅ¡Å³`;
+          : `Nemokamas planas · ${state.items.length} įrašų`;
 
   return `<div>
     <div class="page-header">
@@ -1041,63 +1041,63 @@ function renderSettings(){
         <div class="settings-profile-plan${isPremium?' premium':''}">
           ${planLabel}
         </div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px">${providerLabel} Â· ID ${esc(uidShort)}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">${providerLabel} · ID ${esc(uidShort)}</div>
       </div>
     </div>
 
     ${!isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
-      <div class="pb-text">Atsinaujinkite Ä¯ Premium â€“ paskyros sinchronizacija ir iki ${PREMIUM_DAILY_LIMIT} AI analiziÅ³ per dienÄ…</div>
+      <div class="pb-text">Atsinaujinkite į Premium – paskyros sinchronizacija ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
 
-    <p class="form-label-section" style="margin:0 16px 8px">DuomenÅ³ vieta</p>
+    <p class="form-label-section" style="margin:0 16px 8px">Duomenų vieta</p>
     <div class="form-section" style="margin:0 16px 8px">
       <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label">${isCloud?'Paskyroje':'Tik Å¡iame telefone'}<small>${isCloud?'Ä®raÅ¡ai saugomi paskyroje ir pasiekiami iÅ¡ kitÅ³ Ä¯renginiÅ³':'Privatumo reÅ¾imas: Ä¯raÅ¡ai lieka tik Å¡iame telefone'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600">${isCloud?'Saugoti tik telefone':'Perkelti Ä¯ paskyrÄ…'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+        <div class="settings-row-label">${isCloud?'Paskyroje':'Tik šiame telefone'}<small>${isCloud?'Įrašai saugomi paskyroje ir pasiekiami iš kitų įrenginių':'Privatumo režimas: įrašai lieka tik šiame telefone'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600">${isCloud?'Saugoti tik telefone':'Perkelti į paskyrą'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
       </button>
     </div>
     ${state.storageError ? `<div style="margin:0 16px 12px;padding:12px 14px;border-radius:12px;background:var(--red-bg);color:var(--red);font-size:14px;line-height:1.45">${esc(state.storageError)}</div>` : ''}
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Tai rekomenduojamas Premium reÅ¾imas: duomenys nepririÅ¡ti prie vieno telefono. Jei labiau rÅ«pi privatumas, galite perkelti Ä¯raÅ¡us tik Ä¯ Å¡Ä¯ telefonÄ….':isPremium?'Dabar naudojate privatumo reÅ¾imÄ…: Ä¯raÅ¡ai saugomi tik Å¡iame telefone. Premium leidÅ¾ia juos perkelti Ä¯ paskyrÄ…, kad nepradingtÅ³ pakeitus ar praradus telefonÄ….':'Paskyros saugykla prieinama Premium / Tester / Draugas paskyroms. Nemokamame plane Ä¯raÅ¡ai saugomi tik telefone.'}
+      ${isCloud?'Tai rekomenduojamas Premium režimas: duomenys nepririšti prie vieno telefono. Jei labiau rūpi privatumas, galite perkelti įrašus tik į šį telefoną.':isPremium?'Dabar naudojate privatumo režimą: įrašai saugomi tik šiame telefone. Premium leidžia juos perkelti į paskyrą, kad nepradingtų pakeitus ar praradus telefoną.':'Paskyros saugykla prieinama Premium / Tester / Draugas paskyroms. Nemokamame plane įrašai saugomi tik telefone.'}
     </p>
 
-    <p class="form-label-section" style="margin:0 16px 8px">AI analizÄ—</p>
+    <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
     <div class="form-section" style="margin:0 16px 20px">
       ${isPremium ? `
       <div class="detail-row" style="padding:13px 16px">
         <i class="ti ti-sparkles" style="font-size:18px;color:var(--text3);width:20px"></i>
-        <span class="dr-label">Å iandien</span>
+        <span class="dr-label">Šiandien</span>
         <span class="dr-val">${state.userDoc?.aiDayKey===new Date().toISOString().slice(0,10)?(state.userDoc?.aiDayCount||0):0}/${PREMIUM_DAILY_LIMIT}</span>
       </div>
       <div class="detail-row" style="padding:13px 16px">
         <i class="ti ti-calendar" style="font-size:18px;color:var(--text3);width:20px"></i>
-        <span class="dr-label">Å Ä¯ mÄ—nesÄ¯</span>
+        <span class="dr-label">Šį mėnesį</span>
         <span class="dr-val">${state.userDoc?.aiMonthKey===new Date().toISOString().slice(0,7)?(state.userDoc?.aiMonthCount||0):0}/${PREMIUM_MONTHLY_LIMIT}</span>
       </div>` : `
       <div class="detail-row" style="padding:13px 16px">
         <i class="ti ti-sparkles" style="font-size:18px;color:var(--text3);width:20px"></i>
-        <span class="dr-label">Liko nemokamÅ³ analiziÅ³</span>
+        <span class="dr-label">Liko nemokamų analizių</span>
         <span class="dr-val">${aiLeft}/${AI_FREE_USES}</span>
       </div>`}
     </div>
 
-    <p class="form-label-section" style="margin:0 16px 8px">IÅ¡vaizda</p>
+    <p class="form-label-section" style="margin:0 16px 8px">Išvaizda</p>
     <div class="form-section" style="margin:0 16px 20px;padding:14px 16px">
       <div class="theme-picker">
         <button class="theme-opt${state.theme==='auto'?' active':''}" data-theme="auto"><i class="ti ti-device-mobile"></i><span>Auto</span></button>
-        <button class="theme-opt${state.theme==='light'?' active':''}" data-theme="light"><i class="ti ti-sun"></i><span>Å viesi</span></button>
+        <button class="theme-opt${state.theme==='light'?' active':''}" data-theme="light"><i class="ti ti-sun"></i><span>Šviesi</span></button>
         <button class="theme-opt${state.theme==='dark'?' active':''}" data-theme="dark"><i class="ti ti-moon"></i><span>Tamsi</span></button>
       </div>
     </div>
 
-    <p class="form-label-section" style="margin:0 16px 8px">PraneÅ¡imai</p>
+    <p class="form-label-section" style="margin:0 16px 8px">Pranešimai</p>
     <div class="form-section" style="margin:0 16px 20px">
       <div class="settings-row">
         <i class="ti ti-bell row-icon"></i>
-        <div class="settings-row-label">Garantijos baigiasi<small>Priminimas likus 30 dienÅ³</small></div>
+        <div class="settings-row-label">Garantijos baigiasi<small>Priminimas likus 30 dienų</small></div>
         <button class="toggle-switch${notifyOn?' on':''}" id="notifyToggle"><div class="knob"></div></button>
       </div>
     </div>
@@ -1112,40 +1112,40 @@ function renderSettings(){
     <p class="form-label-section" style="margin:0 16px 8px">Paskyra</p>
     <div class="form-section" style="margin:0 16px 20px">
       <button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-lock row-icon"></i><span class="settings-row-label">Pakeisti slaptaÅ¾odÄ¯</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+        <i class="ti ti-lock row-icon"></i><span class="settings-row-label">Pakeisti slaptažodį</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </button>
     </div>
 
     <p class="form-label-section" style="margin:0 16px 8px">Pagalba</p>
     <div class="form-section" style="margin:0 16px 20px">
       <button class="settings-row tappable" id="helpContactBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-help-circle row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Susisiekti su pagalba<small>RaÅ¡ykite mums tiesiogiai</small></span>
+        <i class="ti ti-help-circle row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Susisiekti su pagalba<small>Rašykite mums tiesiogiai</small></span>
       </button>
     </div>
 
-    <p class="form-label-section" style="margin:0 16px 8px">TeisinÄ— informacija</p>
+    <p class="form-label-section" style="margin:0 16px 8px">Teisinė informacija</p>
     <div class="form-section" style="margin:0 16px 20px">
       <a class="settings-row tappable" href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:flex">
         <i class="ti ti-shield-lock row-icon"></i><span class="settings-row-label">Privatumo politika</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
       </a>
       <a class="settings-row tappable" href="terms.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:flex">
-        <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Naudojimo sÄ…lygos</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
+        <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Naudojimo sąlygos</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
       </a>
     </div>
 
     <div class="form-section" style="margin:0 16px 20px">
       <button class="settings-row tappable danger" id="deleteAccountBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-trash row-icon"></i><span class="settings-row-label">IÅ¡trinti paskyrÄ…</span>
+        <i class="ti ti-trash row-icon"></i><span class="settings-row-label">Ištrinti paskyrą</span>
       </button>
     </div>
 
-    <p style="text-align:center;font-size:15px;color:var(--text3);padding:0 16px 24px">Galio v1.0 Â· Duomenys saugomi debesyje</p>
+    <p style="text-align:center;font-size:15px;color:var(--text3);padding:0 16px 24px">Galio v1.0 · Duomenys saugomi debesyje</p>
   </div>`;
 }
 
-// â”€â”€ Notification modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Notification modal ─────────────────────────────────────────────────────
 
-// SiÅ«lomi priminimai pagal garantijos ilgÄ¯
+// Siūlomi priminimai pagal garantijos ilgį
 function suggestNotifDays(warrantyMonths, hasReturn){
   const days = [];
   if(warrantyMonths){
@@ -1163,7 +1163,7 @@ function showNotifModal(itemId, itemData){
   if(!item){ state.view='list'; render(); return; }
 
   const suggested = suggestNotifDays(item?.warrantyMonths, !!item?.returnDeadline);
-  // Naudoti paskutinius nustatymus jei yra, kitaip siÅ«lomus
+  // Naudoti paskutinius nustatymus jei yra, kitaip siūlomus
   const defaults = state._lastNotifDays || suggested;
 
   state.notifModal = {
@@ -1190,41 +1190,41 @@ function renderNotifModal(){
     <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 40px;max-height:85vh;overflow-y:auto">
       <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
       <h3 style="font-size:18px;font-weight:700;margin:0 0 6px">Priminimai</h3>
-      <p style="font-size:14px;color:var(--text3);margin:0 0 20px">Priminsime prieÅ¡ garantijos pabaigÄ….</p>
+      <p style="font-size:14px;color:var(--text3);margin:0 0 20px">Priminsime prieš garantijos pabaigą.</p>
 
       ${m.item?.warrantyEnd ? `
-      <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">PrieÅ¡ garantijos pabaigÄ…</p>
+      <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Prieš garantijos pabaigą</p>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
         ${DAY_OPTS.map(d=>`
           <button class="notif-day-btn${sel.has(d)?' active':''}" data-day="${d}" style="padding:8px 14px;border-radius:20px;border:1.5px solid ${sel.has(d)?'var(--accent)':'var(--border2)'};background:${sel.has(d)?'var(--accent)':'transparent'};color:${sel.has(d)?'#fff':'var(--text2)'};font-size:14px;font-weight:500;cursor:pointer">
-            ${d===1?'1 dienÄ…':d===7?'1 savaitÄ™':d===30?'1 mÄ—nesÄ¯':d===60?'2 mÄ—nesius':d+' d.'}
+            ${d===1?'1 dieną':d===7?'1 savaitę':d===30?'1 mėnesį':d===60?'2 mėnesius':d+' d.'}
           </button>`).join('')}
       </div>` : ''}
 
       ${m.hasReturn ? `
-      <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">PrieÅ¡ grÄ…Å¾inimo terminÄ…</p>
+      <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Prieš grąžinimo terminą</p>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
         ${[1,2,3,5,7].map(d=>`
           <button class="notif-ret-btn${retSel.has(d)?' active':''}" data-day="${d}" style="padding:8px 14px;border-radius:20px;border:1.5px solid ${retSel.has(d)?'var(--accent)':'var(--border2)'};background:${retSel.has(d)?'var(--accent)':'transparent'};color:${retSel.has(d)?'#fff':'var(--text2)'};font-size:14px;font-weight:500;cursor:pointer">
-            ${d===1?'1 dienÄ…':d===7?'1 savaitÄ™':d+' d.'}
+            ${d===1?'1 dieną':d===7?'1 savaitę':d+' d.'}
           </button>`).join('')}
       </div>` : ''}
 
       <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-top:0.5px solid var(--border);margin-bottom:20px">
         <div>
-          <div style="font-size:15px;font-weight:500">Kartoti kas savaitÄ™</div>
-          <div style="font-size:13px;color:var(--text3)">Nuo 30 dienÅ³ iki pabaigos</div>
+          <div style="font-size:15px;font-weight:500">Kartoti kas savaitę</div>
+          <div style="font-size:13px;color:var(--text3)">Nuo 30 dienų iki pabaigos</div>
         </div>
         <button class="toggle-switch${m.repeatEnabled?' on':''}" id="notifRepeatToggle"><div class="knob"></div></button>
       </div>
 
-      <button id="notifSaveBtn" class="save-btn" style="margin-bottom:10px">Ä®jungti priminimus</button>
+      <button id="notifSaveBtn" class="save-btn" style="margin-bottom:10px">Įjungti priminimus</button>
       <button id="notifSkipBtn" style="background:none;border:none;color:var(--text3);font-size:14px;width:100%;padding:10px;cursor:pointer">Praleisti</button>
     </div>
   </div>`;
 }
 
-// â”€â”€ Contact form â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Contact form ────────────────────────────────────────────────────────────
 function renderContact(){
   const busy = state.contactBusy;
   const sent = state.contactSent;
@@ -1236,32 +1236,32 @@ function renderContact(){
     ${sent ? `
     <div style="padding:48px 24px;text-align:center">
       <i class="ti ti-circle-check" style="font-size:48px;color:var(--green)"></i>
-      <p style="font-size:16px;font-weight:600;margin:16px 0 8px">Å½inutÄ— iÅ¡siÅ³sta!</p>
-      <p style="font-size:14px;color:var(--text2);margin:0 0 24px">Atsakysime Ä¯ <strong>${state.user?.email||''}</strong> kuo greiÄiau.</p>
-      <button class="btn-primary" id="contactBackBtn2" style="width:auto;padding:10px 28px">GrÄ¯Å¾ti</button>
+      <p style="font-size:16px;font-weight:600;margin:16px 0 8px">Žinutė išsiųsta!</p>
+      <p style="font-size:14px;color:var(--text2);margin:0 0 24px">Atsakysime į <strong>${state.user?.email||''}</strong> kuo greičiau.</p>
+      <button class="btn-primary" id="contactBackBtn2" style="width:auto;padding:10px 28px">Grįžti</button>
     </div>
     ` : `
     <div style="padding:16px">
-      <p style="font-size:14px;color:var(--text2);margin:0 0 20px">Turite klausimÄ… ar problemÄ…? ParaÅ¡ykite mums â€” atsakysime el. paÅ¡tu.</p>
-      <p class="form-label-section" style="margin:0 0 6px">El. paÅ¡tas</p>
+      <p style="font-size:14px;color:var(--text2);margin:0 0 20px">Turite klausimą ar problemą? Parašykite mums — atsakysime el. paštu.</p>
+      <p class="form-label-section" style="margin:0 0 6px">El. paštas</p>
       <div class="form-section" style="margin:0 0 12px;padding:12px 14px">
         <input id="contactEmail" type="email" placeholder="jusu@pastas.lt" style="width:100%;background:none;border:none;outline:none;font-size:15px;color:var(--text1);box-sizing:border-box"
           value="${(state.user?.email||'').replace(/"/g,'&quot;')}">
       </div>
-      <p class="form-label-section" style="margin:0 0 6px">Å½inutÄ—</p>
+      <p class="form-label-section" style="margin:0 0 6px">Žinutė</p>
       <div class="form-section" style="margin:0 0 20px;padding:12px 14px">
-        <textarea id="contactMsg" rows="5" placeholder="ApraÅ¡ykite problemÄ… arba klausimÄ…..." style="width:100%;background:none;border:none;outline:none;font-size:15px;color:var(--text1);resize:none;box-sizing:border-box">${state.contactDraft||''}</textarea>
+        <textarea id="contactMsg" rows="5" placeholder="Aprašykite problemą arba klausimą..." style="width:100%;background:none;border:none;outline:none;font-size:15px;color:var(--text1);resize:none;box-sizing:border-box">${state.contactDraft||''}</textarea>
       </div>
       ${state.contactError ? `<p style="color:var(--red);font-size:15px;margin:0 0 12px">${state.contactError}</p>` : ''}
       <button id="contactSendBtn" class="btn-primary" style="width:100%" ${busy?'disabled':''}>
-        ${busy ? '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin:0 auto"></span>' : '<i class="ti ti-send"></i> SiÅ³sti'}
+        ${busy ? '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin:0 auto"></span>' : '<i class="ti ti-send"></i> Siųsti'}
       </button>
     </div>
     `}
   </div>`;
 }
 
-// â”€â”€ Multi-item select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Multi-item select ──────────────────────────────────────────────────────
 function renderMultiSelect(){
   const r = state.multiItemReceipt;
   if(!r){ state.view='list'; return ''; }
@@ -1278,8 +1278,8 @@ function renderMultiSelect(){
         <div data-mname style="font-size:15px;font-weight:600;color:${dimmed?'var(--text3)':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.name)}</div>
         <div style="font-size:13px;color:var(--text3);margin-top:2px;display:flex;align-items:center;gap:6px">
           ${item.category?`<span>${esc(item.category)}</span>`:''}
-          ${!noWarranty?`<span style="color:var(--green)">${item.warrantyMonths||24} mÄ—n.</span>`:''}
-          ${item.price?`<span>${esc(String(item.price))} â‚¬</span>`:''}
+          ${!noWarranty?`<span style="color:var(--green)">${item.warrantyMonths||24} mėn.</span>`:''}
+          ${item.price?`<span>${esc(String(item.price))} €</span>`:''}
         </div>
       </div>
       <button class="multi-edit-btn" data-midx="${idx}" style="background:none;border:none;padding:6px;color:var(--text3);cursor:pointer;flex-shrink:0" onclick="event.stopPropagation()">
@@ -1291,7 +1291,7 @@ function renderMultiSelect(){
   return `<div style="display:flex;flex-direction:column;height:100vh;overflow:hidden">
     <div style="padding:12px 16px 10px;border-bottom:0.5px solid var(--border);background:var(--bg);text-align:center">
       <div style="font-size:14px;font-weight:600;color:var(--text)">${esc(r.shop||'')}</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px">${r.purchaseDate?fmtDate(r.purchaseDate):''} Â· Pasirinkite kÄ… iÅ¡saugoti</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">${r.purchaseDate?fmtDate(r.purchaseDate):''} · Pasirinkite ką išsaugoti</div>
     </div>
     <div style="flex:1;overflow-y:auto;padding-bottom:80px">
       <div style="background:var(--card);border-radius:var(--radius);margin:12px 16px;overflow:hidden">
@@ -1299,9 +1299,9 @@ function renderMultiSelect(){
       </div>
     </div>
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:10px;align-items:center">
-      <button id="multiCancelBtn" style="background:none;border:1px solid var(--border2);color:var(--text3);font-size:14px;padding:10px 16px;border-radius:12px;cursor:pointer;flex-shrink:0">AtÅ¡aukti</button>
+      <button id="multiCancelBtn" style="background:none;border:1px solid var(--border2);color:var(--text3);font-size:14px;padding:10px 16px;border-radius:12px;cursor:pointer;flex-shrink:0">Atšaukti</button>
       <button id="multiSaveBtn" ${selectedCount===0?'disabled':''} class="save-btn" style="flex:1;opacity:${selectedCount===0?'0.4':'1'}">
-        IÅ¡saugoti${selectedCount>0?` (${selectedCount})`:''}
+        Išsaugoti${selectedCount>0?` (${selectedCount})`:''}
       </button>
     </div>
   </div>`;
@@ -1318,23 +1318,23 @@ function renderAdminStats(){
     </div>
     ${!s ? `<div class="empty-state"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:16px">Kraunama...</p></div>` : `
     <div class="stats-row" style="padding:16px">
-      <div class="stat-tile"><div class="n">${s.totalUsers}</div><div class="l">VartotojÅ³</div></div>
+      <div class="stat-tile"><div class="n">${s.totalUsers}</div><div class="l">Vartotojų</div></div>
       <div class="stat-tile"><div class="n" style="color:var(--gold)">${s.premiumUsers}</div><div class="l">Premium</div></div>
-      <div class="stat-tile"><div class="n" style="color:var(--accent)">${s.testerUsers}</div><div class="l">TesteriÅ³</div></div>
+      <div class="stat-tile"><div class="n" style="color:var(--accent)">${s.testerUsers}</div><div class="l">Testerių</div></div>
     </div>
     <div class="detail-section" style="margin:0 16px 16px">
       <div class="detail-rows">
-        <div class="detail-row"><i class="ti ti-receipt"></i><span class="dr-label">Viso garantijÅ³ Ä¯raÅ¡Å³</span><span class="dr-val">${s.totalItems}</span></div>
-        <div class="detail-row"><i class="ti ti-mail-check"></i><span class="dr-label">PatvirtintÅ³ el. paÅ¡tÅ³</span><span class="dr-val">${s.verifiedUsers}/${s.totalUsers}</span></div>
-        <div class="detail-row"><i class="ti ti-calendar-plus"></i><span class="dr-label">NaujÅ³ per 7 d.</span><span class="dr-val">${s.newLast7Days}</span></div>
+        <div class="detail-row"><i class="ti ti-receipt"></i><span class="dr-label">Viso garantijų įrašų</span><span class="dr-val">${s.totalItems}</span></div>
+        <div class="detail-row"><i class="ti ti-mail-check"></i><span class="dr-label">Patvirtintų el. paštų</span><span class="dr-val">${s.verifiedUsers}/${s.totalUsers}</span></div>
+        <div class="detail-row"><i class="ti ti-calendar-plus"></i><span class="dr-label">Naujų per 7 d.</span><span class="dr-val">${s.newLast7Days}</span></div>
       </div>
     </div>
 
     <p class="form-label-section" style="margin:0 16px 8px">Vartotojai</p>
     <div class="form-section" style="margin:0 16px 16px;padding:0">
-      ${users.length===0 ? `<div style="padding:16px;text-align:center;color:var(--text3);font-size:14px">NÄ—ra vartotojÅ³</div>` :
+      ${users.length===0 ? `<div style="padding:16px;text-align:center;color:var(--text3);font-size:14px">Nėra vartotojų</div>` :
         users.map(u => {
-          const planLabel = u.plan==='premium' ? 'ðŸ‘‘ Premium' : u.plan==='tester' ? 'ðŸ§ª Testeris' : u.plan==='friend' ? 'â¤ï¸ Draugas' : 'Nemokamas';
+          const planLabel = u.plan==='premium' ? '👑 Premium' : u.plan==='tester' ? '🧪 Testeris' : u.plan==='friend' ? '❤️ Draugas' : 'Nemokamas';
           const planColor = u.plan==='premium' ? 'var(--gold)' : u.plan==='tester' ? 'var(--accent)' : u.plan==='friend' ? 'var(--red)' : 'var(--text3)';
           const isTester = u.plan==='tester';
           const isFriend = u.plan==='friend';
@@ -1344,11 +1344,11 @@ function renderAdminStats(){
             <div style="display:flex;width:100%;align-items:center;gap:6px;flex-wrap:wrap">
               <div style="flex:1 1 100%;min-width:0">
                 <div style="font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email}</div>
-                <div style="font-size:15px;color:${planColor};margin-top:2px">${planLabel}${isAdminUser?' Â· Admin':''}${u.emailVerified?' Â· âœ“':''} Â· ${u.itemCount||0} Ä¯raÅ¡Å³</div>
+                <div style="font-size:15px;color:${planColor};margin-top:2px">${planLabel}${isAdminUser?' · Admin':''}${u.emailVerified?' · ✓':''} · ${u.itemCount||0} įrašų</div>
               </div>
-              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${u.uid}" data-action="togglePremium" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isPremiumPlan?'✓ Premium':'Premium'}</button>` : ''}
-              ${!isAdminUser ? `<button class="chip${isTester?' active':''}" data-uid="${u.uid}" data-action="toggleTester" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isTester?'âœ“ Testeris':'Testeris'}</button>
-              <button class="chip${isFriend?' active':''}" data-uid="${u.uid}" data-action="toggleFriend" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isFriend?'âœ“ Draugas':'Draugas'}</button>` : ''}
+              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${u.uid}" data-action="togglePremium" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isPremiumPlan?'? Premium':'Premium'}</button>` : ''}
+              ${!isAdminUser ? `<button class="chip${isTester?' active':''}" data-uid="${u.uid}" data-action="toggleTester" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isTester?'✓ Testeris':'Testeris'}</button>
+              <button class="chip${isFriend?' active':''}" data-uid="${u.uid}" data-action="toggleFriend" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isFriend?'✓ Draugas':'Draugas'}</button>` : ''}
             </div>
           </div>`;
         }).join('')
@@ -1368,7 +1368,7 @@ async function loadAdminStats(){
     const weekAgoMs = Date.now() - 7*86400000;
     const usersList = [];
 
-    // SkaiÄiuojam tikrÄ… warranties kiekÄ¯ iÅ¡ subkolekcijos kiekvienam vartotojui
+    // Skaičiuojam tikrą warranties kiekį iš subkolekcijos kiekvienam vartotojui
     await Promise.all(snap.docs.map(async d=>{
       const u = d.data();
       totalUsers++;
@@ -1377,23 +1377,23 @@ async function loadAdminStats(){
       if(u.emailVerified) verifiedUsers++;
       if(u.createdAt?.toMillis && u.createdAt.toMillis() > weekAgoMs) newLast7Days++;
 
-      // Tikras Ä¯raÅ¡Å³ skaiÄius iÅ¡ warranties subkolekcijos
+      // Tikras įrašų skaičius iš warranties subkolekcijos
       let realCount = 0;
       try{
         const wSnap = await getDocs(collection(db,'users',d.id,'warranties'));
         realCount = wSnap.size;
-      }catch(e){ realCount = u.itemCount||0; } // fallback Ä¯ cached jei nepavyksta
+      }catch(e){ realCount = u.itemCount||0; } // fallback į cached jei nepavyksta
 
       if(realCount > 0) activeUsers++;
       totalItems += realCount;
-      usersList.push({ uid: d.id, email: u.email||'â€”', plan: u.plan||'free', role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified });
+      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified });
     }));
 
     usersList.sort((a,b)=>a.email.localeCompare(b.email));
     state.adminStats = { totalUsers, premiumUsers, testerUsers, activeUsers, totalItems, verifiedUsers, newLast7Days };
     state.adminUsers = usersList;
   }catch(e){
-    toast('Nepavyko Ä¯kelti statistikos');
+    toast('Nepavyko įkelti statistikos');
     state.view='settings';
   }
   render();
@@ -1434,8 +1434,8 @@ function attachEvents(){
   });
 
   on('resendVerifyBtn','click',resendVerification);
-  on('upgradeBtn','click',()=>toast('Premium netrukus! ðŸš€'));
-  on('upgradeBtn3','click',()=>toast('Premium netrukus! ðŸš€'));
+  on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
+  on('upgradeBtn3','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});  on('catDropBtn','click',e=>{ e.stopPropagation(); state.catDropOpen=!state.catDropOpen; state.sortDropOpen=false; render(); });
   on('catDropOverlay','click',()=>{ state.catDropOpen=false; render(); });
   onAll('[data-cat]','click',e=>{ state.filterCat=e.currentTarget.dataset.cat; state.catDropOpen=false; render(); });
@@ -1501,7 +1501,7 @@ function attachEvents(){
 
   on('saveBtn','click',()=>{
     if(state.multiEditIdx!=null){
-      // Atnaujiname prekÄ™ multi sÄ…raÅ¡e
+      // Atnaujiname prekę multi sąraše
       const idx=state.multiEditIdx;
       const r=state.multiItemReceipt;
       const f=state.form;
@@ -1525,7 +1525,7 @@ function attachEvents(){
     const next = state.aiMultiItems.shift();
     state.form = emptyForm();
     state.aiRetriesUsedThisItem = 0;
-    // No new AI call/charge here â€” this item's data already came from the
+    // No new AI call/charge here — this item's data already came from the
     // original scan, we're just stepping to the next product from it.
     state.pendingAiCharge = false;
     applyAiItemToForm(next, {shop: next._shop, purchaseDate: next._purchaseDate, docType: next._docType, docNumber: next._docNumber});
@@ -1541,7 +1541,7 @@ function attachEvents(){
       purchaseDate: item.purchaseDate||'',
       warrantyEnd: item.warrantyEnd||'',
       warrantyMonths: item.warrantyMonths??24,
-      docType: item.docType||'Kvitas / Äekis',
+      docType: item.docType||'Kvitas / čekis',
       docNumber: item.docNumber||'',
       notes: item.notes||'',
       docData: item.docUrl||null,
@@ -1561,7 +1561,7 @@ function attachEvents(){
   on('checkPolicyBtn','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it)checkPolicy(it);});
 
   // Settings
-  on('upgradeBtnSettings','click',()=>toast('Premium netrukus! ðŸš€'));
+  on('upgradeBtnSettings','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.theme-opt','click',e=>{
     const t=e.currentTarget.dataset.theme;
     state.theme=t; localStorage.setItem('galio_theme',t); applyTheme(); render();
@@ -1569,10 +1569,10 @@ function attachEvents(){
   on('notifyToggle','click',toggleNotify);
   on('storageModeToggle','click',toggleStorageMode);
   on('changePwdBtn','click',()=>{
-    if(!state.user.email){toast('Google paskyroms slaptaÅ¾odÅ¾io keisti nereikia');return;}
+    if(!state.user.email){toast('Google paskyroms slaptažodžio keisti nereikia');return;}
     sendPasswordResetEmail(auth,state.user.email)
-      .then(()=>toast('Nuoroda slaptaÅ¾odÅ¾iui keisti iÅ¡siÅ³sta Ä¯ el. paÅ¡tÄ…'))
-      .catch(()=>toast('Klaida siunÄiant laiÅ¡kÄ…'));
+      .then(()=>toast('Nuoroda slaptažodžiui keisti išsiųsta į el. paštą'))
+      .catch(()=>toast('Klaida siunčiant laišką'));
   });
   on('settingsLogoutBtn2','click',()=>{if(confirm('Atsijungti?'))doLogout();});
   on('deleteAccountBtn','click',confirmDeleteAccount);
@@ -1586,7 +1586,7 @@ function attachEvents(){
     const item=r.items[idx];
     item.selected=!item.selected;
 
-    // Atnaujinti tik Å¡iÄ… eilutÄ™ ir mygtukÄ… â€” be pilno re-render (greitis su ilgais Äekiais)
+    // Atnaujinti tik šią eilutę ir mygtuką — be pilno re-render (greitis su ilgais čekiais)
     const row=e.currentTarget;
     const box=row.querySelector('div');
     if(box){
@@ -1604,7 +1604,7 @@ function attachEvents(){
       const n=r.items.filter(i=>i.selected).length;
       btn.disabled=n===0;
       btn.style.opacity=n===0?'0.4':'1';
-      btn.textContent=`IÅ¡saugoti${n>0?` (${n})`:''}`;
+      btn.textContent=`Išsaugoti${n>0?` (${n})`:''}`;
     }
   });
   onAll('.multi-edit-btn','click',e=>{
@@ -1613,7 +1613,7 @@ function attachEvents(){
     const r=state.multiItemReceipt;
     if(!r) return;
     const item=r.items[idx];
-    // UÅ¾pildome formÄ… Å¡ios prekÄ—s duomenimis
+    // Užpildome formą šios prekės duomenimis
     state.form=emptyForm();
     state.form.name=item.name||'';
     state.form.category=item.category||'';
@@ -1621,7 +1621,7 @@ function attachEvents(){
     state.form.purchaseDate=r.purchaseDate||'';
     state.form.warrantyMonths=item.warrantyApplies===false?null:(item.warrantyMonths||24);
     state.form.warrantyEnd=item.warrantyApplies===false?'':(r.purchaseDate&&item.warrantyMonths?addMonths(r.purchaseDate,item.warrantyMonths):'');
-    state.form.docType=r.docType||'Kvitas / Äekis';
+    state.form.docType=r.docType||'Kvitas / čekis';
     state.form.docNumber=r.docNumber||'';
     state.form.notes=item.price?`Kaina: ${item.price}`:'';
     state.form.docData=r.docData||null;
@@ -1684,26 +1684,26 @@ function attachEvents(){
     const user = state.adminUsers?.find(u=>u.uid===uid);
     if(!user) return;
     const newPlan = user.plan==='tester' ? 'free' : 'tester';
-    if(!confirm(`${newPlan==='tester'?'Suteikti testerio planÄ…':'Atimti testerio planÄ…'} vartotojui ${user.email}?`)) return;
+    if(!confirm(`${newPlan==='tester'?'Suteikti testerio planą':'Atimti testerio planą'} vartotojui ${user.email}?`)) return;
     try{
       await updateDoc(doc(db,'users',uid), { plan: newPlan });
       user.plan = newPlan;
-      toast(newPlan==='tester' ? `âœ“ ${user.email} dabar testeris` : `âœ“ ${user.email} grÄ…Å¾intas Ä¯ nemokamÄ… planÄ…`);
+      toast(newPlan==='tester' ? `✓ ${user.email} dabar testeris` : `✓ ${user.email} grąžintas į nemokamą planą`);
       render();
-    }catch(err){ toast('Nepavyko â€” ' + (err.message||'klaida')); }
+    }catch(err){ toast('Nepavyko — ' + (err.message||'klaida')); }
   });
   onAll('[data-action="toggleFriend"]','click', async e=>{
     const uid = e.currentTarget.dataset.uid;
     const user = state.adminUsers?.find(u=>u.uid===uid);
     if(!user) return;
     const newPlan = user.plan==='friend' ? 'free' : 'friend';
-    if(!confirm(`${newPlan==='friend'?'Suteikti draugo planÄ…':'Atimti draugo planÄ…'} vartotojui ${user.email}?`)) return;
+    if(!confirm(`${newPlan==='friend'?'Suteikti draugo planą':'Atimti draugo planą'} vartotojui ${user.email}?`)) return;
     try{
       await updateDoc(doc(db,'users',uid), { plan: newPlan });
       user.plan = newPlan;
-      toast(newPlan==='friend' ? `âœ“ ${user.email} dabar draugas` : `âœ“ ${user.email} grÄ…Å¾intas Ä¯ nemokamÄ… planÄ…`);
+      toast(newPlan==='friend' ? `✓ ${user.email} dabar draugas` : `✓ ${user.email} grąžintas į nemokamą planą`);
       render();
-    }catch(err){ toast('Nepavyko â€” ' + (err.message||'klaida')); }
+    }catch(err){ toast('Nepavyko — ' + (err.message||'klaida')); }
   });
 }
 
@@ -1714,11 +1714,11 @@ async function sendContactMessage(){
   const message = (msgEl?.value||'').trim();
 
   if(!email || !message){
-    state.contactError = 'PraÅ¡ome uÅ¾pildyti el. paÅ¡tÄ… ir Å¾inutÄ™.';
+    state.contactError = 'Prašome užpildyti el. paštą ir žinutę.';
     render(); return;
   }
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
-    state.contactError = 'Neteisingas el. paÅ¡to formatas.';
+    state.contactError = 'Neteisingas el. pašto formatas.';
     render(); return;
   }
 
@@ -1731,7 +1731,7 @@ async function sendContactMessage(){
   const u    = state.user;
   const plan = state.userDoc?.plan || 'free';
   const mode = state.storageMode  || 'local';
-  const diag = `El. paÅ¡tas: ${u?.email||'â€”'} | UID: ${u?.uid||'â€”'} | Planas: ${plan} | Saugojimas: ${mode} | Patvirtintas: ${u?.emailVerified?'taip':'ne'} | v1.0`;
+  const diag = `El. paštas: ${u?.email||'—'} | UID: ${u?.uid||'—'} | Planas: ${plan} | Saugojimas: ${mode} | Patvirtintas: ${u?.emailVerified?'taip':'ne'} | v1.0`;
 
   try {
     const res = await fetch(WORKER_URL + '/contact', {
@@ -1744,7 +1744,7 @@ async function sendContactMessage(){
     state.contactSent  = true;
     state.contactDraft = '';
   } catch(e){
-    state.contactError = e.message || 'Nepavyko iÅ¡siÅ³sti. Bandykite vÄ—liau.';
+    state.contactError = e.message || 'Nepavyko išsiųsti. Bandykite vėliau.';
   } finally {
     state.contactBusy = false;
     render();
@@ -1754,7 +1754,7 @@ async function sendContactMessage(){
 function syncSave(){const b=document.getElementById('saveBtn');if(b)b.disabled=!state.form.name.trim();}
 
 async function deleteItem(id){
-  if(!confirm('IÅ¡trinti Å¡Ä¯ Ä¯raÅ¡Ä…?'))return;
+  if(!confirm('Ištrinti šį įrašą?'))return;
   const item=state.items.find(i=>i.id===id);
 
   try{
@@ -1769,7 +1769,7 @@ async function deleteItem(id){
       await localDelete(state.user.uid, id);
       state.items = state.items.filter(i=>i.id!==id);
     }
-    toast('IÅ¡trinta');
+    toast('Ištrinta');
   }catch(e){ toast('Klaida trinant: '+(e.message||'')); }
   state.view='list';render();
 }
@@ -1778,7 +1778,7 @@ async function saveNotifSettings(){
   const m = state.notifModal;
   if(!m) return;
 
-  // IÅ¡saugoti kaip naujus defaults
+  // Išsaugoti kaip naujus defaults
   state._lastNotifDays = [...m.selectedDays];
   state._lastReturnNotifDays = [...m.returnSelectedDays];
 
@@ -1790,13 +1790,13 @@ async function saveNotifSettings(){
   };
 
   try{
-    // PraÅ¡yti push leidimo
+    // Prašyti push leidimo
     const perm = await requestPushPermission();
     if(perm){
       notifData.fcmTokenUpdated = true;
     }
 
-    // IÅ¡saugoti Ä¯ Firestore arba IndexedDB
+    // Išsaugoti į Firestore arba IndexedDB
     if(state.storageMode==='cloud'){
       await updateDoc(doc(db,'users',state.user.uid,'warranties',m.itemId), notifData);
     }else{
@@ -1806,10 +1806,10 @@ async function saveNotifSettings(){
         await localPut(state.user.uid, item);
       }
     }
-    toast('Priminimai Ä¯jungti âœ“');
+    toast('Priminimai įjungti ✓');
   }catch(e){
     console.warn('Notif save error:', e);
-    toast('Nepavyko Ä¯jungti priminimÅ³');
+    toast('Nepavyko įjungti priminimų');
   }
 
   state.notifModal = null;
@@ -1849,7 +1849,7 @@ async function updateItem(){
     purchaseDate: f.purchaseDate||'',
     warrantyEnd: f.warrantyEnd||'',
     warrantyMonths: f.warrantyMonths??null,
-    docType: f.docType||'Kvitas / Äekis',
+    docType: f.docType||'Kvitas / čekis',
     docNumber: f.docNumber.slice(0,100),
     notes: f.notes.slice(0,1000),
     notifyEnabled: f.notifyEnabled!==false,
@@ -1867,11 +1867,11 @@ async function updateItem(){
       const idx = state.items.findIndex(i=>i.id===state.editItemId);
       if(idx>=0) state.items[idx]=updated;
     }
-    toast('IÅ¡saugota âœ“');
+    toast('Išsaugota ✓');
     state.editItemId=null; state.addMode=null; state.view='detail';
     render();
   }catch(e){
-    toast('Klaida iÅ¡saugant: '+(e.message||''));
+    toast('Klaida išsaugant: '+(e.message||''));
   }
 }
 
@@ -1882,13 +1882,13 @@ async function saveItem(){
 
   // Charge AI quota now, only if this save includes AI-assisted data the
   // user is actually keeping. Scans that were retried/discarded never
-  // reach this point, so they never cost quota â€” only a kept result does.
+  // reach this point, so they never cost quota — only a kept result does.
   if(state.pendingAiCharge){
     const isPremium = isPremiumUser();
     try{
       if(!isPremium){
         await updateDoc(doc(db,'users',state.user.uid), { aiUsesRemaining: increment(-1) });
-        // Atnaujinti lokaliai iÅ¡ karto â€” onSnapshot gali vÄ—luoti dÄ—l cache
+        // Atnaujinti lokaliai iš karto — onSnapshot gali vėluoti dėl cache
         if(state.userDoc) state.userDoc.aiUsesRemaining = Math.max(0, (state.userDoc.aiUsesRemaining ?? AI_FREE_USES) - 1);
       }else{
         const today = new Date().toISOString().slice(0,10);
@@ -1935,7 +1935,7 @@ async function saveItem(){
           state.uploadPct=100; render();
         }catch(e){
           console.warn('Upload failed:',e);
-          toast('Dokumentas neiÅ¡saugotas (klaida Ä¯keliant failÄ…)');
+          toast('Dokumentas neišsaugotas (klaida įkeliant failą)');
         }
       }
     }else{
@@ -1954,7 +1954,7 @@ async function saveItem(){
       state._lastSavedId = localItem.id;
     }
 
-    toast('IÅ¡saugota âœ“');
+    toast('Išsaugota ✓');
   }catch(e){
     toast('Klaida saugant: '+(e.message||''));
   }
@@ -1963,7 +1963,7 @@ async function saveItem(){
   const savedForm = {...state.form};
   state.form=emptyForm();state.docError='';state.addMode=null;
 
-  // Rodyti priminimÅ³ modalÄ… tik jei yra kÄ… priminti (garantija arba grÄ…Å¾inimas)
+  // Rodyti priminimų modalą tik jei yra ką priminti (garantija arba grąžinimas)
   if(state._lastSavedId && (savedForm.warrantyEnd || savedForm.purchaseDate)){
     showNotifModal(state._lastSavedId, {
       warrantyMonths: savedForm.warrantyMonths,
@@ -1986,7 +1986,7 @@ async function saveMultiItems(){
   let saved=0, failed=0;
 
   // Charge one AI scan for the whole receipt (already scanned once)
-  // pendingAiCharge was set true during analyzeDoc â€” charge it now
+  // pendingAiCharge was set true during analyzeDoc — charge it now
   if(state.pendingAiCharge){
     const isPremium = isPremiumUser();
     try{
@@ -1998,7 +1998,7 @@ async function saveMultiItems(){
     state.pendingAiCharge=false;
   }
 
-  toast(`Saugoma ${selected.length} prekiÅ³...`);
+  toast(`Saugoma ${selected.length} prekių...`);
 
   for(const item of selected){
     try{
@@ -2009,12 +2009,12 @@ async function saveMultiItems(){
         purchaseDate:r.purchaseDate||'',
         warrantyEnd: item.warrantyApplies===false ? '' : (r.purchaseDate&&item.warrantyMonths ? addMonths(r.purchaseDate,item.warrantyMonths) : ''),
         warrantyMonths: item.warrantyApplies===false ? null : (item.warrantyMonths||null),
-        docType:r.docType||'Kvitas / Äekis',
+        docType:r.docType||'Kvitas / čekis',
         docNumber:(r.docNumber||'').slice(0,100),
         notes:item.price?`Kaina: ${String(item.price).slice(0,50)}`:'',
         notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
         returnDeadline: r.purchaseDate ? addDays(r.purchaseDate,14) : null,
-        // Numatytieji priminimai pagal garantijos ilgÄ¯ (vartotojas gali keisti redaguodamas)
+        // Numatytieji priminimai pagal garantijos ilgį (vartotojas gali keisti redaguodamas)
         notifyDays: item.warrantyApplies===false ? [] : suggestNotifDays(item.warrantyMonths||24),
         notifyReturnDays: r.purchaseDate ? [3] : [],
         createdAtMs: Date.now(),
@@ -2023,7 +2023,7 @@ async function saveMultiItems(){
       if(isCloud){
         const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'),{...payload,createdAt:serverTimestamp()});
         await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(1)});
-        // DokumentÄ… pridedame tik prie pirmos prekÄ—s
+        // Dokumentą pridedame tik prie pirmos prekės
         if(saved===0 && r.docData && r.docMime){
           try{
             const ext=r.docMime==='application/pdf'?'pdf':(r.docMime.split('/')[1]||'jpg');
@@ -2055,8 +2055,8 @@ async function saveMultiItems(){
   state.pendingAiCharge=false;
   state.view='list';
   render();
-  if(failed>0) toast(`IÅ¡saugota ${saved}, nepavyko ${failed}`);
-  else toast(`IÅ¡saugota ${saved} prekiÅ³ âœ“`);
+  if(failed>0) toast(`Išsaugota ${saved}, nepavyko ${failed}`);
+  else toast(`Išsaugota ${saved} prekių ✓`);
 }
 
 function base64ToBlob(b64,mime){
@@ -2065,8 +2065,8 @@ function base64ToBlob(b64,mime){
   return new Blob([a],{type:mime});
 }
 
-// â”€â”€ Document picking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â”€â”€ QR scanner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Document picking ───────────────────────────────────────────────────────
+// ── QR scanner ─────────────────────────────────────────────────────────────
 // Lithuanian e-receipts (i.MAS) typically encode a URL like:
 // https://www.vmi.lt/cms/.../kvitas?... with date/sum params, or a raw
 // pipe/semicolon-delimited string containing date and amount. We try to
@@ -2080,7 +2080,7 @@ function renderQrScanner(){
     <video id="qrVideo" autoplay playsinline muted></video>
     <div class="qr-scanner-overlay" id="qrOverlayBox"><div class="qr-scan-line" id="qrScanLine"></div></div>
     <div class="qr-scanner-status" id="qrStatus"><i class="ti ti-circle-check"></i><span>QR kodas aptiktas!</span></div>
-    <div class="qr-scanner-hint" id="qrHint">Nukreipkite kamerÄ… Ä¯ QR kodÄ… ant Äekio</div>
+    <div class="qr-scanner-hint" id="qrHint">Nukreipkite kamerą į QR kodą ant čekio</div>
   </div>`;
 }
 
@@ -2115,7 +2115,7 @@ async function startQrScanner(){
       // knows the loop is alive even before anything is found.
       if(frameCount % 30 === 0){
         const hint = document.getElementById('qrHint');
-        if(hint) hint.textContent = 'IeÅ¡koma QR kodo...';
+        if(hint) hint.textContent = 'Ieškoma QR kodo...';
       }
 
       if(code && code.data){
@@ -2169,7 +2169,7 @@ function handleQrResult(text){
 
   // Try to extract an amount (e.g. "12.50" near "EUR" or "suma")
   let foundAmount = null;
-  const amountMatch = text.match(/(\d+[.,]\d{2})\s*(EUR|â‚¬)?/i);
+  const amountMatch = text.match(/(\d+[.,]\d{2})\s*(EUR|€)?/i);
   if(amountMatch) foundAmount = amountMatch[1].replace(',', '.');
 
   if(foundDate){
@@ -2177,13 +2177,13 @@ function handleQrResult(text){
     if(state.form.warrantyMonths) state.form.warrantyEnd = addMonths(foundDate, state.form.warrantyMonths);
   }
   if(foundAmount){
-    state.form.notes = [state.form.notes, `Kaina (iÅ¡ QR): ${foundAmount} â‚¬`].filter(Boolean).join('\n');
+    state.form.notes = [state.form.notes, `Kaina (iš QR): ${foundAmount} €`].filter(Boolean).join('\n');
   }
   if(!foundDate && !foundAmount){
     state.form.docNumber = text.slice(0,100);
-    toast('QR nuskaitytas, bet datos neatpaÅ¾inau â€“ patikrinkite duomenis rankiniu bÅ«du');
+    toast('QR nuskaitytas, bet datos neatpažinau – patikrinkite duomenis rankiniu būdu');
   } else {
-    toast('QR duomenys Ä¯kelti âœ“');
+    toast('QR duomenys įkelti ✓');
   }
   render();
 }
@@ -2212,7 +2212,7 @@ function compressImage(dataUrl, maxDim=1600, quality=0.82){
 }
 
 // Detects HEIC/HEIF files by their actual file signature (magic bytes),
-// not just the reported MIME type â€” many browsers report HEIC files with
+// not just the reported MIME type — many browsers report HEIC files with
 // an empty or generic MIME type, especially on Android. This matters
 // because almost no browser except Safari 17+ can decode HEIC through the
 // Image/Canvas APIs we use for compression: Chrome, Firefox, Edge, Opera,
@@ -2238,30 +2238,30 @@ function handleDoc(e){
   const file=e.target.files[0];if(!file)return;
   const isPdf=file.type==='application/pdf';
   const isImg=ALLOWED_IMG.includes(file.type);
-  if(!isPdf&&!isImg){state.docError='LeidÅ¾iami formatai: JPG, PNG, WebP, HEIC, PDF';render();return;}
-  if(isPdf&&file.size>MAX_PDF){state.docError=`PDF per didelis (max 5MB, jÅ«sÅ³: ${fmtSize(file.size)})`;render();return;}
+  if(!isPdf&&!isImg){state.docError='Leidžiami formatai: JPG, PNG, WebP, HEIC, PDF';render();return;}
+  if(isPdf&&file.size>MAX_PDF){state.docError=`PDF per didelis (max 5MB, jūsų: ${fmtSize(file.size)})`;render();return;}
   // NOTE: for images we deliberately do NOT reject based on the original
   // file size here. Modern phone cameras routinely produce 10-20MB photos
   // (especially HEIC/4K), but compressImage() below brings any of them
   // down to ~150-400KB before we ever touch Storage or the AI call. The
   // previous version rejected large originals BEFORE compression, which
   // meant many real phone photos were silently refused even though the
-  // compressed result would have been tiny â€” this was one root cause of
+  // compressed result would have been tiny — this was one root cause of
   // "photos won't upload" reports. We still cap originals at a generous
   // 20MB just to avoid the browser choking on something absurd, but the
   // real, user-facing limit is enforced post-compression instead.
   const MAX_ORIGINAL_IMG = 20*1024*1024;
-  if(isImg&&file.size>MAX_ORIGINAL_IMG){state.docError=`Failas per didelis (max 20MB, jÅ«sÅ³: ${fmtSize(file.size)})`;render();return;}
+  if(isImg&&file.size>MAX_ORIGINAL_IMG){state.docError=`Failas per didelis (max 20MB, jūsų: ${fmtSize(file.size)})`;render();return;}
   state.docError='';
 
   (async()=>{
     if(isImg && await looksLikeHeic(file)){
       // Most browsers (everything except Safari 17+) cannot decode HEIC
-      // through the canvas pipeline we use for compression â€” this is a
+      // through the canvas pipeline we use for compression — this is a
       // hard browser limitation, not a bug we can silently work around.
       // Tell the user exactly what's happening and how to fix it, rather
       // than a generic "failed to process" message.
-      state.docError='HEIC formato nuotraukos Å¡ioje narÅ¡yklÄ—je nepalaikomos. Telefono Nustatymuose â†’ Kamera â†’ Formatai pasirinkite "Suderinamas" (JPEG), arba naudokite Safari narÅ¡yklÄ™ (jei iPhone su naujausia iOS).';
+      state.docError='HEIC formato nuotraukos šioje naršyklėje nepalaikomos. Telefono Nustatymuose → Kamera → Formatai pasirinkite "Suderinamas" (JPEG), arba naudokite Safari naršyklę (jei iPhone su naujausia iOS).';
       render();
       return;
     }
@@ -2283,12 +2283,12 @@ function proceedWithFile(file, isPdf){
         const compressed = await compressImage(dataUrl);
         const compB64 = compressed.split(',')[1];
         // Sanity-check the compressed result actually came out reasonably
-        // sized â€” if compression somehow failed to shrink a huge image,
+        // sized — if compression somehow failed to shrink a huge image,
         // surface that clearly instead of silently uploading something
         // oversized.
         const compressedBytes = Math.ceil(compB64.length * 0.75);
         if(compressedBytes > MAX_IMG){
-          state.docError=`Nuotrauka per didelÄ— net po suspaudimo (${fmtSize(compressedBytes)}). Pabandykite kitÄ… nuotraukÄ….`;
+          state.docError=`Nuotrauka per didelė net po suspaudimo (${fmtSize(compressedBytes)}). Pabandykite kitą nuotrauką.`;
           render();
           return;
         }
@@ -2297,7 +2297,7 @@ function proceedWithFile(file, isPdf){
         render();
       }catch(err){
         console.warn('Image processing failed:', err);
-        state.docError='Nepavyko apdoroti nuotraukos â€” pabandykite dar kartÄ… arba kitÄ… failÄ… (jei tai HEIC formatas, pakeiskite kameros nustatymus Ä¯ JPEG)';render();
+        state.docError='Nepavyko apdoroti nuotraukos — pabandykite dar kartą arba kitą failą (jei tai HEIC formatas, pakeiskite kameros nustatymus į JPEG)';render();
       }
     }
   };
@@ -2308,8 +2308,8 @@ function proceedWithFile(file, isPdf){
 }
 
 async function checkPolicy(item){
-  // Naudoja tÄ… paÄiÄ… Premium dienos kvotÄ… kaip nuskaitymas
-  if(!isPremiumUser()){ toast('Å i funkcija prieinama tik Premium vartotojams'); return; }
+  // Naudoja tą pačią Premium dienos kvotą kaip nuskaitymas
+  if(!isPremiumUser()){ toast('Ši funkcija prieinama tik Premium vartotojams'); return; }
 
   const today = new Date().toISOString().slice(0,10);
   const month = today.slice(0,7);
@@ -2318,11 +2318,11 @@ async function checkPolicy(item){
   const monthKey = state.userDoc?.aiMonthKey;
   const monthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0) : 0;
   if(dayCount >= PREMIUM_DAILY_LIMIT){
-    toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT} AI analiziÅ³). Pabandykite rytoj.`);
+    toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT} AI analizių). Pabandykite rytoj.`);
     return;
   }
   if(monthCount >= PREMIUM_MONTHLY_LIMIT){
-    toast(`Pasiektas mÄ—nesio limitas (${PREMIUM_MONTHLY_LIMIT} AI analiziÅ³).`);
+    toast(`Pasiektas mėnesio limitas (${PREMIUM_MONTHLY_LIMIT} AI analizių).`);
     return;
   }
 
@@ -2330,7 +2330,7 @@ async function checkPolicy(item){
   try{
     const idToken = await state.user.getIdToken();
 
-    // Atnaujinti dienos/mÄ—nesio skaitiklius Firestore'e (tas pats mechanizmas kaip analyzeDoc)
+    // Atnaujinti dienos/mėnesio skaitiklius Firestore'e (tas pats mechanizmas kaip analyzeDoc)
     const newDayCount = dayKey===today ? dayCount+1 : 1;
     const newMonthCount = monthKey===month ? monthCount+1 : 1;
     await updateDoc(doc(db,'users',state.user.uid),{
@@ -2344,8 +2344,8 @@ async function checkPolicy(item){
       body: JSON.stringify({
         model:'claude-sonnet-4-6', max_tokens:300, use_search:true,
         messages:[{role:'user', content:[{type:'text', text:
-          `Kiek laiko gamintojas paprastai suteikia garantijÄ… Å¡iam produktui: "${item.name}"${item.shop?` (pirkta iÅ¡ ${item.shop})`:''}? `+
-          `Atsakyk lietuviÅ¡kai, TRUMPAI (2-3 sakiniai). Nurodyk tipinÄ¯ terminÄ… ir paminÄ—k kad reikia patikrinti gamintojo svetainÄ—je.`
+          `Kiek laiko gamintojas paprastai suteikia garantiją šiam produktui: "${item.name}"${item.shop?` (pirkta iš ${item.shop})`:''}? `+
+          `Atsakyk lietuviškai, TRUMPAI (2-3 sakiniai). Nurodyk tipinį terminą ir paminėk kad reikia patikrinti gamintojo svetainėje.`
         }]}]
       })
     });
@@ -2353,23 +2353,23 @@ async function checkPolicy(item){
     const data = await res.json();
     const text = (data.content||[]).filter(c=>c.type==='text').map(c=>c.text||'').join(' ').trim()
       .replace(/\*\*/g,'').replace(/\*/g,'');
-    state.policyResult = text || 'Nepavyko gauti atsakymo. Patikrinkite gamintojo svetainÄ™.';
+    state.policyResult = text || 'Nepavyko gauti atsakymo. Patikrinkite gamintojo svetainę.';
     state.policyResultFor = item.id;
   }catch(e){
-    toast('Nepavyko patikrinti â€“ bandykite vÄ—liau');
+    toast('Nepavyko patikrinti – bandykite vėliau');
   }
   state.policyChecking = false;
   render();
 }
 
-// â”€â”€ Settings actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Settings actions ───────────────────────────────────────────────────────
 async function toggleNotify(){
   if(!state.user)return;
   const current = state.userDoc?.notifyEnabled !== false;
   try{
     await updateDoc(doc(db,'users',state.user.uid), { notifyEnabled: !current });
   }catch(e){
-    toast('Nepavyko iÅ¡saugoti nustatymo');
+    toast('Nepavyko išsaugoti nustatymo');
   }
 }
 
@@ -2384,13 +2384,13 @@ async function toggleStorageModeOld(){
   }
 
   const confirmMsg = wantsCloud
-    ? `Perkelti Ä¯raÅ¡us Ä¯ paskyros saugyklÄ…?\n\nJie bus susieti su jÅ«sÅ³ paskyra ir pasiekiami iÅ¡ bet kurio Ä¯renginio.`
-    : `Perjungti Ä¯ Ä¯renginio saugyklÄ…?\n\nJÅ«sÅ³ ${state.items.length} Ä¯raÅ¡ai bus perkelti Ä¯ Å¡Ä¯ telefonÄ… ir paÅ¡alinti iÅ¡ paskyros. Kituose Ä¯renginiuose jÅ³ nebebus â€” ir jei telefonas bus prarastas ar sugadintas, duomenys dingsta kartu su juo.`;
+    ? `Perkelti įrašus į paskyros saugyklą?\n\nJie bus susieti su jūsų paskyra ir pasiekiami iš bet kurio įrenginio.`
+    : `Perjungti į įrenginio saugyklą?\n\nJūsų ${state.items.length} įrašai bus perkelti į šį telefoną ir pašalinti iš paskyros. Kituose įrenginiuose jų nebebus — ir jei telefonas bus prarastas ar sugadintas, duomenys dingsta kartu su juo.`;
   if(!confirm(confirmMsg)) return;
 
   // Antras patvirtinimas local atveju
   if(!wantsCloud){
-    if(!confirm('Patvirtinkite: paÅ¡alinti iÅ¡ paskyros ir saugoti tik Å¡iame telefone.')) return;
+    if(!confirm('Patvirtinkite: pašalinti iš paskyros ir saugoti tik šiame telefone.')) return;
   }
 
   const itemsToMigrate = state.items.slice();
@@ -2401,12 +2401,12 @@ async function toggleStorageModeOld(){
     if(wantsCloud){
       // IMPORTANT ORDERING: Firestore security rules only allow creating
       // warranty documents when the user's profile already has
-      // storageMode == 'cloud' (requiresCloudPlan() check) â€” this stops a
+      // storageMode == 'cloud' (requiresCloudPlan() check) — this stops a
       // Free/local account from writing to the cloud subcollection by
       // mistake or tampering. That means we must flip storageMode (and set
       // the FINAL itemCount we expect to end up with) on the profile FIRST,
       // in one atomic update matching rule variant D, before creating any
-      // warranty docs â€” otherwise every create in the loop below would be
+      // warranty docs — otherwise every create in the loop below would be
       // rejected by requiresCloudPlan().
       await updateDoc(doc(db,'users',state.user.uid), {
         itemCount: itemsToMigrate.length,
@@ -2415,7 +2415,7 @@ async function toggleStorageModeOld(){
 
       // Stop the items listener during migration so the live onSnapshot
       // triggered by the storageMode flip above doesn't race with us
-      // rewriting state.items mid-loop â€” we'll re-attach it once done.
+      // rewriting state.items mid-loop — we'll re-attach it once done.
       if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
 
       for(const item of itemsToMigrate){
@@ -2444,7 +2444,7 @@ async function toggleStorageModeOld(){
     }else{
       // cloud -> local: download each cloud item's doc (if any) as base64
       // and store in IndexedDB, then delete the cloud copies.
-      // Stop the live Firestore listener first â€” otherwise each deleteDoc
+      // Stop the live Firestore listener first — otherwise each deleteDoc
       // in the loop below triggers onSnapshot mid-migration, briefly
       // showing a half-migrated list in the UI.
       if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
@@ -2482,10 +2482,10 @@ async function toggleStorageModeOld(){
       });
       attachItemsListener(state.user.uid);
     }
-    toast('Perkelta âœ“');
+    toast('Perkelta ✓');
   }catch(e){
     console.warn('Storage mode migration error:', e);
-    toast('Klaida perkeliant duomenis â€“ patikrinkite sÄ…raÅ¡Ä…, kai kurie Ä¯raÅ¡ai gali bÅ«ti nepilnai perkelti');
+    toast('Klaida perkeliant duomenis – patikrinkite sąrašą, kai kurie įrašai gali būti nepilnai perkelti');
   }finally{
     state.migratingStorage = false;
   }
@@ -2499,21 +2499,21 @@ async function toggleStorageMode(){
   const wantsCloud = state.storageMode !== 'cloud';
 
   if(wantsCloud && !isPremium){
-    state.storageError = 'Cloud sinchronizacija prieinama tik Premium, Tester arba Draugas paskyroms. Dabar Å¡i paskyra neturi cloud teisiÅ³.';
+    state.storageError = 'Cloud sinchronizacija prieinama tik Premium, Tester arba Draugas paskyroms. Dabar ši paskyra neturi cloud teisių.';
     toast(state.storageError, 8000);
     render();
     return;
   }
 
   const confirmMsg = wantsCloud
-    ? `Perkelti Ä¯raÅ¡us Ä¯ paskyrÄ… (cloud)?\n\nJie bus susieti su Å¡ia paskyra ir pasiekiami iÅ¡ kitÅ³ Ä¯renginiÅ³ prisijungus tuo paÄiu el. paÅ¡tu.`
-    : `Perkelti Ä¯raÅ¡us tik Ä¯ Å¡Ä¯ telefonÄ…?\n\nJÅ«sÅ³ ${state.items.length} Ä¯raÅ¡ai bus paÅ¡alinti iÅ¡ paskyros saugyklos. Kituose Ä¯renginiuose jÅ³ nebematysite, o praradus telefonÄ… galima prarasti ir duomenis.`;
+    ? `Perkelti įrašus į paskyrą (cloud)?\n\nJie bus susieti su šia paskyra ir pasiekiami iš kitų įrenginių prisijungus tuo pačiu el. paštu.`
+    : `Perkelti įrašus tik į šį telefoną?\n\nJūsų ${state.items.length} įrašai bus pašalinti iš paskyros saugyklos. Kituose įrenginiuose jų nebematysite, o praradus telefoną galima prarasti ir duomenis.`;
   if(!confirm(confirmMsg)) return;
 
-  if(!wantsCloud && !confirm('Patvirtinkite: paÅ¡alinti iÅ¡ paskyros saugyklos ir saugoti tik Å¡iame telefone.')) return;
+  if(!wantsCloud && !confirm('Patvirtinkite: pašalinti iš paskyros saugyklos ir saugoti tik šiame telefone.')) return;
 
   const itemsToMigrate = state.items.slice();
-  toast(wantsCloud ? 'Perkeliama Ä¯ paskyrÄ…...' : 'Perkeliama Ä¯ telefonÄ…...', 8000);
+  toast(wantsCloud ? 'Perkeliama į paskyrą...' : 'Perkeliama į telefoną...', 8000);
   state.migratingStorage = true;
 
   try{
@@ -2585,11 +2585,11 @@ async function toggleStorageMode(){
       attachItemsListener(state.user.uid);
     }
     state.storageError = '';
-    toast('Saugyklos reÅ¾imas pakeistas âœ“', 6000);
+    toast('Saugyklos režimas pakeistas ✓', 6000);
   }catch(e){
     console.warn('Storage mode migration error:', e);
     const code = e?.code ? ` (${e.code})` : '';
-    state.storageError = `Nepavyko pakeisti saugyklos reÅ¾imo${code}. DaÅ¾niausiai taip nutinka dÄ—l paskyros teisiÅ³ arba Firestore taisykliÅ³. DuomenÅ³ sÄ…raÅ¡Ä… patikrinkite prieÅ¡ bandydami dar kartÄ….`;
+    state.storageError = `Nepavyko pakeisti saugyklos režimo${code}. Dažniausiai taip nutinka dėl paskyros teisių arba Firestore taisyklių. Duomenų sąrašą patikrinkite prieš bandydami dar kartą.`;
     toast(state.storageError, 10000);
     render();
   }finally{
@@ -2598,14 +2598,14 @@ async function toggleStorageMode(){
 }
 
 async function confirmDeleteAccount(){
-  if(!confirm('Ar tikrai norite iÅ¡trinti paskyrÄ…? Visi jÅ«sÅ³ duomenys (garantijos, nuotraukos) bus negrÄ¯Å¾tamai iÅ¡trinti.'))return;
-  if(!confirm('Å is veiksmas negrÄ¯Å¾tamas. Tikrai tÄ™sti?'))return;
+  if(!confirm('Ar tikrai norite ištrinti paskyrą? Visi jūsų duomenys (garantijos, nuotraukos) bus negrįžtamai ištrinti.'))return;
+  if(!confirm('Šis veiksmas negrįžtamas. Tikrai tęsti?'))return;
 
   const uid = state.user.uid;
   const items = state.items.slice();
   const wasCloud = state.storageMode === 'cloud';
 
-  // Firestore/Storage security rules require request.auth.uid to match â€”
+  // Firestore/Storage security rules require request.auth.uid to match —
   // once the Auth account is deleted, request.auth becomes null and these
   // calls would be rejected. So we must delete the data WHILE still
   // authenticated, then delete the Auth account last.
@@ -2623,30 +2623,30 @@ async function confirmDeleteAccount(){
   try{ await deleteDoc(doc(db,'users',uid)); }catch(e){ cleanupFailed = true; }
 
   if(cleanupFailed){
-    toast('Nepavyko pilnai iÅ¡trinti duomenÅ³ â€“ bandykite vÄ—liau dar kartÄ…');
+    toast('Nepavyko pilnai ištrinti duomenų – bandykite vėliau dar kartą');
     return; // don't delete the Auth account if cleanup was incomplete,
             // otherwise any leftover docs become permanently unreachable
   }
 
   // Local-mode (or already-migrated) IndexedDB data belongs to this device,
-  // not Firestore â€” clean it up regardless of which mode was active, since
+  // not Firestore — clean it up regardless of which mode was active, since
   // a user might have switched modes earlier and left orphaned local data.
   try{ await localDeleteDatabase(uid); }catch(e){ /* best-effort */ }
 
   try{
     await state.user.delete();
-    toast('Paskyra iÅ¡trinta');
+    toast('Paskyra ištrinta');
   }catch(e){
     if(e.code==='auth/requires-recent-login'){
-      toast('Duomenys iÅ¡trinti. DÄ—l saugumo prisijunkite iÅ¡ naujo, kad pabaigtumÄ—te paskyros trynimÄ….');
+      toast('Duomenys ištrinti. Dėl saugumo prisijunkite iš naujo, kad pabaigtumėte paskyros trynimą.');
       await doLogout();
     }else{
-      toast('Duomenys iÅ¡trinti, bet paskyros paÅ¡alinti nepavyko â€“ susisiekite su mumis');
+      toast('Duomenys ištrinti, bet paskyros pašalinti nepavyko – susisiekite su mumis');
     }
   }
 }
 
-// Premium isn't truly "unlimited" â€” that would mean unbounded exposure on
+// Premium isn't truly "unlimited" — that would mean unbounded exposure on
 // our own Anthropic billing if a Premium account is compromised, scripted,
 // or simply misused. Premium gets a generous but hard cap instead.
 async function analyzeDoc(b64,mime){
@@ -2655,11 +2655,11 @@ async function analyzeDoc(b64,mime){
 
   const MAX_RETRIES_PER_ITEM = 2;
   if(state.aiRetriesUsedThisItem >= MAX_RETRIES_PER_ITEM){
-    toast(`Pasiektas bandymÅ³ limitas (${MAX_RETRIES_PER_ITEM}) Å¡iam Ä¯raÅ¡ui. Ä®veskite duomenis rankiniu bÅ«du arba pradÄ—kite naujÄ… Ä¯raÅ¡Ä….`);
+    toast(`Pasiektas bandymų limitas (${MAX_RETRIES_PER_ITEM}) šiam įrašui. Įveskite duomenis rankiniu būdu arba pradėkite naują įrašą.`);
     return;
   }
   if(!isPremium && usesLeft<=0){
-    toast(`IÅ¡naudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite Ä¯ Premium.`);
+    toast(`Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.`);
     return;
   }
 
@@ -2671,11 +2671,11 @@ async function analyzeDoc(b64,mime){
     const dayCount = dayKey===today ? (state.userDoc?.aiDayCount||0) : 0;
     const monthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0) : 0;
     if(dayCount >= PREMIUM_DAILY_LIMIT){
-      toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT} analiziÅ³). Pabandykite rytoj.`);
+      toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT} analizių). Pabandykite rytoj.`);
       return;
     }
     if(monthCount >= PREMIUM_MONTHLY_LIMIT){
-      toast(`Pasiektas mÄ—nesio limitas (${PREMIUM_MONTHLY_LIMIT}/mÄ—n.).`);
+      toast(`Pasiektas mėnesio limitas (${PREMIUM_MONTHLY_LIMIT}/mėn.).`);
       return;
     }
   }
@@ -2687,36 +2687,36 @@ async function analyzeDoc(b64,mime){
     const res=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
       body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,messages:[{role:'user',content:[
         {type:'image',source:{type:'base64',media_type:mime,data:b64}},
-        {type:'text',text:`Tai pirkimo dokumentas (Äekis, sÄ…skaita-faktÅ«ra ar banko iÅ¡raÅ¡as). AtidÅ¾iai iÅ¡analizuok TIK tai, kas faktiÅ¡kai matoma dokumente.
+        {type:'text',text:`Tai pirkimo dokumentas (čekis, sąskaita-faktūra ar banko išrašas). Atidžiai išanalizuok TIK tai, kas faktiškai matoma dokumente.
 
-GRIEÅ½TOS TAISYKLï¿½Ä–S (svarbiausia):
-1. NIEKADA negalvok/nespÄ—liok informacijos, kurios nematai dokumente. Jei laukas neaiÅ¡kus ar nematomas â€“ grÄ…Å¾ink null, NE spÄ—jimÄ….
-2. PavadinimÄ… imk TIK iÅ¡ dokumento teksto (prekÄ—s eilutÄ—s), niekada negalvok pavadinimo iÅ¡ konteksto ar nuojautos.
-3. Jei dokumente NÄ–RA pardavÄ—jo pavadinimo/rekvizitÅ³ (pvz. nufotografuota tik dalis Äekio) â€“ shop lauke grÄ…Å¾ink null, neiÅ¡galvok parduotuvÄ—s pavadinimo.
-4. Jei dokumentas neryÅ¡kus, apkarpytas, ar dalis teksto neÄ¯skaitoma â€“ privalai tai nurodyti quality lauke, nepaisant to stenkis iÅ¡traukti kÄ… gali.
-5. Jei Äekyje/sÄ…skaitoje YRA KELIOS atskiros prekÄ—s (ne paslaugos) â€“ grÄ…Å¾ink KIEKVIENÄ„ atskirai items masyve. Paslaugos (pristatymas, montavimas, garantijos pratÄ™simas ir pan.) NÄ–RA prekÄ—s â€“ jÅ³ neÄ¯trauk Ä¯ items, bet gali paminÄ—ti notes lauke.
-6. Kiekvienai prekei nurodyk, ar jai paprastai taikoma vartotojo garantija pagal ES/LT teisÄ™ (warrantyApplies). DrabuÅ¾iai, avalynÄ—, baldai, elektronika, technika â€“ paprastai TAIP. Greitai gendantys maisto produktai, vienkartinio naudojimo higienos priemonÄ—s, paslaugos â€“ paprastai NE.
+GRIEŽTOS TAISYKLĖS (svarbiausia):
+1. NIEKADA negalvok/nespėliok informacijos, kurios nematai dokumente. Jei laukas neaiškus ar nematomas – grąžink null, NE spėjimą.
+2. Pavadinimą imk TIK iš dokumento teksto (prekės eilutės), niekada negalvok pavadinimo iš konteksto ar nuojautos.
+3. Jei dokumente NĖRA pardavėjo pavadinimo/rekvizitų (pvz. nufotografuota tik dalis čekio) – shop lauke grąžink null, neišgalvok parduotuvės pavadinimo.
+4. Jei dokumentas neryškus, apkarpytas, ar dalis teksto neįskaitoma – privalai tai nurodyti quality lauke, nepaisant to stenkis ištraukti ką gali.
+5. Jei čekyje/sąskaitoje YRA KELIOS atskiros prekės (ne paslaugos) – grąžink KIEKVIENĄ atskirai items masyve. Paslaugos (pristatymas, montavimas, garantijos pratęsimas ir pan.) NĖRA prekės – jų neįtrauk į items, bet gali paminėti notes lauke.
+6. Kiekvienai prekei nurodyk, ar jai paprastai taikoma vartotojo garantija pagal ES/LT teisę (warrantyApplies). Drabužiai, avalynė, baldai, elektronika, technika – paprastai TAIP. Greitai gendantys maisto produktai, vienkartinio naudojimo higienos priemonės, paslaugos – paprastai NE.
 
-GrÄ…Å¾ink TIK JSON be markdown, Å¡ios struktÅ«ros:
+Grąžink TIK JSON be markdown, šios struktūros:
 {
-  "shop": "parduotuvÄ—s/pardavÄ—jo pavadinimas arba null jei nematomas dokumente",
+  "shop": "parduotuvės/pardavėjo pavadinimas arba null jei nematomas dokumente",
   "purchaseDate": "YYYY-MM-DD arba null",
   "docNumber": "dokumento/kvito numeris arba null",
-  "docType": "Kvitas / Äekis|SÄ…skaita-faktÅ«ra (SF)|Banko iÅ¡raÅ¡as|Kita",
+  "docType": "Kvitas / čekis|Sąskaita-faktūra (SF)|Banko išrašas|Kita",
   "quality": "good|blurry|partial|unclear",
-  "qualityNote": "trumpas paaiÅ¡kinimas jei quality nÄ—ra 'good', pvz. 'TrÅ«ksta apatinÄ—s Äekio dalies' arba null",
+  "qualityNote": "trumpas paaiškinimas jei quality nėra 'good', pvz. 'Trūksta apatinės čekio dalies' arba null",
   "items": [
-    {"name":"tikslus prekÄ—s pavadinimas iÅ¡ dokumento","price":"kaina arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|BuitinÄ— technika|AvalynÄ— / drabuÅ¾iai|Baldai|Automobiliai|Kita"}
+    {"name":"tikslus prekės pavadinimas iš dokumento","price":"kaina arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|Buitinė technika|Avalynė / drabužiai|Baldai|Automobiliai|Kita"}
   ]
 }
-warrantyMonths kiekvienai prekei: 6/12/24/36/60 mÄ—n. pagal produkto tipÄ…, jei warrantyApplies=true. Jei warrantyApplies=false, warrantyMonths=null.
-category kiekvienai prekei: viena iÅ¡: Elektronika, BuitinÄ— technika, AvalynÄ— / drabuÅ¾iai, Baldai, Automobiliai, Kita.
-Jei items sÄ…raÅ¡e nieko neradai (pvz. visiÅ¡kai neÄ¯skaitoma), grÄ…Å¾ink tuÅ¡ÄiÄ… masyvÄ… [].`}
+warrantyMonths kiekvienai prekei: 6/12/24/36/60 mėn. pagal produkto tipą, jei warrantyApplies=true. Jei warrantyApplies=false, warrantyMonths=null.
+category kiekvienai prekei: viena iš: Elektronika, Buitinė technika, Avalynė / drabužiai, Baldai, Automobiliai, Kita.
+Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tuščią masyvą [].`}
       ]}]})
     });
-    if(res.status===401){toast('Sesija pasibaigÄ—, prisijunkite iÅ¡ naujo');return;}
-    if(res.status===403){toast('Patvirtinkite el. paÅ¡tÄ…, kad naudotumÄ—te AI analizÄ™');return;}
-    if(res.status===429){toast('Pasiektas AI analiziÅ³ limitas');return;}
+    if(res.status===401){toast('Sesija pasibaigė, prisijunkite iš naujo');return;}
+    if(res.status===403){toast('Patvirtinkite el. paštą, kad naudotumėte AI analizę');return;}
+    if(res.status===429){toast('Pasiektas AI analizių limitas');return;}
     if(!res.ok)return;
 
     state.pendingAiCharge = true;
@@ -2724,17 +2724,17 @@ Jei items sÄ…raÅ¡e nieko neradai (pvz. visiÅ¡kai neÄ¯skaitoma), grÄ…
     const data=await res.json();
     const p=JSON.parse((data.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
 
-    // Quality warning â€” surfaced to the user, not silently swallowed.
+    // Quality warning — surfaced to the user, not silently swallowed.
     if(p.quality && p.quality!=='good'){
-      const qualityLabels = {blurry:'Nuotrauka neryÅ¡ki',partial:'Matomas ne visas dokumentas',unclear:'Tekstas sunkiai Ä¯skaitomas'};
-      state.form.qualityWarning = `${qualityLabels[p.quality]||'Dokumento kokybÄ— nepakankama'}${p.qualityNote?': '+p.qualityNote:''}`;
+      const qualityLabels = {blurry:'Nuotrauka neryški',partial:'Matomas ne visas dokumentas',unclear:'Tekstas sunkiai įskaitomas'};
+      state.form.qualityWarning = `${qualityLabels[p.quality]||'Dokumento kokybė nepakankama'}${p.qualityNote?': '+p.qualityNote:''}`;
     }
 
     const items = Array.isArray(p.items) ? p.items.filter(it=>it && typeof it.name==='string' && it.name.trim()) : [];
 
     if(items.length===0){
-      // Nothing usable was recognized â€” don't silently fabricate a name.
-      toast('AI nerado atpaÅ¾Ä¯stamos prekÄ—s Å¡iame dokumente. Ä®veskite duomenis rankiniu bÅ«du.');
+      // Nothing usable was recognized — don't silently fabricate a name.
+      toast('AI nerado atpažįstamos prekės šiame dokumente. Įveskite duomenis rankiniu būdu.');
       if(typeof p.shop==='string')state.form.shop=p.shop.slice(0,100);
       if(typeof p.purchaseDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(p.purchaseDate))state.form.purchaseDate=p.purchaseDate;
       if(DOC_TYPES.includes(p.docType))state.form.docType=p.docType;
@@ -2747,7 +2747,7 @@ Jei items sÄ…raÅ¡e nieko neradai (pvz. visiÅ¡kai neÄ¯skaitoma), grÄ…
       const dup = state.items.find(i=>
         (p.docNumber && i.docNumber && i.docNumber===p.docNumber && i.name?.toLowerCase()===items[0].name?.toLowerCase()) ||
         (i.name?.toLowerCase()===items[0].name?.toLowerCase() && i.purchaseDate && i.purchaseDate===p.purchaseDate));
-      if(dup) toast('PanaÅ¡us Ä¯raÅ¡as jau yra â€” patikrinkite ar ne dublikatas');
+      if(dup) toast('Panašus įrašas jau yra — patikrinkite ar ne dublikatas');
     }else{
       const warrantyCount = items.filter(i=>i.warrantyApplies!==false).length;
       state.multiItemReceipt = {
@@ -2772,7 +2772,7 @@ function applyAiItemToForm(item, receiptMeta){
   if(typeof receiptMeta.docNumber==='string') state.form.docNumber=receiptMeta.docNumber.slice(0,100);
   if(DOC_TYPES.includes(receiptMeta.docType)) state.form.docType=receiptMeta.docType;
 
-  // Kategorija iÅ¡ AI
+  // Kategorija iš AI
   if(CATEGORIES.includes(item.category)) state.form.category=item.category;
 
   // Garantija
@@ -2785,7 +2785,7 @@ function applyAiItemToForm(item, receiptMeta){
     if(wm){ state.form.warrantyMonths=item.warrantyMonths; if(state.form.purchaseDate) state.form.warrantyEnd=addMonths(state.form.purchaseDate,item.warrantyMonths); }
   }
 
-  // Kaina Ä¯ notes (tik jei yra)
+  // Kaina į notes (tik jei yra)
   if(item.price) state.form.notes=[state.form.notes,`Kaina: ${String(item.price).slice(0,50)}`].filter(Boolean).join('\n');
 }
 
