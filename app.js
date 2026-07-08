@@ -213,9 +213,21 @@ function toast(msg, ms=5200){
   document.getElementById('app').appendChild(el);
   setTimeout(()=>el.remove(),ms);
 }
-function showAppDialog(title, message, supportDraft=''){
-  state.appDialog = { title, message, supportDraft };
+function showAppDialog(title, message, supportDraft='', options={}){
+  state.appDialog = { title, message, supportDraft, hideSupport: !!options.hideSupport };
   render();
+}
+function maybeShowReturnFeatureIntro(existingUserDoc=false){
+  const seenKey = 'galio_return_deadline_intro_v1';
+  const onboarded = localStorage.getItem('galio_onboarded') || localStorage.getItem('garantijos_onboarded');
+  if(!existingUserDoc || !onboarded || localStorage.getItem(seenKey)==='1') return;
+  localStorage.setItem(seenKey,'1');
+  state.appDialog = {
+    title: 'Nauja: grąžinimo terminai',
+    message: 'Pirk internetu ir nesuk galvos, kada baigiasi grąžinimo laikas. Nuskenuok čekį ar sąskaitą, o Galio parodys iki kada dar gali grąžinti prekę ir primins prieš terminą.',
+    supportDraft: '',
+    hideSupport: true,
+  };
 }
 function openSupportFromDialog(){
   const draft = state.appDialog?.supportDraft || '';
@@ -343,6 +355,7 @@ async function ensureUserDoc(user){
   state.appDialog = null;
   const ref_ = doc(db,'users',user.uid);
   const snap = await getDoc(ref_);
+  const existingUserDoc = snap.exists();
   if(!snap.exists()){
     const initial = {
       email:user.email, plan:'free', itemCount:0, notifyEnabled:true,
@@ -369,6 +382,7 @@ async function ensureUserDoc(user){
       state.userDoc.emailVerified = user.emailVerified || false;
     }
   }
+  maybeShowReturnFeatureIntro(existingUserDoc);
   state.storageMode = state.userDoc.storageMode || 'local';
   // live updates to plan/itemCount/storageMode/aiUsesRemaining
   onSnapshot(ref_, s=>{
@@ -643,6 +657,7 @@ function _doRender(){
 // ── Onboarding ─────────────────────────────────────────────────────────────
 const ONBOARD_SLIDES = [
   { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok čekį', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
+  { icon:'ti-rotate-2', bg:'rgba(59,130,246,.14)', color:'#60a5fa', title:'Pirk internetu ramiai', text:'Nuskenuok pirkinį, o Galio parodys iki kada dar gali grąžinti prekę. 14, 30 ar kitas terminas — nebereikia skaičiuoti galvoje.' },
   { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'Sąskaita kompiuteryje?', text:'Ne bėda — atidaryk ją ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotrauką.' },
   { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Niekada nepraleisk garantijos', text:'Matykite iš karto, kurių daiktų garantija baigiasi greitai, ir nepraraskite teisės į nemokamą remontą.' },
   { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Duomenys saugomi jūsų paskyroje ir pasiekiami iš bet kurio įrenginio, net be interneto.' },
@@ -1427,6 +1442,7 @@ function renderContact(){
 function renderAppDialog(){
   const d = state.appDialog;
   if(!d) return '';
+  const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="flex:1;background:none;border:1px solid var(--border2);color:var(--text);font-size:15px;font-weight:600;border-radius:12px;padding:12px 14px">Pagalba</button>`;
   return `<div class="warranty-sheet" id="appDialog">
     <div class="warranty-overlay"></div>
     <div class="warranty-panel">
@@ -1434,7 +1450,7 @@ function renderAppDialog(){
       <div class="warranty-title">${esc(d.title||'Pranešimas')}</div>
       <p style="font-size:15px;color:var(--text2);line-height:1.45;margin:0 0 16px">${esc(d.message||'')}</p>
       <div style="display:flex;gap:10px">
-        <button id="appDialogSupportBtn" style="flex:1;background:none;border:1px solid var(--border2);color:var(--text);font-size:15px;font-weight:600;border-radius:12px;padding:12px 14px">Pagalba</button>
+        ${supportBtn}
         <button id="appDialogOkBtn" class="save-btn" style="flex:1">Gerai</button>
       </div>
     </div>
