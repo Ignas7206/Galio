@@ -57,6 +57,7 @@ let state = {
   adminStats: null,
   storageMode: 'local', // 'local' | 'cloud' — driven by userDoc.storageMode once loaded
   migratingStorage: false, // true while toggleStorageMode() is mid-flight; suppresses auto-reattach
+  storageError: '',
   policyChecking: false, policyResult: null, policyResultFor: null,
   contactBusy: false, contactSent: false, contactError: '', contactDraft: '',
   adminUsers: [],
@@ -108,11 +109,17 @@ function badgeHtml(days){
   if(days<=30)return`<span class="badge badge-warn">${days}d.</span>`;
   return`<span class="badge badge-ok">${days}d.</span>`;
 }
-function toast(msg){
+function toast(msg, ms=5200){
   document.querySelectorAll('.toast').forEach(e=>e.remove());
   const el=document.createElement('div');el.className='toast';el.textContent=msg;
+  el.style.whiteSpace='normal';
+  el.style.width='calc(100% - 32px)';
+  el.style.maxWidth='460px';
+  el.style.textAlign='center';
+  el.style.lineHeight='1.35';
+  el.style.borderRadius='14px';
   document.getElementById('app').appendChild(el);
-  setTimeout(()=>el.remove(),2600);
+  setTimeout(()=>el.remove(),ms);
 }
 function friendlyAuthError(code){
   const map={
@@ -1044,16 +1051,17 @@ function renderSettings(){
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
 
-    <p class="form-label-section" style="margin:0 16px 8px">Saugojimo būdas</p>
+    <p class="form-label-section" style="margin:0 16px 8px">Duomenų vieta</p>
     <div class="form-section" style="margin:0 16px 8px">
-      <div class="settings-row">
+      <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label">${isCloud?'Paskyros saugykla':'Įrenginio saugykla'}<small>${isCloud?'Sinchronizuojama su paskyra':'Saugoma tik šiame telefone'}</small></div>
-        ${isPremium || isCloud ? `<button class="toggle-switch${isCloud?' on':''}" id="storageModeToggle"><div class="knob"></div></button>` : ''}
-      </div>
+        <div class="settings-row-label">${isCloud?'Paskyroje':'Tik šiame telefone'}<small>${isCloud?'Įrašai saugomi paskyroje ir pasiekiami iš kitų įrenginių':'Privatumo režimas: įrašai lieka tik šiame telefone'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600">${isCloud?'Saugoti tik telefone':'Perkelti į paskyrą'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+      </button>
     </div>
+    ${state.storageError ? `<div style="margin:0 16px 12px;padding:12px 14px;border-radius:12px;background:var(--red-bg);color:var(--red);font-size:14px;line-height:1.45">${esc(state.storageError)}</div>` : ''}
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Įrašai sinchronizuojami su paskyra ir pasiekiami iš bet kurio įrenginio.':isPremium?'Įjunkite paskyros saugyklą, kad pasiektumėte įrašus iš kitų įrenginių.':'Įrašai saugomi šiame telefone. Paskyros saugykla prieinama Premium nariams.'}
+      ${isCloud?'Tai rekomenduojamas Premium režimas: duomenys nepririšti prie vieno telefono. Jei labiau rūpi privatumas, galite perkelti įrašus tik į šį telefoną.':isPremium?'Dabar naudojate privatumo režimą: įrašai saugomi tik šiame telefone. Premium leidžia juos perkelti į paskyrą, kad nepradingtų pakeitus ar praradus telefoną.':'Paskyros saugykla prieinama Premium / Tester / Draugas paskyroms. Nemokamame plane įrašai saugomi tik telefone.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -2350,7 +2358,7 @@ async function toggleNotify(){
   }
 }
 
-async function toggleStorageMode(){
+async function toggleStorageModeOld(){
   if(!state.user)return;
   const isPremium = isPremiumUser();
   const wantsCloud = state.storageMode !== 'cloud';
@@ -2463,6 +2471,112 @@ async function toggleStorageMode(){
   }catch(e){
     console.warn('Storage mode migration error:', e);
     toast('Klaida perkeliant duomenis – patikrinkite sąrašą, kai kurie įrašai gali būti nepilnai perkelti');
+  }finally{
+    state.migratingStorage = false;
+  }
+}
+
+async function toggleStorageMode(){
+  if(!state.user) return;
+  state.storageError = '';
+
+  const isPremium = isPremiumUser();
+  const wantsCloud = state.storageMode !== 'cloud';
+
+  if(wantsCloud && !isPremium){
+    state.storageError = 'Cloud sinchronizacija prieinama tik Premium, Tester arba Draugas paskyroms. Dabar ši paskyra neturi cloud teisių.';
+    toast(state.storageError, 8000);
+    render();
+    return;
+  }
+
+  const confirmMsg = wantsCloud
+    ? `Perkelti įrašus į paskyrą (cloud)?\n\nJie bus susieti su šia paskyra ir pasiekiami iš kitų įrenginių prisijungus tuo pačiu el. paštu.`
+    : `Perkelti įrašus tik į šį telefoną?\n\nJūsų ${state.items.length} įrašai bus pašalinti iš paskyros saugyklos. Kituose įrenginiuose jų nebematysite, o praradus telefoną galima prarasti ir duomenis.`;
+  if(!confirm(confirmMsg)) return;
+
+  if(!wantsCloud && !confirm('Patvirtinkite: pašalinti iš paskyros saugyklos ir saugoti tik šiame telefone.')) return;
+
+  const itemsToMigrate = state.items.slice();
+  toast(wantsCloud ? 'Perkeliama į paskyrą...' : 'Perkeliama į telefoną...', 8000);
+  state.migratingStorage = true;
+
+  try{
+    if(wantsCloud){
+      await updateDoc(doc(db,'users',state.user.uid), {
+        itemCount: itemsToMigrate.length,
+        storageMode: 'cloud',
+      });
+
+      if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
+
+      for(const item of itemsToMigrate){
+        const payload = {
+          name:item.name, category:item.category, shop:item.shop||'',
+          purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
+          docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
+          notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+          createdAtMs:item.createdAtMs||Date.now(), createdAt:serverTimestamp(),
+        };
+        const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), payload);
+        if(item.docUrl && item.docMime){
+          try{
+            const ext = item.docMime==='application/pdf'?'pdf':(item.docMime.split('/')[1]||'jpg');
+            const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
+            const b64 = item.docMime==='application/pdf' ? item.docUrl : item.docUrl.split(',')[1];
+            const blob = base64ToBlob(b64, item.docMime);
+            await uploadBytes(ref(storage,path), blob, {contentType:item.docMime});
+            const url = await getDownloadURL(ref(storage,path));
+            await updateDoc(docRef, { docUrl:url, docMime:item.docMime, docFileName:item.docFileName, docStoragePath:path });
+          }catch(e){ console.warn('Migration upload failed for item:', item.id, e); }
+        }
+      }
+      await localClear(state.user.uid);
+      attachItemsListener(state.user.uid);
+    }else{
+      if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
+
+      for(const item of itemsToMigrate){
+        let localDocUrl = null;
+        if(item.docUrl){
+          try{
+            const resp = await fetch(item.docUrl);
+            const blob = await resp.blob();
+            localDocUrl = await new Promise((res,rej)=>{
+              const r = new FileReader();
+              r.onload = ()=>res(r.result);
+              r.onerror = rej;
+              r.readAsDataURL(blob);
+            });
+          }catch(e){ console.warn('Migration download failed for item:', item.id, e); }
+        }
+        const localItem = {
+          id: genLocalId(), name:item.name, category:item.category, shop:item.shop||'',
+          purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
+          docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
+          notifyEnabled:true, createdAtMs:item.createdAtMs||Date.now(),
+          docUrl: localDocUrl, docMime: localDocUrl?item.docMime:null, docFileName: localDocUrl?item.docFileName:null,
+        };
+        await localPut(state.user.uid, localItem);
+        if(item.docStoragePath){
+          try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){}
+        }
+        try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',item.id)); }catch(e){}
+      }
+      await updateDoc(doc(db,'users',state.user.uid), {
+        itemCount: 0,
+        storageMode: 'local',
+      });
+      attachItemsListener(state.user.uid);
+    }
+    state.storageError = '';
+    toast('Saugyklos režimas pakeistas ✓', 6000);
+  }catch(e){
+    console.warn('Storage mode migration error:', e);
+    const code = e?.code ? ` (${e.code})` : '';
+    state.storageError = `Nepavyko pakeisti saugyklos režimo${code}. Dažniausiai taip nutinka dėl paskyros teisių arba Firestore taisyklių. Duomenų sąrašą patikrinkite prieš bandydami dar kartą.`;
+    toast(state.storageError, 10000);
+    render();
   }finally{
     state.migratingStorage = false;
   }
