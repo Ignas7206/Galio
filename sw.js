@@ -1,15 +1,19 @@
-const CACHE = 'galio-v4';
+const CACHE = 'galio-v5';
 const BASE = '/Galio';
 const ASSETS = [
-  BASE + '/',
-  BASE + '/index.html',
-  BASE + '/app.js',
-  BASE + '/firebase-config.js',
-  BASE + '/manifest.json',
   BASE + '/icon-192.png',
   BASE + '/icon-512.png',
   BASE + '/privacy.html',
   BASE + '/terms.html',
+];
+
+const NETWORK_FIRST = [
+  BASE + '/',
+  BASE + '/index.html',
+  BASE + '/app.js',
+  BASE + '/firebase-config.js',
+  BASE + '/local-db.js',
+  BASE + '/manifest.json',
 ];
 
 self.addEventListener('install', e => {
@@ -25,12 +29,27 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  const url = e.request.url;
+  const reqUrl = new URL(e.request.url);
+  const url = reqUrl.href;
   if (url.includes('googleapis.com') || url.includes('firebaseapp.com') ||
       url.includes('firebasestorage') || url.includes('gstatic.com') ||
       url.includes('api.anthropic.com') || url.includes('workers.dev')) {
     return;
   }
+
+  if (NETWORK_FIRST.includes(reqUrl.pathname)) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+          return res;
+        })
+        .catch(() => caches.match(e.request).then(cached => cached || caches.match(BASE + '/index.html')))
+    );
+    return;
+  }
+
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request).catch(() => caches.match(BASE + '/index.html')))
   );
