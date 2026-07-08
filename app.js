@@ -1798,6 +1798,8 @@ async function requestPushPermission(){
     return false;
   }
 }
+
+async function updateItem(){
   if(!state.editItemId||!state.form.name.trim()) return;
   const f = state.form;
   const isCloud = state.storageMode==='cloud';
