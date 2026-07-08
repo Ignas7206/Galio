@@ -1341,8 +1341,8 @@ function renderAdminStats(){
           const isPremiumPlan = u.plan==='premium';
           const isAdminUser = u.role==='admin';
           return `<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding:12px 14px">
-            <div style="display:flex;width:100%;align-items:center;gap:6px">
-              <div style="flex:1;min-width:0">
+            <div style="display:flex;width:100%;align-items:center;gap:6px;flex-wrap:wrap">
+              <div style="flex:1 1 100%;min-width:0">
                 <div style="font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email}</div>
                 <div style="font-size:15px;color:${planColor};margin-top:2px">${planLabel}${isAdminUser?' Â· Admin':''}${u.emailVerified?' Â· âœ“':''} Â· ${u.itemCount||0} Ä¯raÅ¡Å³</div>
               </div>
