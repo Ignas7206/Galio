@@ -49,6 +49,7 @@ let state = {
   aiMultiItems: [],
   multiItemReceipt: null,
   multiEditIdx: null,
+  aiNameReview: false,
   editItemId: null,
   notifModal: null,
   _lastNotifDays: null,
@@ -89,6 +90,7 @@ function startNewItem(mode){
   state.aiRetriesUsedThisItem=0;
   state.pendingAiCharge=false;
   state.aiMultiItems=[];
+  state.aiNameReview=false;
 }
 function today(){return new Date().toISOString().slice(0,10);}
 function addMonths(d,m){if(!d)return '';const r=new Date(d);r.setMonth(r.getMonth()+m);return r.toISOString().slice(0,10);}
@@ -850,6 +852,19 @@ function renderAdd(){
     </div>
   </div>`:'';
 
+  const nameReviewModal=state.aiNameReview?`<div class="warranty-sheet" id="aiNameReviewSheet">
+    <div class="warranty-overlay"></div>
+    <div class="warranty-panel">
+      <div class="warranty-handle"></div>
+      <div class="warranty-title">Patikrinkite pavadinimą</div>
+      <p style="font-size:14px;color:var(--text2);margin:0 0 14px">AI pasiūlė pavadinimą. Pakeiskite jį į tokį, kokį norėsite matyti garantijų sąraše.</p>
+      <div class="form-field" style="margin-bottom:14px">
+        <input type="text" id="aiNameReviewInput" value="${esc(f.name)}" placeholder="Prekės pavadinimas" autofocus />
+      </div>
+      <button class="save-btn" id="aiNameReviewSave" ${f.name.trim()?'':'disabled'}>Tinka</button>
+    </div>
+  </div>`:'';
+
   return`<div>
     <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-arrow-left"></i></button><h2>${isPhoto?'Pridėti su dokumentu':'Įvesti rankiniu būdu'}</h2></div>
     <div class="form-body">
@@ -935,6 +950,7 @@ function renderAdd(){
       <div style="height:80px"></div>
     </div>
     ${warrantySheet}
+    ${nameReviewModal}
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
       <button class="save-btn" id="saveBtn" ${f.name.trim()&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
     </div>
@@ -1275,7 +1291,7 @@ function renderMultiSelect(){
         ${item.selected?`<i class="ti ti-check" style="font-size:13px;color:#fff"></i>`:''}
       </div>
       <div style="flex:1;min-width:0">
-        <div data-mname style="font-size:15px;font-weight:600;color:${dimmed?'var(--text3)':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.name)}</div>
+        <input class="multi-name-input" data-midx="${idx}" value="${esc(item.name)}" placeholder="Prekės pavadinimas" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:15px;font-weight:600;color:${dimmed?'var(--text3)':'var(--text)'};outline:none" onclick="event.stopPropagation()" />
         <div style="font-size:13px;color:var(--text3);margin-top:2px;display:flex;align-items:center;gap:6px">
           ${item.category?`<span>${esc(item.category)}</span>`:''}
           ${!noWarranty?`<span style="color:var(--green)">${item.warrantyMonths||24} mėn.</span>`:''}
@@ -1460,11 +1476,11 @@ function attachEvents(){
   on('rescanBtn','click',()=>{ state.form.qualityWarning=null; state.form.docData=null; state.form.docMime=null; state.form.docFileName=null; renderSync(); document.getElementById('docInput')?.click(); });
   on('modePhoto','click',()=>{
     if(document.getElementById('modePhoto')?.disabled)return;
-    state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];
+    state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];state.aiNameReview=false;
     renderSync();
     requestAnimationFrame(()=>{ document.getElementById('docInput')?.click(); });
   });
-  on('modeManual','click',()=>{state.addMode='manual';render();});
+  on('modeManual','click',()=>{state.addMode='manual';state.aiNameReview=false;render();});
 
   on('backBtn','click',()=>{
     if(state.view==='add' && state.multiEditIdx!=null){
@@ -1492,6 +1508,9 @@ function attachEvents(){
     on(`f_${k}`,'input',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
     on(`f_${k}`,'change',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
   });
+
+  on('aiNameReviewInput','input',e=>{state.form.name=e.target.value;const b=document.getElementById('aiNameReviewSave');if(b)b.disabled=!state.form.name.trim();syncSave();});
+  on('aiNameReviewSave','click',()=>{if(!state.form.name.trim())return;state.aiNameReview=false;render();});
 
   on('docInput','change',handleDoc);
   on('qrScanBtn','click',startQrScanner);
@@ -1579,7 +1598,7 @@ function attachEvents(){
   on('multiBackBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
   on('multiCancelBtn','click',()=>{ state.multiItemReceipt=null; state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
-    if(e.target.closest('.multi-edit-btn')) return;
+    if(e.target.closest('.multi-edit-btn') || e.target.closest('.multi-name-input')) return;
     const idx=parseInt(e.currentTarget.dataset.midx);
     const r=state.multiItemReceipt;
     if(!r) return;
@@ -1594,7 +1613,7 @@ function attachEvents(){
       box.style.background=item.selected?'var(--accent)':'transparent';
       box.innerHTML=item.selected?'<i class="ti ti-check" style="font-size:13px;color:#fff"></i>':'';
     }
-    const nameEl=row.querySelector('[data-mname]');
+    const nameEl=row.querySelector('.multi-name-input');
     if(nameEl){
       const noWarranty=item.warrantyApplies===false;
       nameEl.style.color=(noWarranty&&!item.selected)?'var(--text3)':'var(--text)';
@@ -1606,6 +1625,10 @@ function attachEvents(){
       btn.style.opacity=n===0?'0.4':'1';
       btn.textContent=`Išsaugoti${n>0?` (${n})`:''}`;
     }
+  });
+  onAll('.multi-name-input','input',e=>{
+    const idx=parseInt(e.currentTarget.dataset.midx);
+    if(state.multiItemReceipt?.items[idx]) state.multiItemReceipt.items[idx].name=e.currentTarget.value;
   });
   onAll('.multi-edit-btn','click',e=>{
     e.stopPropagation();
@@ -1981,6 +2004,10 @@ async function saveMultiItems(){
   if(!r) return;
   const selected = r.items.filter(i=>i.selected);
   if(selected.length===0) return;
+  if(selected.some(i=>!String(i.name||'').trim())){
+    toast('Įrašykite pavadinimą kiekvienai pasirinktai prekei');
+    return;
+  }
 
   const isCloud = state.storageMode==='cloud';
   let saved=0, failed=0;
@@ -2743,12 +2770,14 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
 
     if(items.length===1){
       applyAiItemToForm(items[0], p);
+      state.aiNameReview = true;
       // Dublikato patikrinimas: dok. numeris (patikimiausia) arba pavadinimas + data
       const dup = state.items.find(i=>
         (p.docNumber && i.docNumber && i.docNumber===p.docNumber && i.name?.toLowerCase()===items[0].name?.toLowerCase()) ||
         (i.name?.toLowerCase()===items[0].name?.toLowerCase() && i.purchaseDate && i.purchaseDate===p.purchaseDate));
       if(dup) toast('Panašus įrašas jau yra — patikrinkite ar ne dublikatas');
     }else{
+      state.aiNameReview = false;
       const warrantyCount = items.filter(i=>i.warrantyApplies!==false).length;
       state.multiItemReceipt = {
         items: items.map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _docType:p.docType, _docNumber:p.docNumber, selected:it.warrantyApplies!==false})),
