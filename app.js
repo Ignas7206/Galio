@@ -80,7 +80,7 @@ function applyTheme(){
 }
 applyTheme();
 
-function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
+function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
 
 // Admin, tester ir friend vartotojai automatiškai gauna premium teises
 function isPremiumUser(){ return ['premium','tester','friend'].includes(state.userDoc?.plan) || state.userDoc?.role==='admin'; }
@@ -119,6 +119,37 @@ function normalizeSearchText(value){
     .replace(/į/g,'i').replace(/š/g,'s').replace(/ų/g,'u').replace(/ū/g,'u').replace(/ž/g,'z')
     .trim();
 }
+function inferReturnDays(shop=''){
+  const s = normalizeSearchText(shop);
+  if(s.includes('regatta')) return 30;
+  return 14;
+}
+function normalizeReturnDays(value, shop=''){
+  const n = Number.parseInt(value,10);
+  if(Number.isFinite(n) && n > 0 && n <= 365) return n;
+  return inferReturnDays(shop);
+}
+function calcReturnDeadline(purchaseDate, returnDays, shop=''){
+  if(!purchaseDate) return null;
+  return addDays(purchaseDate, normalizeReturnDays(returnDays, shop));
+}
+function effectiveReturnDays(item){
+  if(!item) return 14;
+  const explicit = Number.parseInt(item.returnDays,10);
+  if(Number.isFinite(explicit) && explicit > 0 && explicit <= 365) return explicit;
+  const inferred = inferReturnDays(item.shop);
+  if(inferred !== 14) return inferred;
+  if(item.purchaseDate && item.returnDeadline){
+    const diff = Math.round((new Date(item.returnDeadline) - new Date(item.purchaseDate)) / 86400000);
+    if(Number.isFinite(diff) && diff > 0 && diff <= 365) return diff;
+  }
+  return 14;
+}
+function effectiveReturnDeadline(item){
+  if(!item) return null;
+  if(item.purchaseDate) return calcReturnDeadline(item.purchaseDate, effectiveReturnDays(item), item.shop);
+  return item.returnDeadline || null;
+}
 function fmtSize(b){return b<1024*1024?(b/1024).toFixed(0)+'KB':(b/1024/1024).toFixed(1)+'MB';}
 function badgeHtml(days){
   if(days===null)return '';
@@ -129,10 +160,9 @@ function badgeHtml(days){
 function returnBadgeHtml(deadline){
   const d = daysLeft(deadline);
   if(d===null)return '';
-  if(d<0)return `<span class="badge badge-exp">Grąžinimas baigėsi</span>`;
-  if(d===0)return `<span class="badge badge-warn">Grąžinti šiandien</span>`;
-  if(d<=3)return `<span class="badge badge-warn">Grąžinti liko ${d}d.</span>`;
-  return `<span class="badge badge-ok">Grąžinti ${d}d.</span>`;
+  if(d<0)return '';
+  const label = d===0 ? 'Grąžinti šiandien' : d<=3 ? `Grąžinti liko ${d}d.` : `Grąžinti ${d}d.`;
+  return `<span class="badge" style="background:rgba(59,130,246,.16);color:#60a5fa">${label}</span>`;
 }
 function isExpiredDate(dateStr){
   if(!dateStr)return false;
@@ -777,8 +807,9 @@ function renderList(){
   const cardsHtml=filtered.map(item=>{
     const days=daysLeft(item.warrantyEnd);
     const doc = effectiveDoc(item);
-    const returnDays = daysLeft(item.returnDeadline);
-    const returnLine = returnDays!==null && returnDays>=0 ? `<div class="card-date" style="color:${returnDays<=3?'var(--orange)':'var(--accent)'};font-weight:600"><i class="ti ti-rotate-2" style="font-size:14px"></i>Grąžinti iki ${fmtDate(item.returnDeadline)}</div>` : '';
+    const returnDeadline = effectiveReturnDeadline(item);
+    const returnDays = daysLeft(returnDeadline);
+    const returnLine = returnDays!==null && returnDays>=0 ? `<div class="card-date" style="color:#60a5fa;font-weight:600"><i class="ti ti-rotate-2" style="font-size:14px"></i>Grąžinti iki ${fmtDate(returnDeadline)}</div>` : '';
     let thumb;
     if(doc.docMime==='application/pdf')
       thumb=`<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
@@ -792,7 +823,7 @@ function renderList(){
       <button class="card${urgentClass}" data-id="${esc(item.id)}">
         ${thumb}
         <div class="card-body">
-          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${(returnDays!==null&&returnDays>=0?returnBadgeHtml(item.returnDeadline):'')||badgeHtml(days)}</div>
+          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${(returnDays!==null&&returnDays>=0?returnBadgeHtml(returnDeadline):'')||badgeHtml(days)}</div>
           <div class="card-sub">${esc(item.shop||item.category)}</div>
           ${returnLine}
           ${item.warrantyEnd?`<div class="card-date"><i class="ti ti-calendar" style="font-size:14px"></i>Iki ${fmtDate(item.warrantyEnd)}</div>`:''}
@@ -1011,16 +1042,20 @@ function renderAdd(){
           <label>Garantija</label>
           <span class="fv${!f.warrantyMonths&&f.warrantyMonths!==0?' fv-placeholder':''}">${esc(selOpt.l)}<i class="ti ti-chevron-right" style="font-size:14px;color:var(--text3)"></i></span>
         </div>
+        <div class="form-field">
+          <label>Grąžinimas, dienos</label>
+          <input type="number" id="f_returnDays" min="1" max="365" inputmode="numeric" value="${esc(normalizeReturnDays(f.returnDays, f.shop))}" />
+        </div>
       </div>
       ${f.warrantyAppliesWarning ? `<div class="plan-banner" style="margin-bottom:16px;background:var(--orange-bg)">
         <i class="ti ti-info-circle" style="color:var(--orange);flex-shrink:0"></i>
         <div class="pb-text" style="color:var(--text);font-size:14px">AI: šiai prekei garantija paprastai netaikoma. Jei vis tiek norite saugoti, nurodykite garantijos pabaigos datą rankiniu būdu.</div>
       </div>` : ''}
         ${f.warrantyMonths===null?`<div class="form-field"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
-        ${f.purchaseDate?`<div style="background:var(--accent-bg);border-radius:var(--radius);padding:14px 16px;margin-top:12px;display:flex;gap:12px;align-items:flex-start">
-          <i class="ti ti-rotate-2" style="font-size:22px;color:var(--accent);flex-shrink:0"></i>
+        ${f.purchaseDate?`<div style="background:rgba(59,130,246,.12);border-radius:var(--radius);padding:14px 16px;margin-top:12px;display:flex;gap:12px;align-items:flex-start">
+          <i class="ti ti-rotate-2" style="font-size:22px;color:#60a5fa;flex-shrink:0"></i>
           <div>
-            <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:3px">Grąžinimas iki ${fmtDate(addDays(f.purchaseDate,14))}</div>
+            <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:3px">${normalizeReturnDays(f.returnDays, f.shop)} d. grąžinimas iki ${fmtDate(calcReturnDeadline(f.purchaseDate,f.returnDays,f.shop))}</div>
             <div style="font-size:13px;color:var(--text2);line-height:1.35">Patogu sekti internetinių pirkinių grąžinimo terminą.</div>
           </div>
         </div>`:''}
@@ -1087,7 +1122,7 @@ function renderDetail(){
     {i:'ti-hash',l:'Dok. numeris',v:item.docNumber||'—'},
     {i:'ti-calendar',l:'Pirkimo data',v:fmtDate(item.purchaseDate)},
     {i:'ti-calendar-due',l:'Garantija iki',v:fmtDate(item.warrantyEnd)},
-    ...(daysLeft(item.returnDeadline)!==null && daysLeft(item.returnDeadline)>=0 ? [{i:'ti-rotate-2',l:'14 d. grąžinimas iki',v:fmtDate(item.returnDeadline)}] : []),
+    ...(daysLeft(effectiveReturnDeadline(item))!==null && daysLeft(effectiveReturnDeadline(item))>=0 ? [{i:'ti-rotate-2',l:`${effectiveReturnDays(item)} d. grąžinimas iki`,v:fmtDate(effectiveReturnDeadline(item))}] : []),
   ].map(r=>`<div class="detail-row"><i class="ti ${r.i}"></i><span class="dr-label">${esc(r.l)}</span><span class="dr-val">${esc(r.v)}</span></div>`).join('');
 
   const policySection = isPremium ? `<div class="detail-section">
@@ -1227,14 +1262,12 @@ function renderSettings(){
       </button>
     </div>` : ''}
 
-    <p class="form-label-section" style="margin:0 16px 8px">Paskyra</p>
+    ${canChangePassword ? `<p class="form-label-section" style="margin:0 16px 8px">Paskyra</p>
     <div class="form-section" style="margin:0 16px 20px">
-      ${canChangePassword ? `<button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
+      <button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
         <i class="ti ti-lock row-icon"></i><span class="settings-row-label">Pakeisti slaptažodį</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
-      </button>` : `<div class="settings-row">
-        <i class="ti ti-brand-google row-icon"></i><span class="settings-row-label">Slaptažodis valdomas per Google<small>Šioje programėlėje jo keisti nereikia</small></span>
-      </div>`}
-    </div>
+      </button>
+    </div>` : ''}
 
     <p class="form-label-section" style="margin:0 16px 8px">Pagalba</p>
     <div class="form-section" style="margin:0 16px 20px">
@@ -1291,15 +1324,16 @@ function showNotifModal(itemId, itemData){
     return;
   }
 
-  const suggested = suggestNotifDays(item?.warrantyMonths, !!item?.returnDeadline);
+  const returnDeadline = effectiveReturnDeadline(item);
+  const suggested = suggestNotifDays(item?.warrantyMonths, !!returnDeadline);
   // Naudoti paskutinius nustatymus jei yra, kitaip siūlomus
   const defaults = state._lastNotifDays || suggested;
 
   state.notifModal = {
     itemId,
     selectedDays: [...defaults],
-    returnSelectedDays: item?.returnDeadline ? (state._lastReturnNotifDays || [3]) : [],
-    hasReturn: !!item?.returnDeadline,
+    returnSelectedDays: returnDeadline ? (state._lastReturnNotifDays || [3]) : [],
+    hasReturn: !!returnDeadline,
     repeatEnabled: false,
     repeatInterval: 7,
     item,
@@ -1637,6 +1671,8 @@ function attachEvents(){
     state.showWarranty=false;render();
   });
   on('f_warrantyEnd','change',e=>{state.form.warrantyEnd=e.target.value;});
+  on('f_returnDays','input',e=>{state.form.returnDays=normalizeReturnDays(e.target.value,state.form.shop);syncSave();});
+  on('f_returnDays','change',e=>{state.form.returnDays=normalizeReturnDays(e.target.value,state.form.shop);syncSave();});
 
   ['name','shop','purchaseDate','docType','docNumber','category','notes'].forEach(k=>{
     on(`f_${k}`,'input',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
@@ -1665,6 +1701,7 @@ function attachEvents(){
         r.items[idx].warrantyApplies=f.warrantyMonths!==null;
         r.items[idx].warrantyEnd=f.warrantyEnd;
         r.items[idx].price=f.notes.match(/Kaina: (.+)/)?.[1]||r.items[idx].price;
+        r.returnDays=normalizeReturnDays(f.returnDays, r.shop);
       }
       state.view='multi-select'; state.addMode=null; state.multiEditIdx=null;
       render();
@@ -1682,7 +1719,7 @@ function attachEvents(){
     // No new AI call/charge here — this item's data already came from the
     // original scan, we're just stepping to the next product from it.
     state.pendingAiCharge = false;
-    applyAiItemToForm(next, {shop: next._shop, purchaseDate: next._purchaseDate, docType: next._docType, docNumber: next._docNumber});
+    applyAiItemToForm(next, {shop: next._shop, purchaseDate: next._purchaseDate, returnDays: next._returnDays, docType: next._docType, docNumber: next._docNumber});
     render();
   });
   on('editItemBtn','click',()=>{
@@ -1695,6 +1732,7 @@ function attachEvents(){
       purchaseDate: item.purchaseDate||'',
       warrantyEnd: item.warrantyEnd||'',
       warrantyMonths: item.warrantyMonths??24,
+      returnDays: item.returnDays??14,
       docType: item.docType||'Kvitas / čekis',
       docNumber: item.docNumber||'',
       notes: item.notes||'',
@@ -1723,7 +1761,7 @@ function attachEvents(){
   on('notifyToggle','click',toggleNotify);
   on('storageModeToggle','click',toggleStorageMode);
   on('changePwdBtn','click',()=>{
-    if(!state.user.email){toast('Google paskyroms slaptažodžio keisti nereikia');return;}
+    if(!state.user.email)return;
     sendPasswordResetEmail(auth,state.user.email)
       .then(()=>toast('Nuoroda slaptažodžiui keisti išsiųsta į el. paštą'))
       .catch(()=>toast('Klaida siunčiant laišką'));
@@ -1777,6 +1815,7 @@ function attachEvents(){
     state.form.category=item.category||'';
     state.form.shop=r.shop||'';
     state.form.purchaseDate=r.purchaseDate||'';
+    state.form.returnDays=normalizeReturnDays(r.returnDays, r.shop);
     state.form.warrantyMonths=item.warrantyApplies===false?null:(item.warrantyMonths||24);
     state.form.warrantyEnd=multiWarrantyEnd(item,r);
     state.form.docType=r.docType||'Kvitas / čekis';
@@ -1954,6 +1993,8 @@ async function saveNotifSettings(skip=false){
     notifyEnabled: enabled,
     notifyDays: selectedDays,
     notifyReturnDays: returnDays,
+    returnDays: effectiveReturnDays(m.item),
+    returnDeadline: effectiveReturnDeadline(m.item),
     notifyRepeatDays: enabled && m.repeatEnabled ? { interval: m.repeatInterval, startDay: 30 } : null,
   };
 
@@ -2057,7 +2098,8 @@ async function updateItem(){
     docNumber: f.docNumber.slice(0,100),
     notes: f.notes.slice(0,1000),
     notifyEnabled: f.notifyEnabled!==false,
-    returnDeadline: f.purchaseDate ? addDays(f.purchaseDate,14) : null,
+    returnDays: normalizeReturnDays(f.returnDays, f.shop),
+    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
     ...(f.docData ? {docUrl:f.docData, docMime:f.docMime, docFileName:f.docFileName} : {}),
   };
 
@@ -2126,7 +2168,8 @@ async function saveItem(){
     purchaseDate:f.purchaseDate, warrantyEnd:f.warrantyEnd, warrantyMonths:f.warrantyMonths,
     docType:f.docType, docNumber:(f.docNumber||'').slice(0,100), notes:(f.notes||'').slice(0,1000),
     notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
-    returnDeadline: f.purchaseDate ? addDays(f.purchaseDate,14) : null,
+    returnDays: normalizeReturnDays(f.returnDays, f.shop),
+    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
     createdAtMs: Date.now(),
   };
 
@@ -2184,7 +2227,7 @@ async function saveItem(){
     showNotifModal(state._lastSavedId, {
       warrantyMonths: savedForm.warrantyMonths,
       warrantyEnd: savedForm.warrantyEnd,
-      returnDeadline: savedForm.purchaseDate ? addDays(savedForm.purchaseDate,14) : null,
+      returnDeadline: calcReturnDeadline(savedForm.purchaseDate, savedForm.returnDays, savedForm.shop),
     });
   }else{
     state.view='list'; render();
@@ -2277,7 +2320,8 @@ async function saveMultiItems(){
         docNumber:(r.docNumber||'').slice(0,100),
         notes:item.price?`Kaina: ${String(item.price).slice(0,50)}`:'',
         docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
-        returnDeadline: r.purchaseDate ? addDays(r.purchaseDate,14) : null,
+        returnDays: normalizeReturnDays(r.returnDays, r.shop),
+        returnDeadline: calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop),
         notifyEnabled: warrantyNotifDays.length>0 || returnNotifDays.length>0,
         notifyDays: warrantyNotifDays,
         notifyReturnDays: returnNotifDays,
@@ -2965,6 +3009,7 @@ Grąžink TIK JSON be markdown, šios struktūros:
 {
   "shop": "parduotuvės/pardavėjo pavadinimas arba null jei nematomas dokumente",
   "purchaseDate": "YYYY-MM-DD arba null",
+  "returnDays": "grąžinimo terminas dienomis, pvz. 14 arba 30, arba null jei dokumente nematomas",
   "docNumber": "dokumento/kvito numeris arba null",
   "docType": "Kvitas / čekis|Sąskaita-faktūra (SF)|Banko išrašas|Kita",
   "quality": "good|blurry|partial|unclear",
@@ -2974,6 +3019,7 @@ Grąžink TIK JSON be markdown, šios struktūros:
   ]
 }
 warrantyMonths kiekvienai prekei: 6/12/24/36/60 mėn. pagal produkto tipą, jei warrantyApplies=true. Jei warrantyApplies=false, warrantyMonths=null.
+returnDays: jei dokumente matosi grąžinimo terminas (pvz. "30 dienų", "return within 30 days"), grąžink tą skaičių. Jei terminas nematomas, grąžink null.
 category kiekvienai prekei: viena iš: Elektronika, Buitinė technika, Avalynė / drabužiai, Baldai, Automobiliai, Kita.
 Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tuščią masyvą [].`}
       ]}]})
@@ -3002,6 +3048,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
       toast('AI nerado atpažįstamos prekės šiame dokumente. Įveskite duomenis rankiniu būdu.');
       if(typeof p.shop==='string')state.form.shop=p.shop.slice(0,100);
       if(typeof p.purchaseDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(p.purchaseDate))state.form.purchaseDate=p.purchaseDate;
+      state.form.returnDays=normalizeReturnDays(p.returnDays, p.shop);
       if(DOC_TYPES.includes(p.docType))state.form.docType=p.docType;
       return;
     }
@@ -3018,8 +3065,8 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
       state.aiNameReview = false;
       const warrantyCount = items.filter(i=>i.warrantyApplies!==false).length;
       state.multiItemReceipt = {
-        items: items.map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _docType:p.docType, _docNumber:p.docNumber, selected:it.warrantyApplies!==false})),
-        shop: p.shop, purchaseDate: p.purchaseDate, docType: p.docType, docNumber: p.docNumber,
+        items: items.map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _returnDays:normalizeReturnDays(p.returnDays, p.shop), _docType:p.docType, _docNumber:p.docNumber, selected:it.warrantyApplies!==false})),
+        shop: p.shop, purchaseDate: p.purchaseDate, returnDays: normalizeReturnDays(p.returnDays, p.shop), docType: p.docType, docNumber: p.docNumber,
         docData: state.form.docData, docMime: state.form.docMime, docFileName: state.form.docFileName,
         warrantyCount,
         confirmed: false,
@@ -3036,6 +3083,7 @@ function applyAiItemToForm(item, receiptMeta){
   if(typeof item.name==='string') state.form.name=item.name.slice(0,200);
   if(typeof receiptMeta.shop==='string') state.form.shop=receiptMeta.shop.slice(0,100);
   if(typeof receiptMeta.purchaseDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(receiptMeta.purchaseDate)) state.form.purchaseDate=receiptMeta.purchaseDate;
+  state.form.returnDays=normalizeReturnDays(receiptMeta.returnDays, receiptMeta.shop);
   if(typeof receiptMeta.docNumber==='string') state.form.docNumber=receiptMeta.docNumber.slice(0,100);
   if(DOC_TYPES.includes(receiptMeta.docType)) state.form.docType=receiptMeta.docType;
 
