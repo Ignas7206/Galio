@@ -148,6 +148,29 @@ function multiWarrantyEnd(item, receipt){
   if(receipt?.purchaseDate && item?.warrantyMonths) return addMonths(receipt.purchaseDate, item.warrantyMonths);
   return '';
 }
+function findSharedDocument(item){
+  if(!item) return null;
+  if(item.docUrl) return item;
+  const keyNumber = item.docNumber || '';
+  const keyShop = item.shop || '';
+  const keyDate = item.purchaseDate || '';
+  return state.items.find(other=>
+    other.id!==item.id &&
+    other.docUrl &&
+    (keyNumber ? other.docNumber===keyNumber : true) &&
+    (keyShop ? other.shop===keyShop : true) &&
+    (keyDate ? other.purchaseDate===keyDate : true)
+  ) || null;
+}
+function effectiveDoc(item){
+  const docItem = findSharedDocument(item);
+  return docItem ? {
+    docUrl: docItem.docUrl,
+    docMime: docItem.docMime,
+    docFileName: docItem.docFileName,
+    docStoragePath: docItem.docStoragePath,
+  } : { docUrl:null, docMime:null, docFileName:null, docStoragePath:null };
+}
 function toast(msg, ms=5200){
   document.querySelectorAll('.toast').forEach(e=>e.remove());
   const el=document.createElement('div');el.className='toast';el.textContent=msg;
@@ -753,12 +776,14 @@ function renderList(){
 
   const cardsHtml=filtered.map(item=>{
     const days=daysLeft(item.warrantyEnd);
-    const returnLine = item.returnDeadline ? `<div class="card-date" style="color:${(daysLeft(item.returnDeadline)??99)<=3?'var(--orange)':'var(--accent)'};font-weight:600"><i class="ti ti-rotate-2" style="font-size:14px"></i>Grąžinti iki ${fmtDate(item.returnDeadline)}</div>` : '';
+    const doc = effectiveDoc(item);
+    const returnDays = daysLeft(item.returnDeadline);
+    const returnLine = returnDays!==null && returnDays>=0 ? `<div class="card-date" style="color:${returnDays<=3?'var(--orange)':'var(--accent)'};font-weight:600"><i class="ti ti-rotate-2" style="font-size:14px"></i>Grąžinti iki ${fmtDate(item.returnDeadline)}</div>` : '';
     let thumb;
-    if(item.docMime==='application/pdf')
+    if(doc.docMime==='application/pdf')
       thumb=`<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
-    else if(item.docUrl)
-      thumb=`<img class="card-thumb" src="${esc(item.docUrl)}" alt="" loading="lazy" />`;
+    else if(doc.docUrl)
+      thumb=`<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`;
     else
       thumb=`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
     const urgentClass = days!==null && days<0 ? ' urgent-exp' : days!==null && days<=30 ? ' urgent-warn' : '';
@@ -767,7 +792,7 @@ function renderList(){
       <button class="card${urgentClass}" data-id="${esc(item.id)}">
         ${thumb}
         <div class="card-body">
-          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${returnBadgeHtml(item.returnDeadline)||badgeHtml(days)}</div>
+          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${(returnDays!==null&&returnDays>=0?returnBadgeHtml(item.returnDeadline):'')||badgeHtml(days)}</div>
           <div class="card-sub">${esc(item.shop||item.category)}</div>
           ${returnLine}
           ${item.warrantyEnd?`<div class="card-date"><i class="ti ti-calendar" style="font-size:14px"></i>Iki ${fmtDate(item.warrantyEnd)}</div>`:''}
@@ -839,7 +864,8 @@ function renderSearch(){
   });
   const cardsHtml=results.map(item=>{
     const days=daysLeft(item.warrantyEnd);
-    const thumb=item.docUrl&&item.docMime!=='application/pdf'?`<img class="card-thumb" src="${esc(item.docUrl)}" alt="" loading="lazy" />`:`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
+    const doc=effectiveDoc(item);
+    const thumb=doc.docUrl&&doc.docMime!=='application/pdf'?`<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`:`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
     return`<button class="card" data-id="${esc(item.id)}">
       ${thumb}
       <div class="card-body">
@@ -1037,6 +1063,7 @@ function renderDetail(){
   const item=state.items.find(i=>i.id===state.selected);
   if(!item){state.view='list';render();return '';}
   const days=daysLeft(item.warrantyEnd);
+  const doc=effectiveDoc(item);
   let sc,si,sv;
   if(days===null){sc='var(--bg2)';si='ti-shield';sv='Nenurodyta';}
   else if(days<0){sc='var(--red-bg)';si='ti-shield-x';sv='Garantija baigėsi';}
@@ -1046,10 +1073,10 @@ function renderDetail(){
   const isPremium = isPremiumUser();
 
   let docHtml='';
-  if(item.docUrl&&item.docMime==='application/pdf'){
-    docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${esc(item.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(item.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
-  }else if(item.docUrl){
-    docHtml=`<div class="detail-section"><img src="${esc(item.docUrl)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
+  if(doc.docUrl&&doc.docMime==='application/pdf'){
+    docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${esc(doc.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(doc.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
+  }else if(doc.docUrl){
+    docHtml=`<div class="detail-section"><img src="${esc(doc.docUrl)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
   }
 
   const rows=[
@@ -1060,7 +1087,7 @@ function renderDetail(){
     {i:'ti-hash',l:'Dok. numeris',v:item.docNumber||'—'},
     {i:'ti-calendar',l:'Pirkimo data',v:fmtDate(item.purchaseDate)},
     {i:'ti-calendar-due',l:'Garantija iki',v:fmtDate(item.warrantyEnd)},
-    ...(item.returnDeadline ? [{i:'ti-rotate-2',l:'14 d. grąžinimas iki',v:fmtDate(item.returnDeadline)}] : []),
+    ...(daysLeft(item.returnDeadline)!==null && daysLeft(item.returnDeadline)>=0 ? [{i:'ti-rotate-2',l:'14 d. grąžinimas iki',v:fmtDate(item.returnDeadline)}] : []),
   ].map(r=>`<div class="detail-row"><i class="ti ${r.i}"></i><span class="dr-label">${esc(r.l)}</span><span class="dr-val">${esc(r.v)}</span></div>`).join('');
 
   const policySection = isPremium ? `<div class="detail-section">
@@ -1107,7 +1134,7 @@ function renderSettings(){
   const accountName = u.displayName || accountEmail;
   const providers = (u.providerData||[]).map(p=>p.providerId);
   const providerLabel = providers.includes('google.com') ? 'Google' : 'El. paštas';
-  const canChangePassword = providers.includes('password');
+  const canChangePassword = providers.includes('password') && !providers.includes('google.com');
   const uidShort = u.uid ? u.uid.slice(0,8) : '—';
   const planLabel = state.userDoc?.role==='admin'
     ? '<i class="ti ti-shield-check" style="font-size:15px"></i> Administratorius'
@@ -1623,7 +1650,7 @@ function attachEvents(){
   on('qrScanBtn','click',startQrScanner);
   on('removeDoc','click',()=>{state.form.docData=null;state.form.docMime=null;state.form.docFileName=null;state.docError='';render();});
   on('docThumb','click',()=>{if(state.form.docData)state.lightbox=state.form.docData;render();});
-  on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it?.docUrl)state.lightbox=it.docUrl;render();});
+  on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);const doc=effectiveDoc(it);if(doc.docUrl)state.lightbox=doc.docUrl;render();});
 
   on('saveBtn','click',()=>{
     if(state.multiEditIdx!=null){
