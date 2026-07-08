@@ -52,6 +52,7 @@ let state = {
   aiNameReview: false,
   editItemId: null,
   notifModal: null,
+  appDialog: null,
   _lastNotifDays: null,
   _lastReturnNotifDays: null,
   _lastSavedId: null,
@@ -64,6 +65,11 @@ let state = {
   adminUsers: [],
   theme: localStorage.getItem('galio_theme') || 'auto',
 };
+try{
+  const savedNotifPrefs = JSON.parse(localStorage.getItem('galio_notif_prefs') || '{}');
+  if(Array.isArray(savedNotifPrefs.warranty)) state._lastNotifDays = savedNotifPrefs.warranty;
+  if(Array.isArray(savedNotifPrefs.return)) state._lastReturnNotifDays = savedNotifPrefs.return;
+}catch(e){}
 
 function applyTheme(){
   const root = document.documentElement;
@@ -104,12 +110,43 @@ window.addEventListener('offline',()=>{state.online=false;render();});
 function daysLeft(d){if(!d)return null;return Math.ceil((new Date(d)-new Date())/86400000);}
 function fmtDate(d){if(!d)return '—';return new Date(d).toLocaleDateString('lt-LT');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function normalizeSearchText(value){
+  return String(value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/ą/g,'a').replace(/č/g,'c').replace(/ę/g,'e').replace(/ė/g,'e')
+    .replace(/į/g,'i').replace(/š/g,'s').replace(/ų/g,'u').replace(/ū/g,'u').replace(/ž/g,'z')
+    .trim();
+}
 function fmtSize(b){return b<1024*1024?(b/1024).toFixed(0)+'KB':(b/1024/1024).toFixed(1)+'MB';}
 function badgeHtml(days){
   if(days===null)return '';
   if(days<0)return`<span class="badge badge-exp">Baigėsi</span>`;
   if(days<=30)return`<span class="badge badge-warn">${days}d.</span>`;
   return`<span class="badge badge-ok">${days}d.</span>`;
+}
+function returnBadgeHtml(deadline){
+  const d = daysLeft(deadline);
+  if(d===null)return '';
+  if(d<0)return `<span class="badge badge-exp">Grąžinimas baigėsi</span>`;
+  if(d===0)return `<span class="badge badge-warn">Grąžinti šiandien</span>`;
+  if(d<=3)return `<span class="badge badge-warn">Grąžinti liko ${d}d.</span>`;
+  return `<span class="badge badge-ok">Grąžinti ${d}d.</span>`;
+}
+function isExpiredDate(dateStr){
+  if(!dateStr)return false;
+  const d = new Date(dateStr + 'T23:59:59');
+  return Number.isFinite(d.getTime()) && d < new Date();
+}
+function confirmExpiredWarranty(dateStr, label='Šios prekės'){
+  if(!isExpiredDate(dateStr)) return true;
+  return confirm(`${label} garantija jau pasibaigusi (${fmtDate(dateStr)}).\n\nAr tikrai norite pridėti šį įrašą?`);
+}
+function multiWarrantyEnd(item, receipt){
+  if(item?.warrantyEnd) return item.warrantyEnd;
+  if(receipt?.purchaseDate && item?.warrantyMonths) return addMonths(receipt.purchaseDate, item.warrantyMonths);
+  return '';
 }
 function toast(msg, ms=5200){
   document.querySelectorAll('.toast').forEach(e=>e.remove());
@@ -122,6 +159,19 @@ function toast(msg, ms=5200){
   el.style.borderRadius='14px';
   document.getElementById('app').appendChild(el);
   setTimeout(()=>el.remove(),ms);
+}
+function showAppDialog(title, message, supportDraft=''){
+  state.appDialog = { title, message, supportDraft };
+  render();
+}
+function openSupportFromDialog(){
+  const draft = state.appDialog?.supportDraft || '';
+  state.appDialog = null;
+  state.contactSent = false;
+  state.contactError = '';
+  state.contactDraft = draft;
+  state.view = 'contact';
+  render();
 }
 function friendlyAuthError(code){
   const map={
@@ -236,6 +286,8 @@ function startEmailVerifyPoll(user){
 function stopEmailVerifyPoll(){ if(verifyPollTimer){clearInterval(verifyPollTimer);verifyPollTimer=null;} }
 
 async function ensureUserDoc(user){
+  state.storageError = '';
+  state.appDialog = null;
   const ref_ = doc(db,'users',user.uid);
   const snap = await getDoc(ref_);
   if(!snap.exists()){
@@ -444,7 +496,7 @@ async function doLogout(){
   // Reset all per-session state so a different account logging in on the
   // same device never briefly sees stale data from the previous user.
   state.view='list'; state.addMode=null; state.selected=null;
-  state.items=[]; state.userDoc=null; state.storageMode='local';
+  state.items=[]; state.userDoc=null; state.storageMode='local'; state.storageError=''; state.appDialog=null;
   state.form=emptyForm(); state.docError='';
   state.policyResult=null; state.policyResultFor=null; state.policyChecking=false;
   state.search=''; state.lightbox=null;
@@ -523,7 +575,7 @@ function _doRender(){
   pushHistoryIfNeeded(viewKey);
 
   const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto · veikia lokaliai'}</div>`;
-  scr.innerHTML = (state.online?'':syncPill) + html + (state.notifModal ? renderNotifModal() : '');
+  scr.innerHTML = (state.online?'':syncPill) + html + (state.notifModal ? renderNotifModal() : '') + (state.appDialog ? renderAppDialog() : '');
 
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.view));
   const addCircle = document.querySelector('.nav-add-circle');
@@ -687,7 +739,7 @@ function renderList(){
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const planBanner = !isPremium ? `<div class="plan-banner">
     <i class="ti ti-sparkles"></i>
-    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · ${state.storageMode==='cloud'?'Cloud saugojimas':'Saugoma šiame įrenginyje'}</div>
+    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · ${state.storageMode==='cloud'?'Atsarginė kopija įjungta':'Tik šiame telefone'}</div>
     <button id="upgradeBtn">Premium</button>
   </div>`:'';
 
@@ -701,6 +753,7 @@ function renderList(){
 
   const cardsHtml=filtered.map(item=>{
     const days=daysLeft(item.warrantyEnd);
+    const returnLine = item.returnDeadline ? `<div class="card-date" style="color:${(daysLeft(item.returnDeadline)??99)<=3?'var(--orange)':'var(--accent)'};font-weight:600"><i class="ti ti-rotate-2" style="font-size:14px"></i>Grąžinti iki ${fmtDate(item.returnDeadline)}</div>` : '';
     let thumb;
     if(item.docMime==='application/pdf')
       thumb=`<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
@@ -714,8 +767,9 @@ function renderList(){
       <button class="card${urgentClass}" data-id="${esc(item.id)}">
         ${thumb}
         <div class="card-body">
-          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${badgeHtml(days)}</div>
+          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${returnBadgeHtml(item.returnDeadline)||badgeHtml(days)}</div>
           <div class="card-sub">${esc(item.shop||item.category)}</div>
+          ${returnLine}
           ${item.warrantyEnd?`<div class="card-date"><i class="ti ti-calendar" style="font-size:14px"></i>Iki ${fmtDate(item.warrantyEnd)}</div>`:''}
         </div>
       </button>
@@ -768,7 +822,21 @@ function renderList(){
 // ── Search ─────────────────────────────────────────────────────────────────
 function renderSearch(){
   const q=state.search;
-  const results=!q?[]:state.items.filter(i=>{const s=q.toLowerCase();return i.name.toLowerCase().includes(s)||(i.shop||'').toLowerCase().includes(s)||(i.docNumber||'').toLowerCase().includes(s)||(i.notes||'').toLowerCase().includes(s);});
+  const query=normalizeSearchText(q);
+  const results=!query?[]:state.items.filter(i=>{
+    const haystack = normalizeSearchText([
+      i.name,
+      i.shop,
+      i.category,
+      i.docType,
+      i.docNumber,
+      i.notes,
+      i.purchaseDate,
+      i.warrantyEnd,
+      i.returnDeadline
+    ].filter(Boolean).join(' '));
+    return haystack.includes(query);
+  });
   const cardsHtml=results.map(item=>{
     const days=daysLeft(item.warrantyEnd);
     const thumb=item.docUrl&&item.docMime!=='application/pdf'?`<img class="card-thumb" src="${esc(item.docUrl)}" alt="" loading="lazy" />`:`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
@@ -920,10 +988,17 @@ function renderAdd(){
       </div>
       ${f.warrantyAppliesWarning ? `<div class="plan-banner" style="margin-bottom:16px;background:var(--orange-bg)">
         <i class="ti ti-info-circle" style="color:var(--orange);flex-shrink:0"></i>
-        <div class="pb-text" style="color:var(--text);font-size:14px">AI: šiai prekei garantija paprastai netaikoma — patikrinkite patys ir koreguokite jei reikia.</div>
+        <div class="pb-text" style="color:var(--text);font-size:14px">AI: šiai prekei garantija paprastai netaikoma. Jei vis tiek norite saugoti, nurodykite garantijos pabaigos datą rankiniu būdu.</div>
       </div>` : ''}
         ${f.warrantyMonths===null?`<div class="form-field"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
-        ${f.purchaseDate?`<div class="form-field"><label>14 d. grąžinimas iki</label><span style="font-size:16px;color:var(--text2)">${fmtDate(addDays(f.purchaseDate,14))}</span></div>`:''}
+        ${f.purchaseDate?`<div style="background:var(--accent-bg);border-radius:var(--radius);padding:14px 16px;margin-top:12px;display:flex;gap:12px;align-items:flex-start">
+          <i class="ti ti-rotate-2" style="font-size:22px;color:var(--accent);flex-shrink:0"></i>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:3px">Grąžinimas iki ${fmtDate(addDays(f.purchaseDate,14))}</div>
+            <div style="font-size:13px;color:var(--text2);line-height:1.35">Patogu sekti internetinių pirkinių grąžinimo terminą.</div>
+          </div>
+        </div>`:''}
+        ${!f.warrantyEnd?`<div style="font-size:13px;color:var(--orange);padding:10px 2px 0">Nurodykite garantijos pabaigos datą, kad galėtumėte išsaugoti.</div>`:''}
       </div>
 
       <p class="form-label-section">Dokumentas</p>
@@ -952,7 +1027,7 @@ function renderAdd(){
     ${warrantySheet}
     ${nameReviewModal}
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
-      <button class="save-btn" id="saveBtn" ${f.name.trim()&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
+      <button class="save-btn" id="saveBtn" ${f.name.trim()&&f.warrantyEnd&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
     </div>
   </div>`;
 }
@@ -1032,6 +1107,7 @@ function renderSettings(){
   const accountName = u.displayName || accountEmail;
   const providers = (u.providerData||[]).map(p=>p.providerId);
   const providerLabel = providers.includes('google.com') ? 'Google' : 'El. paštas';
+  const canChangePassword = providers.includes('password');
   const uidShort = u.uid ? u.uid.slice(0,8) : '—';
   const planLabel = state.userDoc?.role==='admin'
     ? '<i class="ti ti-shield-check" style="font-size:15px"></i> Administratorius'
@@ -1071,13 +1147,12 @@ function renderSettings(){
     <div class="form-section" style="margin:0 16px 8px">
       <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label">${isCloud?'Paskyroje':'Tik šiame telefone'}<small>${isCloud?'Įrašai saugomi paskyroje ir pasiekiami iš kitų įrenginių':'Privatumo režimas: įrašai lieka tik šiame telefone'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600">${isCloud?'Saugoti tik telefone':'Perkelti į paskyrą'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+        <div class="settings-row-label">${isCloud?'Atsarginė kopija įjungta':'Tik šiame telefone'}<small>${isCloud?'Įrašai pasiekiami kituose įrenginiuose, veikia automatiniai priminimai':'Įrašai lieka tik šiame įrenginyje, automatiniai priminimai neveikia'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600">${isCloud?'Išjungti':'Įjungti atsarginę kopiją'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
       </button>
     </div>
-    ${state.storageError ? `<div style="margin:0 16px 12px;padding:12px 14px;border-radius:12px;background:var(--red-bg);color:var(--red);font-size:14px;line-height:1.45">${esc(state.storageError)}</div>` : ''}
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Tai rekomenduojamas Premium režimas: duomenys nepririšti prie vieno telefono. Jei labiau rūpi privatumas, galite perkelti įrašus tik į šį telefoną.':isPremium?'Dabar naudojate privatumo režimą: įrašai saugomi tik šiame telefone. Premium leidžia juos perkelti į paskyrą, kad nepradingtų pakeitus ar praradus telefoną.':'Paskyros saugykla prieinama Premium / Tester / Draugas paskyroms. Nemokamame plane įrašai saugomi tik telefone.'}
+      ${isCloud?'Įrašai saugomi atsarginėje kopijoje: juos matysite prisijungę kituose įrenginiuose, o pasirinkti priminimai galės būti siunčiami į telefoną.':isPremium?'Dabar įrašai laikomi tik šiame telefone. Įjunkite atsarginę kopiją, jei norite juos matyti kituose įrenginiuose ir gauti automatinius priminimus.':'Nemokamame plane įrašai saugomi tik telefone. Atsarginė kopija ir automatiniai priminimai prieinami Premium / Tester / Draugas paskyroms.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -1111,10 +1186,10 @@ function renderSettings(){
 
     <p class="form-label-section" style="margin:0 16px 8px">Pranešimai</p>
     <div class="form-section" style="margin:0 16px 20px">
-      <div class="settings-row">
+      <div class="settings-row" style="${!isCloud?'opacity:0.65':''}">
         <i class="ti ti-bell row-icon"></i>
-        <div class="settings-row-label">Garantijos baigiasi<small>Priminimas likus 30 dienų</small></div>
-        <button class="toggle-switch${notifyOn?' on':''}" id="notifyToggle"><div class="knob"></div></button>
+        <div class="settings-row-label">Priminimai<small>${isCloud?'Siunčiami tik pasirinkus priminimus prie įrašo':'Veikia tik įjungus atsarginę kopiją'}</small></div>
+        <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
       </div>
     </div>
 
@@ -1127,9 +1202,11 @@ function renderSettings(){
 
     <p class="form-label-section" style="margin:0 16px 8px">Paskyra</p>
     <div class="form-section" style="margin:0 16px 20px">
-      <button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
+      ${canChangePassword ? `<button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
         <i class="ti ti-lock row-icon"></i><span class="settings-row-label">Pakeisti slaptažodį</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
-      </button>
+      </button>` : `<div class="settings-row">
+        <i class="ti ti-brand-google row-icon"></i><span class="settings-row-label">Slaptažodis valdomas per Google<small>Šioje programėlėje jo keisti nereikia</small></span>
+      </div>`}
     </div>
 
     <p class="form-label-section" style="margin:0 16px 8px">Pagalba</p>
@@ -1155,7 +1232,6 @@ function renderSettings(){
       </button>
     </div>
 
-    <p style="text-align:center;font-size:15px;color:var(--text3);padding:0 16px 24px">Galio v1.0 · Duomenys saugomi debesyje</p>
   </div>`;
 }
 
@@ -1177,6 +1253,16 @@ function showNotifModal(itemId, itemData){
   if(!itemId){ state.view='list'; render(); return; }
   const item = itemData || state.items.find(i=>i.id===itemId);
   if(!item){ state.view='list'; render(); return; }
+
+  if(state.storageMode !== 'cloud'){
+    state.view='list';
+    showAppDialog(
+      'Priminimai neveiks',
+      'Šis įrašas saugomas tik šiame telefone, todėl automatiniai pranešimai nebus siunčiami. Jei norite gauti priminimus, nustatymuose įjunkite atsarginę kopiją.',
+      'Noriu įjungti priminimus, bet mano įrašai saugomi tik telefone.'
+    );
+    return;
+  }
 
   const suggested = suggestNotifDays(item?.warrantyMonths, !!item?.returnDeadline);
   // Naudoti paskutinius nustatymus jei yra, kitaip siūlomus
@@ -1205,8 +1291,8 @@ function renderNotifModal(){
   return `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-end">
     <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 40px;max-height:85vh;overflow-y:auto">
       <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
-      <h3 style="font-size:18px;font-weight:700;margin:0 0 6px">Priminimai</h3>
-      <p style="font-size:14px;color:var(--text3);margin:0 0 20px">Priminsime prieš garantijos pabaigą.</p>
+      <h3 style="font-size:18px;font-weight:700;margin:0 0 6px">Ar norite priminimų?</h3>
+      <p style="font-size:14px;color:var(--text3);margin:0 0 20px">Pasirinkite, kada priminti. Galite nuimti visus pasirinkimus, jei šiai prekei pranešimų nereikia.</p>
 
       ${m.item?.warrantyEnd ? `
       <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Prieš garantijos pabaigą</p>
@@ -1234,8 +1320,8 @@ function renderNotifModal(){
         <button class="toggle-switch${m.repeatEnabled?' on':''}" id="notifRepeatToggle"><div class="knob"></div></button>
       </div>
 
-      <button id="notifSaveBtn" class="save-btn" style="margin-bottom:10px">Įjungti priminimus</button>
-      <button id="notifSkipBtn" style="background:none;border:none;color:var(--text3);font-size:14px;width:100%;padding:10px;cursor:pointer">Praleisti</button>
+      <button id="notifSaveBtn" class="save-btn" style="margin-bottom:10px">Išsaugoti pasirinkimą</button>
+      <button id="notifSkipBtn" style="background:none;border:none;color:var(--text3);font-size:14px;width:100%;padding:10px;cursor:pointer">Be priminimų</button>
     </div>
   </div>`;
 }
@@ -1277,6 +1363,23 @@ function renderContact(){
   </div>`;
 }
 
+function renderAppDialog(){
+  const d = state.appDialog;
+  if(!d) return '';
+  return `<div class="warranty-sheet" id="appDialog">
+    <div class="warranty-overlay"></div>
+    <div class="warranty-panel">
+      <div class="warranty-handle"></div>
+      <div class="warranty-title">${esc(d.title||'Pranešimas')}</div>
+      <p style="font-size:15px;color:var(--text2);line-height:1.45;margin:0 0 16px">${esc(d.message||'')}</p>
+      <div style="display:flex;gap:10px">
+        <button id="appDialogSupportBtn" style="flex:1;background:none;border:1px solid var(--border2);color:var(--text);font-size:15px;font-weight:600;border-radius:12px;padding:12px 14px">Pagalba</button>
+        <button id="appDialogOkBtn" class="save-btn" style="flex:1">Gerai</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 // ── Multi-item select ──────────────────────────────────────────────────────
 function renderMultiSelect(){
   const r = state.multiItemReceipt;
@@ -1287,10 +1390,14 @@ function renderMultiSelect(){
     const noWarranty = item.warrantyApplies===false;
     const dimmed = noWarranty && !item.selected;
     return `<div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:0.5px solid var(--border)" class="multi-row" data-midx="${idx}">
-      <div style="width:24px;height:24px;border-radius:6px;border:2px solid ${item.selected?'var(--accent)':'var(--border2)'};background:${item.selected?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.15s">
-        ${item.selected?`<i class="ti ti-check" style="font-size:13px;color:#fff"></i>`:''}
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex-shrink:0">
+        <div style="width:24px;height:24px;border-radius:6px;border:2px solid ${item.selected?'var(--accent)':'var(--border2)'};background:${item.selected?'var(--accent)':'transparent'};display:flex;align-items:center;justify-content:center;transition:all 0.15s">
+          ${item.selected?`<i class="ti ti-check" style="font-size:13px;color:#fff"></i>`:''}
+        </div>
+        <span style="font-size:12px;font-weight:700;color:var(--text3);line-height:1">${idx+1}</span>
       </div>
       <div style="flex:1;min-width:0">
+        <div style="font-size:12px;color:var(--text3);font-weight:600;margin-bottom:5px">${idx+1} prekė</div>
         <input class="multi-name-input" data-midx="${idx}" value="${esc(item.name)}" placeholder="Prekės pavadinimas" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:15px;font-weight:600;color:${dimmed?'var(--text3)':'var(--text)'};outline:none" onclick="event.stopPropagation()" />
         <div style="font-size:13px;color:var(--text3);margin-top:2px;display:flex;align-items:center;gap:6px">
           ${item.category?`<span>${esc(item.category)}</span>`:''}
@@ -1529,6 +1636,7 @@ function attachEvents(){
         r.items[idx].category=f.category;
         r.items[idx].warrantyMonths=f.warrantyMonths;
         r.items[idx].warrantyApplies=f.warrantyMonths!==null;
+        r.items[idx].warrantyEnd=f.warrantyEnd;
         r.items[idx].price=f.notes.match(/Kaina: (.+)/)?.[1]||r.items[idx].price;
       }
       state.view='multi-select'; state.addMode=null; state.multiEditIdx=null;
@@ -1643,7 +1751,7 @@ function attachEvents(){
     state.form.shop=r.shop||'';
     state.form.purchaseDate=r.purchaseDate||'';
     state.form.warrantyMonths=item.warrantyApplies===false?null:(item.warrantyMonths||24);
-    state.form.warrantyEnd=item.warrantyApplies===false?'':(r.purchaseDate&&item.warrantyMonths?addMonths(r.purchaseDate,item.warrantyMonths):'');
+    state.form.warrantyEnd=multiWarrantyEnd(item,r);
     state.form.docType=r.docType||'Kvitas / čekis';
     state.form.docNumber=r.docNumber||'';
     state.form.notes=item.price?`Kaina: ${item.price}`:'';
@@ -1661,7 +1769,7 @@ function attachEvents(){
     if(state.multiItemReceipt) state.multiItemReceipt.items[idx].category=e.target.value;
   });
   on('multiSaveBtn','click', saveMultiItems);
-  on('notifSkipBtn','click',()=>{ state.notifModal=null; render(); });
+  on('notifSkipBtn','click',()=>saveNotifSettings(true));
   on('notifRepeatToggle','click',()=>{ if(state.notifModal) state.notifModal.repeatEnabled=!state.notifModal.repeatEnabled; render(); });
   on('notifSaveBtn','click', saveNotifSettings);
   onAll('.notif-day-btn','click',e=>{
@@ -1688,6 +1796,8 @@ function attachEvents(){
   on('contactBackBtn','click',()=>{ state.view='settings'; render(); });
   on('contactBackBtn2','click',()=>{ state.view='settings'; render(); });
   on('contactSendBtn','click', sendContactMessage);
+  on('appDialogOkBtn','click',()=>{ state.appDialog=null; render(); });
+  on('appDialogSupportBtn','click',openSupportFromDialog);
   on('adminBackBtn','click',()=>{state.view='settings';render();});
   onAll('[data-action="togglePremium"]','click', async e=>{
     const uid = e.currentTarget.dataset.uid;
@@ -1785,7 +1895,10 @@ async function deleteItem(id){
       await deleteDoc(doc(db,'users',state.user.uid,'warranties',id));
       await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(-1)});
       if(item?.docStoragePath){
-        try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){console.warn('Storage delete failed:',e);}
+        const usedByOtherItem = state.items.some(i=>i.id!==id && i.docStoragePath===item.docStoragePath);
+        if(!usedByOtherItem){
+          try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){console.warn('Storage delete failed:',e);}
+        }
       }
       // Cloud mode re-syncs via onSnapshot automatically.
     }else{
@@ -1797,26 +1910,32 @@ async function deleteItem(id){
   state.view='list';render();
 }
 
-async function saveNotifSettings(){
+async function saveNotifSettings(skip=false){
   const m = state.notifModal;
   if(!m) return;
 
-  // Išsaugoti kaip naujus defaults
-  state._lastNotifDays = [...m.selectedDays];
-  state._lastReturnNotifDays = [...m.returnSelectedDays];
+  const selectedDays = skip ? [] : [...m.selectedDays];
+  const returnDays = skip ? [] : [...m.returnSelectedDays];
+  const enabled = !skip && (selectedDays.length>0 || returnDays.length>0 || m.repeatEnabled);
+
+  // Išsaugoti kaip naujus defaults, kad kitas įrašas siūlytų tą patį.
+  state._lastNotifDays = selectedDays;
+  state._lastReturnNotifDays = returnDays;
+  localStorage.setItem('galio_notif_prefs', JSON.stringify({ warranty: selectedDays, return: returnDays }));
 
   const notifData = {
-    notifyEnabled: true,
-    notifyDays: m.selectedDays,
-    notifyReturnDays: m.returnSelectedDays,
-    notifyRepeatDays: m.repeatEnabled ? { interval: m.repeatInterval, startDay: 30 } : null,
+    notifyEnabled: enabled,
+    notifyDays: selectedDays,
+    notifyReturnDays: returnDays,
+    notifyRepeatDays: enabled && m.repeatEnabled ? { interval: m.repeatInterval, startDay: 30 } : null,
   };
 
   try{
-    // Prašyti push leidimo
-    const perm = await requestPushPermission();
-    if(perm){
-      notifData.fcmTokenUpdated = true;
+    if(enabled){
+      const perm = await requestPushPermission();
+      if(perm){
+        notifData.fcmTokenUpdated = true;
+      }
     }
 
     // Išsaugoti į Firestore arba IndexedDB
@@ -1829,10 +1948,10 @@ async function saveNotifSettings(){
         await localPut(state.user.uid, item);
       }
     }
-    toast('Priminimai įjungti ✓');
+    toast(enabled ? 'Priminimai išsaugoti ✓' : 'Priminimai išjungti');
   }catch(e){
     console.warn('Notif save error:', e);
-    toast('Nepavyko įjungti priminimų');
+    toast('Nepavyko išsaugoti priminimų');
   }
 
   state.notifModal = null;
@@ -1861,9 +1980,44 @@ async function requestPushPermission(){
   }
 }
 
+async function chargeAiUsageNow(){
+  if(!state.user) return;
+  const isPremium = isPremiumUser();
+  try{
+    if(!isPremium){
+      await updateDoc(doc(db,'users',state.user.uid), { aiUsesRemaining: increment(-1) });
+      if(state.userDoc) state.userDoc.aiUsesRemaining = Math.max(0, (state.userDoc.aiUsesRemaining ?? AI_FREE_USES) - 1);
+    }else{
+      const today = new Date().toISOString().slice(0,10);
+      const month = today.slice(0,7);
+      const dayKey = state.userDoc?.aiDayKey;
+      const monthKey = state.userDoc?.aiMonthKey;
+      const newDayCount = dayKey===today ? (state.userDoc?.aiDayCount||0)+1 : 1;
+      const newMonthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0)+1 : 1;
+      await updateDoc(doc(db,'users',state.user.uid), {
+        aiDayKey: today,
+        aiDayCount: dayKey===today ? increment(1) : 1,
+        aiMonthKey: month,
+        aiMonthCount: monthKey===month ? increment(1) : 1,
+      });
+      if(state.userDoc){
+        state.userDoc.aiDayKey=today; state.userDoc.aiDayCount=newDayCount;
+        state.userDoc.aiMonthKey=month; state.userDoc.aiMonthCount=newMonthCount;
+      }
+    }
+  }catch(e){
+    console.warn('Failed to charge AI usage:', e);
+  }
+}
+
 async function updateItem(){
   if(!state.editItemId||!state.form.name.trim()) return;
   const f = state.form;
+  if(!f.warrantyEnd){
+    showAppDialog('Trūksta garantijos datos', 'Nurodykite, iki kada galioja garantija. Prekės be garantijos datos neišsaugomos, kad sąraše neliktų neaiškių įrašų.');
+    return;
+  }
+  if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
   const isCloud = state.storageMode==='cloud';
   const payload = {
     name: f.name.trim().slice(0,200),
@@ -1901,6 +2055,11 @@ async function updateItem(){
 async function saveItem(){
   if(!state.form.name.trim())return;
   const f=state.form;
+  if(!f.warrantyEnd){
+    showAppDialog('Trūksta garantijos datos', 'Nurodykite, iki kada galioja garantija. Prekės be garantijos datos neišsaugomos, kad sąraše neliktų neaiškių įrašų.');
+    return;
+  }
+  if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
   const isCloud = state.storageMode==='cloud';
 
   // Charge AI quota now, only if this save includes AI-assisted data the
@@ -1918,14 +2077,21 @@ async function saveItem(){
         const month = today.slice(0,7);
         const dayKey = state.userDoc?.aiDayKey;
         const monthKey = state.userDoc?.aiMonthKey;
+        const newDayCount = dayKey===today ? (state.userDoc?.aiDayCount||0)+1 : 1;
+        const newMonthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0)+1 : 1;
         await updateDoc(doc(db,'users',state.user.uid), {
           aiDayKey: today,
           aiDayCount: dayKey===today ? increment(1) : 1,
           aiMonthKey: month,
           aiMonthCount: monthKey===month ? increment(1) : 1,
         });
+        if(state.userDoc){
+          state.userDoc.aiDayKey=today; state.userDoc.aiDayCount=newDayCount;
+          state.userDoc.aiMonthKey=month; state.userDoc.aiMonthCount=newMonthCount;
+        }
       }
     }catch(e){ console.warn('Failed to charge AI quota on save:', e); }
+    state.pendingAiCharge=false;
   }
 
   const payload={
@@ -2008,9 +2174,19 @@ async function saveMultiItems(){
     toast('Įrašykite pavadinimą kiekvienai pasirinktai prekei');
     return;
   }
+  const noWarrantyDate = selected.find(i=>!multiWarrantyEnd(i,r));
+  if(noWarrantyDate){
+    showAppDialog('Trūksta garantijos datos', `Prekei „${noWarrantyDate.name||'be pavadinimo'}“ nėra aiškios garantijos pabaigos datos. Atžymėkite šią prekę arba redaguokite ją ir nurodykite garantiją.`);
+    return;
+  }
+  const expired = selected.find(i=>isExpiredDate(multiWarrantyEnd(i,r)));
+  if(expired && !confirmExpiredWarranty(multiWarrantyEnd(expired,r), `Prekės „${expired.name||'be pavadinimo'}“`)) return;
 
   const isCloud = state.storageMode==='cloud';
   let saved=0, failed=0;
+  const defaultWarrantyNotifDays = Array.isArray(state._lastNotifDays) ? state._lastNotifDays : null;
+  const defaultReturnNotifDays = Array.isArray(state._lastReturnNotifDays) ? state._lastReturnNotifDays : null;
+  let sharedDocMeta = null;
 
   // Charge one AI scan for the whole receipt (already scanned once)
   // pendingAiCharge was set true during analyzeDoc — charge it now
@@ -2020,6 +2196,23 @@ async function saveMultiItems(){
       if(!isPremium){
         await updateDoc(doc(db,'users',state.user.uid),{aiUsesRemaining:increment(-1)});
         if(state.userDoc) state.userDoc.aiUsesRemaining=Math.max(0,(state.userDoc.aiUsesRemaining??AI_FREE_USES)-1);
+      }else{
+        const today = new Date().toISOString().slice(0,10);
+        const month = today.slice(0,7);
+        const dayKey = state.userDoc?.aiDayKey;
+        const monthKey = state.userDoc?.aiMonthKey;
+        const newDayCount = dayKey===today ? (state.userDoc?.aiDayCount||0)+1 : 1;
+        const newMonthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0)+1 : 1;
+        await updateDoc(doc(db,'users',state.user.uid),{
+          aiDayKey: today,
+          aiDayCount: dayKey===today ? increment(1) : 1,
+          aiMonthKey: month,
+          aiMonthCount: monthKey===month ? increment(1) : 1,
+        });
+        if(state.userDoc){
+          state.userDoc.aiDayKey=today; state.userDoc.aiDayCount=newDayCount;
+          state.userDoc.aiMonthKey=month; state.userDoc.aiMonthCount=newMonthCount;
+        }
       }
     }catch(e){ console.warn('AI quota charge failed:',e); }
     state.pendingAiCharge=false;
@@ -2027,40 +2220,46 @@ async function saveMultiItems(){
 
   toast(`Saugoma ${selected.length} prekių...`);
 
+  if(isCloud && r.docData && r.docMime){
+    try{
+      const ext=r.docMime==='application/pdf'?'pdf':(r.docMime.split('/')[1]||'jpg');
+      const receiptId = `receipt-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const path=`users/${state.user.uid}/documents/${receiptId}.${ext}`;
+      const blob=base64ToBlob(r.docMime==='application/pdf'?r.docData:r.docData.split(',')[1],r.docMime);
+      await uploadBytes(ref(storage,path),blob,{contentType:r.docMime});
+      const url=await getDownloadURL(ref(storage,path));
+      sharedDocMeta = {docUrl:url, docMime:r.docMime, docFileName:r.docFileName||null, docStoragePath:path};
+    }catch(e){
+      console.warn('Shared document upload failed:',e);
+      toast('Dokumento nepavyko prisegti, bet prekes dar bandome išsaugoti');
+    }
+  }
+
   for(const item of selected){
     try{
+      const warrantyNotifDays = defaultWarrantyNotifDays ?? suggestNotifDays(item.warrantyMonths||24, !!r.purchaseDate);
+      const returnNotifDays = r.purchaseDate ? (defaultReturnNotifDays ?? [3]) : [];
       const payload={
         name:item.name.trim().slice(0,200),
         category:item.category||'Kita',
         shop:(r.shop||'').slice(0,100),
         purchaseDate:r.purchaseDate||'',
-        warrantyEnd: item.warrantyApplies===false ? '' : (r.purchaseDate&&item.warrantyMonths ? addMonths(r.purchaseDate,item.warrantyMonths) : ''),
+        warrantyEnd: multiWarrantyEnd(item,r),
         warrantyMonths: item.warrantyApplies===false ? null : (item.warrantyMonths||null),
         docType:r.docType||'Kvitas / čekis',
         docNumber:(r.docNumber||'').slice(0,100),
         notes:item.price?`Kaina: ${String(item.price).slice(0,50)}`:'',
-        notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+        docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
         returnDeadline: r.purchaseDate ? addDays(r.purchaseDate,14) : null,
-        // Numatytieji priminimai pagal garantijos ilgį (vartotojas gali keisti redaguodamas)
-        notifyDays: item.warrantyApplies===false ? [] : suggestNotifDays(item.warrantyMonths||24),
-        notifyReturnDays: r.purchaseDate ? [3] : [],
+        notifyEnabled: warrantyNotifDays.length>0 || returnNotifDays.length>0,
+        notifyDays: warrantyNotifDays,
+        notifyReturnDays: returnNotifDays,
         createdAtMs: Date.now(),
       };
 
       if(isCloud){
-        const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'),{...payload,createdAt:serverTimestamp()});
+        const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'),{...payload,...(sharedDocMeta||{}),createdAt:serverTimestamp()});
         await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(1)});
-        // Dokumentą pridedame tik prie pirmos prekės
-        if(saved===0 && r.docData && r.docMime){
-          try{
-            const ext=r.docMime==='application/pdf'?'pdf':(r.docMime.split('/')[1]||'jpg');
-            const path=`users/${state.user.uid}/documents/${docRef.id}.${ext}`;
-            const blob=base64ToBlob(r.docMime==='application/pdf'?r.docData:r.docData.split(',')[1],r.docMime);
-            await uploadBytes(ref(storage,path),blob,{contentType:r.docMime});
-            const url=await getDownloadURL(ref(storage,path));
-            await updateDoc(docRef,{docUrl:url,docMime:r.docMime,docFileName:r.docFileName||null,docStoragePath:path});
-          }catch(e){ console.warn('Doc upload failed:',e); }
-        }
       }else{
         const localItem={
           ...payload, id:genLocalId(),
@@ -2392,6 +2591,10 @@ async function checkPolicy(item){
 // ── Settings actions ───────────────────────────────────────────────────────
 async function toggleNotify(){
   if(!state.user)return;
+  if(state.storageMode!=='cloud'){
+    showAppDialog('Priminimai neveiks', 'Automatiniai pranešimai veikia tik tada, kai įrašai saugomi atsarginėje kopijoje. Įrašams, laikomiems tik telefone, priminimų serveris nemato.');
+    return;
+  }
   const current = state.userDoc?.notifyEnabled !== false;
   try{
     await updateDoc(doc(db,'users',state.user.uid), { notifyEnabled: !current });
@@ -2526,21 +2729,23 @@ async function toggleStorageMode(){
   const wantsCloud = state.storageMode !== 'cloud';
 
   if(wantsCloud && !isPremium){
-    state.storageError = 'Cloud sinchronizacija prieinama tik Premium, Tester arba Draugas paskyroms. Dabar ši paskyra neturi cloud teisių.';
-    toast(state.storageError, 8000);
-    render();
+    showAppDialog(
+      'Atsarginė kopija neprieinama',
+      'Ši funkcija prieinama Premium, Tester arba Draugas paskyroms.',
+      'Nepavyksta įjungti atsarginės kopijos. Mano paskyra: ' + (state.user?.email || '')
+    );
     return;
   }
 
   const confirmMsg = wantsCloud
-    ? `Perkelti įrašus į paskyrą (cloud)?\n\nJie bus susieti su šia paskyra ir pasiekiami iš kitų įrenginių prisijungus tuo pačiu el. paštu.`
-    : `Perkelti įrašus tik į šį telefoną?\n\nJūsų ${state.items.length} įrašai bus pašalinti iš paskyros saugyklos. Kituose įrenginiuose jų nebematysite, o praradus telefoną galima prarasti ir duomenis.`;
+    ? `Įjungti atsarginę kopiją?\n\nJūsų įrašai bus saugomi saugiai ir matomi kituose jūsų įrenginiuose prisijungus tuo pačiu el. paštu.`
+    : `Išjungti atsarginę kopiją?\n\nJūsų ${state.items.length} įrašai liks tik šiame telefone. Kituose įrenginiuose jų nebematysite, o praradus telefoną galite prarasti ir šiuos įrašus.`;
   if(!confirm(confirmMsg)) return;
 
-  if(!wantsCloud && !confirm('Patvirtinkite: pašalinti iš paskyros saugyklos ir saugoti tik šiame telefone.')) return;
+  if(!wantsCloud && !confirm('Patvirtinkite: išjungti atsarginę kopiją ir laikyti įrašus tik šiame telefone.')) return;
 
   const itemsToMigrate = state.items.slice();
-  toast(wantsCloud ? 'Perkeliama į paskyrą...' : 'Perkeliama į telefoną...', 8000);
+  toast(wantsCloud ? 'Įjungiama atsarginė kopija...' : 'Išjungiama atsarginė kopija...', 8000);
   state.migratingStorage = true;
 
   try{
@@ -2612,13 +2817,18 @@ async function toggleStorageMode(){
       attachItemsListener(state.user.uid);
     }
     state.storageError = '';
-    toast('Saugyklos režimas pakeistas ✓', 6000);
+    showAppDialog(
+      'Pakeista',
+      wantsCloud ? 'Atsarginė kopija įjungta.' : 'Atsarginė kopija išjungta. Įrašai saugomi tik šiame telefone.'
+    );
   }catch(e){
     console.warn('Storage mode migration error:', e);
-    const code = e?.code ? ` (${e.code})` : '';
-    state.storageError = `Nepavyko pakeisti saugyklos režimo${code}. Dažniausiai taip nutinka dėl paskyros teisių arba Firestore taisyklių. Duomenų sąrašą patikrinkite prieš bandydami dar kartą.`;
-    toast(state.storageError, 10000);
-    render();
+    state.storageError = '';
+    showAppDialog(
+      'Nepavyko pakeisti nustatymo',
+      'Nepavyko pakeisti, kur saugomi įrašai. Patikrinkite, ar matote visus savo įrašus, ir susisiekite su pagalba.',
+      `Nepavyko pakeisti įrašų saugojimo nustatymo.\nPaskyra: ${state.user?.email || ''}\nVeiksmas: ${wantsCloud ? 'įjungti atsarginę kopiją' : 'išjungti atsarginę kopiją'}`
+    );
   }finally{
     state.migratingStorage = false;
   }
@@ -2746,7 +2956,8 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     if(res.status===429){toast('Pasiektas AI analizių limitas');return;}
     if(!res.ok)return;
 
-    state.pendingAiCharge = true;
+    await chargeAiUsageNow();
+    state.pendingAiCharge = false;
 
     const data=await res.json();
     const p=JSON.parse((data.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
