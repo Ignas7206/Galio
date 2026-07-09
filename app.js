@@ -695,6 +695,7 @@ function _doRender(){
   else if(state.view==='detail')   html=renderDetail();
   else if(state.view==='settings') html=renderSettings();
   else if(state.view==='contact')  html=renderContact();
+  else if(state.view==='premium')  html=renderPremium();
   else if(state.view==='multi-select') html=renderMultiSelect();
   else if(state.view==='admin-stats') html=renderAdminStats();
 
@@ -869,6 +870,14 @@ function renderList(){
     <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · Nemokamai matomi ${FREE_DOC_LIMIT} dokumentai</div>
     <button id="upgradeBtn">Premium</button>
   </div>`:'';
+
+  // Subtilus priminimų kvietimas - tik jei yra artėjančių terminų ir ne premium
+  const soonExpiring = !isPremium && items.some(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0&&d<=60;});
+  const notifPromo = soonExpiring ? `<div class="plan-banner" id="notifPromoBanner" style="background:var(--accent-bg);margin:0 16px 14px;cursor:pointer">
+    <i class="ti ti-bell-ringing" style="color:var(--accent)"></i>
+    <div class="pb-text" style="color:var(--text)">Norite priminimo prieš garantijos pabaigą? <b style="color:var(--accent)">Sužinokite apie Premium</b></div>
+    <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+  </div>` : '';
   const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
     <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Perkelkite įrašus į šį telefoną arba atnaujinkite Premium, kad veiktų atsarginė kopija ir priminimai.</div>
@@ -929,6 +938,7 @@ function renderList(){
     ${verifyBanner}
     ${downgradeBanner}
     ${planBanner}
+    ${notifPromo}
     <div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
       <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
         <i class="ti ti-filter" style="font-size:15px;flex-shrink:0"></i>
@@ -1349,7 +1359,7 @@ function renderSettings(){
     ${isAdmin ? `<p class="form-label-section" style="margin:0 16px 8px">Administravimas</p>
     <div class="form-section" style="margin:0 16px 20px">
       <button class="settings-row tappable" id="adminPanelBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-chart-bar row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Admin statistika</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+        <i class="ti ti-chart-bar row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Admin valdymas</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </button>
     </div>` : ''}
 
@@ -1407,12 +1417,9 @@ function showNotifModal(itemId, itemData){
   if(!item){ state.view='list'; render(); return; }
 
   if(state.storageMode !== 'cloud'){
-    state.view='list';
-    showAppDialog(
-      'Priminimai neveiks',
-      'Šis įrašas saugomas tik šiame telefone, todėl automatiniai pranešimai nebus siunčiami. Jei norite gauti priminimus, nustatymuose įjunkite atsarginę kopiją.',
-      'Noriu įjungti priminimus, bet mano įrašai saugomi tik telefone.'
-    );
+    state._premiumReturnView='list';
+    state.view='premium';
+    render();
     return;
   }
 
@@ -1481,6 +1488,50 @@ function renderNotifModal(){
 }
 
 // ── Contact form ────────────────────────────────────────────────────────────
+// -- Premium privalumu ekranas ----------------------------------------------
+function renderPremium(){
+  const feats = [
+    { icon:'ti-bell-ringing', color:'var(--accent)', title:'Automatiniai priminimai',
+      text:'Pranešimai prieš garantijos pabaigą ir grąžinimo terminą — net kai programėlė uždaryta.' },
+    { icon:'ti-cloud', color:'#3b9eff', title:'Paskyros saugykla',
+      text:'Įrašai sinchronizuojami su jūsų paskyra ir pasiekiami iš bet kurio įrenginio.' },
+    { icon:'ti-sparkles', color:'#f5a623', title:`Iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną`,
+      text:`Skenuokite kvitus be rūpesčių — ${PREMIUM_MONTHLY_LIMIT} analizių per mėnesį (nemokamai tik ${AI_FREE_USES} visam laikui).` },
+    { icon:'ti-device-mobile', color:'#34c759', title:'Prieiga iš visų įrenginių',
+      text:'Prarastas ar pakeistas telefonas — jūsų garantijos lieka saugios paskyroje.' },
+  ];
+  return `<div>
+    <div class="page-header-sm">
+      <button class="back-btn" id="premiumBackBtn"><i class="ti ti-arrow-left"></i></button>
+      <h2>Galio Premium</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="padding:24px 20px;text-align:center">
+      <div style="width:72px;height:72px;margin:0 auto 16px;background:var(--accent-bg);border-radius:20px;display:flex;align-items:center;justify-content:center">
+        <i class="ti ti-crown" style="font-size:38px;color:var(--accent)"></i>
+      </div>
+      <h3 style="font-size:22px;font-weight:700;margin:0 0 8px">Nepraleiskite nė vienos garantijos</h3>
+      <p style="font-size:15px;color:var(--text2);margin:0;line-height:1.5">Premium suteikia priminimus ir saugyklą, kad niekada neprarastumėte teisės į remontą ar grąžinimą.</p>
+    </div>
+    <div style="padding:0 16px">
+      ${feats.map(f=>`
+        <div style="display:flex;gap:14px;padding:16px;background:var(--bg2);border-radius:var(--radius);margin-bottom:12px">
+          <div style="width:44px;height:44px;flex-shrink:0;background:var(--bg3);border-radius:12px;display:flex;align-items:center;justify-content:center">
+            <i class="ti ${f.icon}" style="font-size:22px;color:${f.color}"></i>
+          </div>
+          <div>
+            <div style="font-size:16px;font-weight:600;margin-bottom:3px">${f.title}</div>
+            <div style="font-size:14px;color:var(--text2);line-height:1.4">${f.text}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div style="padding:16px;position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 30%)">
+      <button class="save-btn" id="premiumBuyBtn">Netrukus — Premium</button>
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Mokama prenumerata bus prieinama netrukus.</p>
+    </div>
+  </div>`;
+}
+
 function renderContact(){
   const busy = state.contactBusy;
   const sent = state.contactSent;
@@ -1592,7 +1643,8 @@ function renderAdminStats(){
   return `<div>
     <div class="page-header-sm">
       <button class="back-btn" id="adminBackBtn"><i class="ti ti-arrow-left"></i></button>
-      <h2>Admin</h2>
+      <h2>Admin valdymas</h2>
+      <div style="width:36px"></div>
     </div>
     ${!s ? `<div class="empty-state"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:16px">Kraunama...</p></div>` : `
     <div class="stats-row" style="padding:16px">
@@ -1606,6 +1658,13 @@ function renderAdminStats(){
         <div class="detail-row"><i class="ti ti-mail-check"></i><span class="dr-label">Patvirtintų el. paštų</span><span class="dr-val">${s.verifiedUsers}/${s.totalUsers}</span></div>
         <div class="detail-row"><i class="ti ti-calendar-plus"></i><span class="dr-label">Naujų per 7 d.</span><span class="dr-val">${s.newLast7Days}</span></div>
       </div>
+    </div>
+
+    <p class="form-label-section" style="margin:0 16px 8px">Įrankiai</p>
+    <div class="form-section" style="margin:0 16px 16px;padding:0">
+      <button class="settings-row tappable" id="adminTestNotifBtn" style="width:100%;background:none;border:none;text-align:left">
+        <i class="ti ti-bell-ringing row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Testuoti garantijos priminimą<small>Sukuria laikiną įrašą (terminas rytoj) ir patikrina visą grandinę</small></span>
+      </button>
     </div>
 
     <p class="form-label-section" style="margin:0 16px 8px">Vartotojai</p>
@@ -1711,8 +1770,9 @@ function attachEvents(){
   });
 
   on('resendVerifyBtn','click',resendVerification);
-  on('upgradeBtn','click',()=>toast('Premium netrukus! 🚀'));
-  on('upgradeBtn3','click',()=>toast('Premium netrukus! 🚀'));
+  on('notifPromoBanner','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
+  on('upgradeBtn','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
+  on('upgradeBtn3','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});  on('catDropBtn','click',e=>{ e.stopPropagation(); state.catDropOpen=!state.catDropOpen; state.sortDropOpen=false; render(); });
   on('catDropOverlay','click',()=>{ state.catDropOpen=false; render(); });
   onAll('[data-cat]','click',e=>{ state.filterCat=e.currentTarget.dataset.cat; state.catDropOpen=false; render(); });
@@ -1790,7 +1850,7 @@ function attachEvents(){
   on('removeDoc','click',()=>{state.form.docData=null;state.form.docMime=null;state.form.docFileName=null;state.docError='';render();});
   on('docThumb','click',()=>{if(state.form.docData)state.lightbox=state.form.docData;render();});
   on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);const doc=effectiveDoc(it);if(doc.docUrl&&canViewDoc(it))state.lightbox=doc.docUrl;render();});
-  on('upgradeBtnDoc','click',()=>toast('Premium netrukus! 🚀'));
+  on('upgradeBtnDoc','click',()=>{state._premiumReturnView='add';state.view='premium';render();});
 
   on('saveBtn','click',()=>{
     if(state.multiEditIdx!=null){
@@ -1858,7 +1918,9 @@ function attachEvents(){
   on('checkPolicyBtn','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it)checkPolicy(it);});
 
   // Settings
-  on('upgradeBtnSettings','click',()=>toast('Premium netrukus! 🚀'));
+  on('upgradeBtnSettings','click',()=>{state._premiumReturnView='settings';state.view='premium';render();});
+  on('premiumBackBtn','click',()=>{state.view=state._premiumReturnView||'list';render();});
+  on('premiumBuyBtn','click',()=>toast('Premium netrukus! 🚀'));
   onAll('.theme-opt','click',e=>{
     const t=e.currentTarget.dataset.theme;
     state.theme=t; localStorage.setItem('galio_theme',t); applyTheme(); render();
@@ -1972,6 +2034,7 @@ function attachEvents(){
   on('appDialogOkBtn','click',()=>{ state.appDialog=null; render(); });
   on('appDialogSupportBtn','click',openSupportFromDialog);
   on('adminBackBtn','click',()=>{state.view='settings';render();});
+  on('adminTestNotifBtn','click', testNotification);
   onAll('[data-action="togglePremium"]','click', async e=>{
     const uid = e.currentTarget.dataset.uid;
     const user = state.adminUsers?.find(u=>u.uid===uid);
@@ -2119,6 +2182,63 @@ async function saveNotifSettings(skip=false){
 
   state.notifModal = null;
   render();
+}
+
+async function testNotification(){
+  if(state.userDoc?.role!=='admin'){ toast('Tik administratoriui'); return; }
+  if(state.storageMode!=='cloud'){
+    showAppDialog('Reikia paskyros saugyklos','Testui įjunkite paskyros saugyklą (nustatymuose), nes serverio pranešimai veikia tik su ja.','',{hideSupport:true});
+    return;
+  }
+
+  toast('1/4 Ruošiamas testas...');
+  let tempId=null;
+  try{
+    // 1. Gauti push leidimą + FCM token
+    const ok = await requestPushPermission();
+    if(!ok){
+      showAppDialog('Nepavyko','Nepavyko gauti pranešimų leidimo. Įjunkite pranešimus naršyklės nustatymuose šiai svetainei.','',{hideSupport:true});
+      return;
+    }
+
+    // 2. Sukurti laikiną įrašą su terminu RYTOJ ir notifyDays=[1]
+    toast('2/4 Kuriamas testinis įrašas...');
+    const tomorrow = addDays(today(), 1);
+    const tempPayload = {
+      name: '🔔 TESTAS (galima trinti)', category:'Kita', shop:'Galio testas',
+      purchaseDate: today(), warrantyEnd: tomorrow, warrantyMonths: 0,
+      docType:'Kvitas / čekis', docNumber:'', notes:'Automatinis notifikacijų testas',
+      notifyEnabled:true, notifyDays:[1], notifyReturnDays:[], notifyRepeatDays:null,
+      returnDeadline:null, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+      createdAt: serverTimestamp(),
+    };
+    const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), tempPayload);
+    tempId = docRef.id;
+
+    // 3. Iškviesti Cloud Function (patikrina daysLeft, siunčia tikrą push)
+    toast('3/4 Kviečiamas serveris...');
+    const fnUrl = `https://europe-west1-garantijos-4f397.cloudfunctions.net/testWarrantyNotification?uid=${state.user.uid}&date=${today()}`;
+    const resp = await fetch(fnUrl);
+    const data = await resp.json();
+
+    // 4. Ištrinti laikiną įrašą
+    toast('4/4 Valoma...');
+    await deleteDoc(doc(db,'users',state.user.uid,'warranties',tempId));
+    tempId=null;
+
+    // Rezultatas
+    if(data.sent>0){
+      showAppDialog('Testas pavyko ✓',`Serveris išsiuntė ${data.sent} pranešimą. Patikrinkite notifikacijų juostą — turėtų pasirodyti "Garantija baigiasi — rytoj". Jei matote — visa grandinė veikia.`,'',{hideSupport:true});
+    }else{
+      const reason = data.details?.[0]?.reason || data.reason || 'nežinoma priežastis';
+      showAppDialog('Testas neišsiuntė',`Serveris nesiuntė pranešimo. Priežastis: ${reason}. Jei rašo "no fcmToken" — pirma įjunkite pranešimus (bandykite testą dar kartą).`,'',{hideSupport:true});
+    }
+  }catch(e){
+    console.warn('Test error:', e);
+    // Išvalyti jei liko
+    if(tempId){ try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',tempId)); }catch(_){} }
+    showAppDialog('Klaida','Testas nepavyko: '+(e.message||'nežinoma klaida')+'. Patikrinkite ar Cloud Function deploy\'inta.','',{hideSupport:true});
+  }
 }
 
 async function requestPushPermission(){
