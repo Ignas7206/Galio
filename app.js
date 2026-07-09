@@ -1234,18 +1234,23 @@ function renderDetail(){
   ].map(r=>`<div class="detail-row"><i class="ti ${r.i}"></i><span class="dr-label">${esc(r.l)}</span><span class="dr-val">${esc(r.v)}</span></div>`).join('');
   const warrantyNotifs = Array.isArray(item.notifyDays) ? [...item.notifyDays].sort((a,b)=>a-b) : [];
   const returnNotifs = Array.isArray(item.notifyReturnDays) ? [...item.notifyReturnDays].sort((a,b)=>a-b) : [];
+  const hasActiveWarrantyDeadline = daysLeft(item.warrantyEnd) !== null && daysLeft(item.warrantyEnd) >= 0;
+  const hasActiveReturnDeadline = daysLeft(effectiveReturnDeadline(item)) !== null && daysLeft(effectiveReturnDeadline(item)) >= 0;
+  const hasReminderTarget = hasActiveWarrantyDeadline || hasActiveReturnDeadline;
   const remindersOn = item.notifyEnabled !== false && (warrantyNotifs.length || returnNotifs.length || item.notifyRepeatDays);
-  const reminderText = remindersOn
+  const reminderText = !hasReminderTarget
+    ? 'Aktyvių terminų nėra'
+    : remindersOn
     ? [
         warrantyNotifs.length ? `Garantija: ${warrantyNotifs.map(d=>d===1?'1 d.':d===7?'1 sav.':d===30?'1 mėn.':d+' d.').join(', ')}` : '',
         returnNotifs.length ? `Grąžinimas: ${returnNotifs.map(d=>d===1?'1 d.':d===7?'1 sav.':d+' d.').join(', ')}` : '',
       ].filter(Boolean).join(' · ')
     : 'Priminimai šiam įrašui išjungti';
   const remindersSection = state.storageMode==='cloud' ? `<div class="detail-section">
-    <button class="settings-row tappable" id="editRemindersBtn" style="width:100%;background:var(--bg2);border:none;text-align:left;border-radius:var(--radius);padding:14px 16px">
+    <button class="settings-row ${hasReminderTarget?'tappable':''}" ${hasReminderTarget?'id="editRemindersBtn"':''} style="width:100%;background:var(--bg2);border:none;text-align:left;border-radius:var(--radius);padding:14px 16px;${hasReminderTarget?'':'cursor:default'}">
       <i class="ti ti-bell row-icon" style="color:${remindersOn?'var(--accent)':'var(--text3)'}"></i>
       <span class="settings-row-label">Priminimai<small>${esc(reminderText)}</small></span>
-      <span style="color:var(--accent);font-weight:700;font-size:15px;white-space:nowrap">Keisti</span>
+      ${hasReminderTarget ? `<span style="color:var(--accent);font-weight:700;font-size:15px;white-space:nowrap">Keisti</span>` : ''}
     </button>
   </div>` : '';
 
@@ -1453,8 +1458,15 @@ function showNotifModal(itemId, itemData){
     return;
   }
 
+  const warrantyActive = daysLeft(item.warrantyEnd) !== null && daysLeft(item.warrantyEnd) >= 0;
   const returnDeadline = effectiveReturnDeadline(item);
-  const suggested = suggestNotifDays(item?.warrantyMonths, !!returnDeadline);
+  const returnActive = daysLeft(returnDeadline) !== null && daysLeft(returnDeadline) >= 0;
+  if(!warrantyActive && !returnActive){
+    showAppDialog('Priminimų nėra kam siųsti', 'Garantijos ir grąžinimo terminai jau pasibaigę, todėl priminimų šiam įrašui nustatyti negalima.', '', {hideSupport:true});
+    return;
+  }
+
+  const suggested = warrantyActive ? suggestNotifDays(item?.warrantyMonths, returnActive) : [];
   // Editing an existing item should show its saved choices. New items use the last preference.
   const savedWarrantyDays = Array.isArray(item.notifyDays) ? item.notifyDays : null;
   const savedReturnDays = Array.isArray(item.notifyReturnDays) ? item.notifyReturnDays : null;
@@ -1465,8 +1477,9 @@ function showNotifModal(itemId, itemData){
     itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
     enabled: item.notifyEnabled !== false,
     selectedDays: [...defaults],
-    returnSelectedDays: returnDeadline ? [...(savedReturnDays || state._lastReturnNotifDays || [3])] : [],
-    hasReturn: !!returnDeadline,
+    returnSelectedDays: returnActive ? [...(savedReturnDays || state._lastReturnNotifDays || [3])] : [],
+    hasWarranty: warrantyActive,
+    hasReturn: returnActive,
     repeatEnabled: false,
     repeatInterval: 7,
     item,
@@ -1495,7 +1508,7 @@ function renderNotifModal(){
         <button id="notifMasterOff" class="chip${!enabled?' active':''}" style="justify-content:center;height:44px;border-radius:14px;font-size:15px">Nepriminti</button>
       </div>
 
-      ${enabled && m.item?.warrantyEnd ? `
+      ${enabled && m.hasWarranty ? `
       <p style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.4px;margin:0 0 10px">Garantija</p>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
         ${DAY_OPTS.map(d=>`
@@ -2276,8 +2289,10 @@ async function saveNotifSettings(skip=false){
   if(!m) return;
 
   const enabledByUser = m.enabled !== false;
-  const selectedDays = skip || !enabledByUser ? [] : [...m.selectedDays];
-  const returnDays = skip || !enabledByUser ? [] : [...m.returnSelectedDays];
+  const warrantyActive = daysLeft(m.item?.warrantyEnd) !== null && daysLeft(m.item?.warrantyEnd) >= 0;
+  const returnActive = daysLeft(effectiveReturnDeadline(m.item)) !== null && daysLeft(effectiveReturnDeadline(m.item)) >= 0;
+  const selectedDays = skip || !enabledByUser || !warrantyActive ? [] : [...m.selectedDays];
+  const returnDays = skip || !enabledByUser || !returnActive ? [] : [...m.returnSelectedDays];
   const enabled = !skip && enabledByUser && (selectedDays.length>0 || returnDays.length>0);
 
   // Išsaugoti kaip naujus defaults, kad kitas įrašas siūlytų tą patį.
