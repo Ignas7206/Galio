@@ -1308,10 +1308,10 @@ function renderSettings(){
 
     <p class="form-label-section" style="margin:0 16px 8px">Kur saugomi įrašai</p>
     <div class="form-section" style="margin:0 16px 8px">
-      <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;align-items:flex-start;gap:12px;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
+      <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;align-items:center;gap:12px;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Galio debesyje':'Tik šiame įrenginyje'}<small>${isCloud?'Įrašai nepririšti prie vieno įrenginio, veikia pasirinkti priminimai':'Įrašai laikomi lokaliai, automatiniai priminimai neveikia'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.25;text-align:right;max-width:132px">${isCloud?'Palikti tik įrenginyje':'Perkelti į Galio debesį'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Galio debesyje':'Tik šiame įrenginyje'}<small>${isCloud?'Veikia pasirinkti priminimai':'Automatiniai priminimai neveikia'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.2;text-align:right;white-space:nowrap;flex-shrink:0">${isCloud?'Tik įrenginyje':'Į Galio debesį'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
       </button>
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
