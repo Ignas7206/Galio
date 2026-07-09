@@ -1032,11 +1032,11 @@ function renderPicker(){
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Su dokumentu${docLimitReached?'':aiExhausted?'':' + AI'}</h3><p>${docLimitReached?`Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium – visi čekiai ir nuotraukos.`:aiExhausted?'AI analizės išnaudotos – galite vis tiek prisegti dokumentą be automatinio atpažinimo':`Nufotografuok arba įkelk – AI ištrauks informaciją automatiškai${!isPremium?` (liko ${aiLeft})`:''}`}</p></div>
+        <div><h3>Nuskaityti dokumentą</h3><p>${docLimitReached?`Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium – visi čekiai ir nuotraukos.`:aiExhausted?'AI analizės išnaudotos. Įveskite duomenis rankiniu būdu arba atsinaujinkite į Premium.':`Nufotografuokite arba įkelkite čekį. AI užpildys duomenis automatiškai${!isPremium?` (liko ${aiLeft})`:''}.`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
-        <div><h3>Rankiniu būdu</h3><p>Suveskite informaciją patys – visada nemokama. Dokumentą galima prisegti be AI</p></div>
+        <div><h3>Įvesti rankiniu būdu</h3><p>Patys įrašykite prekės, parduotuvės ir terminų duomenis. AI analizė nenaudojama.</p></div>
       </button>
     </div>
     ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
