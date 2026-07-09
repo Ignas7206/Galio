@@ -720,7 +720,7 @@ const ONBOARD_SLIDES = [
   { icon:'ti-rotate-2', bg:'rgba(59,130,246,.14)', color:'#60a5fa', title:'Pirk internetu ramiai', text:'Nuskenuok pirkinį, o Galio parodys iki kada dar gali grąžinti prekę. 14, 30 ar kitas terminas — nebereikia skaičiuoti galvoje.' },
   { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'Sąskaita kompiuteryje?', text:'Ne bėda — atidaryk ją ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotrauką.' },
   { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Niekada nepraleisk garantijos', text:'Matykite iš karto, kurių daiktų garantija baigiasi greitai, ir nepraraskite teisės į nemokamą remontą.' },
-  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Duomenys saugomi jūsų paskyroje ir pasiekiami iš bet kurio įrenginio, net be interneto.' },
+  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Įrašai gali būti laikomi Galio debesyje, todėl jie nepririšti prie vieno įrenginio.' },
 ];
 function renderOnboarding(){
   const slides = ONBOARD_SLIDES.map(s=>`
@@ -880,7 +880,7 @@ function renderList(){
   </div>` : '';
   const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Perkelkite įrašus į šį telefoną arba atnaujinkite Premium, kad jie liktų paskyroje ir veiktų priminimai.</div>
+    <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Perkelkite įrašus į šį telefoną arba atnaujinkite Premium, kad jie liktų Galio debesyje ir veiktų priminimai.</div>
     <button id="downgradeStorageBtn" style="background:var(--orange)">Perkelti</button>
   </div>` : '';
 
@@ -1298,11 +1298,11 @@ function renderSettings(){
 
     ${needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 16px">
       <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-      <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Įrašai dar laikomi paskyroje tik tam, kad galėtumėte juos saugiai perkelti į telefoną.</div>
+      <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Įrašai dar laikomi Galio debesyje tik tam, kad galėtumėte juos saugiai perkelti į telefoną.</div>
       <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
     </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
-      <div class="pb-text">Atsinaujinkite į Premium – paskyros sinchronizacija ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
+      <div class="pb-text">Atsinaujinkite į Premium – Galio debesis, priminimai ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
 
@@ -1310,12 +1310,12 @@ function renderSettings(){
     <div class="form-section" style="margin:0 16px 8px">
       <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;align-items:flex-start;gap:12px;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Paskyroje':'Tik šiame telefone'}<small>${isCloud?'Matysite kituose įrenginiuose, veiks pasirinkti priminimai':'Veikia be debesies, bet tik šiame įrenginyje'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.25;text-align:right;max-width:132px">${isCloud?'Palikti tik telefone':'Saugoti paskyroje'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Galio debesyje':'Tik šiame įrenginyje'}<small>${isCloud?'Įrašai nepririšti prie vieno įrenginio, veikia pasirinkti priminimai':'Įrašai laikomi lokaliai, automatiniai priminimai neveikia'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.25;text-align:right;max-width:132px">${isCloud?'Palikti tik įrenginyje':'Perkelti į Galio debesį'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
       </button>
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Įrašai susieti su jūsų paskyra: prisijungę juos matysite kitame telefone, o pasirinkti priminimai galės būti siunčiami automatiškai.':isPremium?'Dabar įrašai laikomi tik šiame telefone. Pasirinkite „Saugoti paskyroje“, jei norite juos matyti kituose įrenginiuose ir gauti automatinius priminimus.':'Nemokamame plane įrašai laikomi tik telefone. Premium leidžia saugoti paskyroje ir gauti automatinius priminimus.'}
+      ${isCloud?'Įrašai laikomi Galio debesyje: juos galite pasiekti prisijungę prie Galio, o pasirinkti priminimai veikia automatiškai.':isPremium?'Dabar įrašai laikomi tik šiame įrenginyje. Perkelkite juos į Galio debesį, jei norite automatinių priminimų ir prieigos kituose įrenginiuose.':'Nemokamame plane įrašai laikomi tik šiame įrenginyje. Galio debesis ir automatiniai priminimai prieinami Premium.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -1351,7 +1351,7 @@ function renderSettings(){
     <div class="form-section" style="margin:0 16px 20px">
       <div class="settings-row" style="${!isCloud?'opacity:0.65':''}">
         <i class="ti ti-bell row-icon"></i>
-        <div class="settings-row-label">Priminimai<small>${isCloud?'Siunčiami tik pasirinkus priminimus prie įrašo':'Veikia tik kai įrašai saugomi paskyroje'}</small></div>
+        <div class="settings-row-label">Priminimai<small>${isCloud?'Siunčiami tik pasirinkus priminimus prie įrašo':'Veikia tik kai įrašai Galio debesyje'}</small></div>
         <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
       </div>
     </div>
@@ -1493,12 +1493,12 @@ function renderPremium(){
   const feats = [
     { icon:'ti-bell-ringing', color:'var(--accent)', title:'Automatiniai priminimai',
       text:'Pranešimai prieš garantijos pabaigą ir grąžinimo terminą — net kai programėlė uždaryta.' },
-    { icon:'ti-cloud', color:'#3b9eff', title:'Įrašai paskyroje',
-      text:'Įrašai sinchronizuojami su jūsų paskyra ir pasiekiami iš bet kurio įrenginio.' },
+    { icon:'ti-cloud', color:'#3b9eff', title:'Galio debesis',
+      text:'Įrašai nepririšti prie vieno įrenginio ir gali veikti automatiniai priminimai.' },
     { icon:'ti-sparkles', color:'#f5a623', title:`Iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną`,
       text:`Skenuokite kvitus be rūpesčių — ${PREMIUM_MONTHLY_LIMIT} analizių per mėnesį (nemokamai tik ${AI_FREE_USES} visam laikui).` },
     { icon:'ti-device-mobile', color:'#34c759', title:'Prieiga iš visų įrenginių',
-      text:'Prarastas ar pakeistas telefonas — jūsų garantijos lieka saugios paskyroje.' },
+      text:'Prarastas ar pakeistas įrenginys — jūsų garantijos nedingsta kartu su juo.' },
   ];
   return `<div>
     <div class="page-header-sm">
@@ -2187,7 +2187,7 @@ async function saveNotifSettings(skip=false){
 async function testNotification(){
   if(state.userDoc?.role!=='admin'){ toast('Tik administratoriui'); return; }
   if(state.storageMode!=='cloud'){
-    showAppDialog('Reikia saugoti paskyroje','Priminimų testui pirmiausia nustatymuose pasirinkite „Saugoti paskyroje“. Automatiniai priminimai veikia tik su įrašais, kurie susieti su paskyra.','',{hideSupport:true});
+    showAppDialog('Reikia Galio debesies','Priminimų testui pirmiausia perkelkite įrašus į Galio debesį. Automatiniai priminimai veikia tik su debesyje esančiais įrašais.','',{hideSupport:true});
     return;
   }
 
@@ -2908,7 +2908,7 @@ async function checkPolicy(item){
 async function toggleNotify(){
   if(!state.user)return;
   if(state.storageMode!=='cloud'){
-    showAppDialog('Priminimai neveiks', 'Automatiniai pranešimai veikia tik tada, kai įrašai saugomi paskyroje. Įrašams, laikomiems tik telefone, galite matyti terminus programėlėje, bet telefonas negaus automatinių priminimų.');
+    showAppDialog('Priminimai neveiks', 'Automatiniai pranešimai veikia tik su Galio debesyje esančiais įrašais. Įrašams, laikomiems tik telefone, galite matyti terminus programėlėje, bet telefonas negaus automatinių priminimų.');
     return;
   }
   const current = state.userDoc?.notifyEnabled !== false;
@@ -2925,7 +2925,7 @@ async function toggleStorageModeOld(){
   const wantsCloud = state.storageMode !== 'cloud';
 
   if(wantsCloud && !isPremium){
-    toast('Paskyros sinchronizacija prieinama tik Premium nariams');
+    toast('Galio debesis prieinamas tik Premium nariams');
     return;
   }
 
@@ -3048,22 +3048,22 @@ async function toggleStorageMode(){
 
   if(wantsCloud && !isPremium){
     showAppDialog(
-      'Saugoti paskyroje negalima',
+      'Galio debesis neprieinamas',
       'Ši funkcija prieinama Premium paskyroms.',
-      'Nepavyksta pasirinkti saugojimo paskyroje. Mano paskyra: ' + (state.user?.email || '')
+      'Nepavyksta perkelti įrašų į Galio debesį. Mano el. paštas: ' + (state.user?.email || '')
     );
     return;
   }
 
   const confirmMsg = wantsCloud
-    ? `Saugoti įrašus paskyroje?\n\nJuos matysite kituose įrenginiuose prisijungę tuo pačiu el. paštu, o pasirinkti priminimai galės veikti automatiškai.`
+    ? `Perkelti įrašus į Galio debesį?\n\nTaip galės veikti automatiniai priminimai, o įrašus pasieksite prisijungę prie Galio.`
     : `Palikti įrašus tik šiame telefone?\n\nJūsų ${state.items.length} įrašai nebebus matomi kituose įrenginiuose, o automatiniai priminimai neveiks.`;
   if(!confirm(confirmMsg)) return;
 
   if(!wantsCloud && !confirm('Patvirtinkite: įrašus laikyti tik šiame telefone.')) return;
 
   const itemsToMigrate = state.items.slice();
-  toast(wantsCloud ? 'Įrašai perkeliami į paskyrą...' : 'Įrašai perkeliami į telefoną...', 8000);
+  toast(wantsCloud ? 'Įrašai perkeliami į Galio debesį...' : 'Įrašai perkeliami į telefoną...', 8000);
   state.migratingStorage = true;
 
   try{
@@ -3140,7 +3140,7 @@ async function toggleStorageMode(){
     state.storageError = '';
     showAppDialog(
       'Pakeista',
-      wantsCloud ? 'Įrašai saugomi paskyroje.' : 'Įrašai saugomi tik šiame telefone.'
+      wantsCloud ? 'Įrašai perkelti į Galio debesį.' : 'Įrašai saugomi tik šiame telefone.'
     );
   }catch(e){
     console.warn('Storage mode migration error:', e);
@@ -3148,7 +3148,7 @@ async function toggleStorageMode(){
     showAppDialog(
       'Nepavyko pakeisti nustatymo',
       'Nepavyko pakeisti, kur saugomi įrašai. Patikrinkite, ar matote visus savo įrašus, ir susisiekite su pagalba.',
-      `Nepavyko pakeisti įrašų saugojimo nustatymo.\nPaskyra: ${state.user?.email || ''}\nVeiksmas: ${wantsCloud ? 'saugoti paskyroje' : 'laikyti tik telefone'}`
+      `Nepavyko pakeisti įrašų saugojimo nustatymo.\nEl. paštas: ${state.user?.email || ''}\nVeiksmas: ${wantsCloud ? 'perkelti į Galio debesį' : 'laikyti tik telefone'}`
     );
   }finally{
     state.migratingStorage = false;
