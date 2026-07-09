@@ -276,6 +276,7 @@ function showAppDialog(title, message, supportDraft='', options={}){
     hideSupport: !!options.hideSupport,
     variant: options.variant || 'default',
     align: options.align || 'left',
+    okText: options.okText || '',
   };
   render();
 }
@@ -887,7 +888,7 @@ function renderList(){
   </div>` : '';
   const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Perkelkite įrašus į šį telefoną arba atnaujinkite Premium, kad jie liktų Galio debesyje ir veiktų priminimai.</div>
+    <div class="pb-text" style="color:var(--text)">Premium nepratęstas. Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio debesyje ir veiktų priminimai.</div>
     <button id="downgradeStorageBtn" style="background:var(--orange)">Perkelti</button>
   </div>` : '';
 
@@ -1301,7 +1302,7 @@ function renderSettings(){
 
     ${needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 16px">
       <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-      <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Įrašai dar laikomi Galio debesyje tik tam, kad galėtumėte juos saugiai perkelti į telefoną.</div>
+      <div class="pb-text" style="color:var(--text)">Premium nepratęstas. Įrašai dar laikomi Galio debesyje tik tam, kad galėtumėte juos saugiai perkelti į šį įrenginį.</div>
       <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
     </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
@@ -1309,16 +1310,16 @@ function renderSettings(){
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
 
-    <p class="form-label-section" style="margin:0 16px 8px">Kur saugomi įrašai</p>
+    <p class="form-label-section" style="margin:0 16px 8px">Įrašų saugojimas</p>
     <div class="form-section" style="margin:0 16px 8px">
       <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;align-items:center;gap:12px;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Galio debesyje':'Tik šiame įrenginyje'}<small>${isCloud?'Veikia pasirinkti priminimai':'Automatiniai priminimai neveikia'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.2;text-align:right;white-space:nowrap;flex-shrink:0">${isCloud?'Tik įrenginyje':'Į Galio debesį'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Galio debesis':'Šis įrenginys'}<small>${isCloud?'Priminimai gali veikti automatiškai':'Automatiniai priminimai neveikia'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:700;line-height:1.2;text-align:right;white-space:nowrap;flex-shrink:0">${isCloud?'Laikyti tik čia':'Perkelti į debesį'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
       </button>
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Įrašai laikomi Galio debesyje: juos galite pasiekti prisijungę prie Galio, o pasirinkti priminimai veikia automatiškai.':isPremium?'Dabar įrašai laikomi tik šiame įrenginyje. Perkelkite juos į Galio debesį, jei norite automatinių priminimų ir prieigos kituose įrenginiuose.':'Nemokamame plane įrašai laikomi tik šiame įrenginyje. Galio debesis ir automatiniai priminimai prieinami Premium.'}
+      ${isCloud?'Įrašai pasiekiami prisijungus prie Galio. Pasirinkti priminimai veikia automatiškai.':isPremium?'Įrašai dabar laikomi tik šiame įrenginyje. Perkelkite į Galio debesį, jei norite automatinių priminimų ir prieigos kituose įrenginiuose.':'Nemokamame plane įrašai laikomi tik šiame įrenginyje. Galio debesis ir automatiniai priminimai įeina į Premium.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -1455,8 +1456,8 @@ function renderNotifModal(){
   return `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-end">
     <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 40px;max-height:85vh;overflow-y:auto">
       <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
-      <h3 style="font-size:18px;font-weight:700;margin:0 0 6px">Ar norite priminimų?</h3>
-      <p style="font-size:14px;color:var(--text3);margin:0 0 20px">Pasirinkite, kada priminti. Galite nuimti visus pasirinkimus, jei šiai prekei pranešimų nereikia.</p>
+      <h3 style="font-size:18px;font-weight:700;margin:0 0 6px">Priminimai</h3>
+      <p style="font-size:14px;color:var(--text3);margin:0 0 20px">Pasirinkite, kada norite gauti pranešimą. Šiuos pasirinkimus prisiminsime kitam įrašui.</p>
 
       ${m.item?.warrantyEnd ? `
       <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Prieš garantijos pabaigą</p>
@@ -1484,8 +1485,8 @@ function renderNotifModal(){
         <button class="toggle-switch${m.repeatEnabled?' on':''}" id="notifRepeatToggle"><div class="knob"></div></button>
       </div>
 
-      <button id="notifSaveBtn" class="save-btn" style="margin-bottom:10px">Išsaugoti pasirinkimą</button>
-      <button id="notifSkipBtn" style="background:none;border:none;color:var(--text3);font-size:14px;width:100%;padding:10px;cursor:pointer">Be priminimų</button>
+      <button id="notifSaveBtn" class="save-btn" style="margin-bottom:10px">Išsaugoti</button>
+      <button id="notifSkipBtn" style="background:none;border:none;color:var(--text3);font-size:14px;width:100%;padding:12px;cursor:pointer">Nepriminti</button>
     </div>
   </div>`;
 }
@@ -1513,8 +1514,8 @@ function renderPremium(){
       <div style="width:72px;height:72px;margin:0 auto 16px;background:var(--accent-bg);border-radius:20px;display:flex;align-items:center;justify-content:center">
         <i class="ti ti-crown" style="font-size:38px;color:var(--accent)"></i>
       </div>
-      <h3 style="font-size:22px;font-weight:700;margin:0 0 8px">Nepraleiskite nė vienos garantijos</h3>
-      <p style="font-size:15px;color:var(--text2);margin:0;line-height:1.5">Premium suteikia priminimus ir saugyklą, kad niekada neprarastumėte teisės į remontą ar grąžinimą.</p>
+      <h3 style="font-size:22px;font-weight:700;margin:0 0 8px">Priminimai ir dokumentai vienoje vietoje</h3>
+      <p style="font-size:15px;color:var(--text2);margin:0;line-height:1.5">Premium atrakina Galio debesį, automatinius priminimus ir daugiau AI analizių.</p>
     </div>
     <div style="padding:0 16px">
       ${feats.map(f=>`
@@ -1529,8 +1530,8 @@ function renderPremium(){
         </div>`).join('')}
     </div>
     <div style="padding:16px;position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 30%)">
-      <button class="save-btn" id="premiumBuyBtn">Netrukus — Premium</button>
-      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Mokama prenumerata bus prieinama netrukus.</p>
+      <button class="save-btn" id="premiumBuyBtn">Premium dar ruošiama</button>
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Prenumeratą įjungsime, kai bus paruošti mokėjimai.</p>
     </div>
   </div>`;
 }
@@ -1580,7 +1581,7 @@ function renderAppDialog(){
     ? 'display:flex;justify-content:center'
     : 'display:grid;grid-template-columns:1fr 1fr;gap:10px';
   const buttonBase = 'min-height:48px;border-radius:12px;padding:12px 14px;font-size:15px;font-weight:700;box-sizing:border-box;display:flex;align-items:center;justify-content:center';
-  const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="${buttonBase};width:100%;background:none;border:1px solid var(--border2);color:var(--text)">Pagalba</button>`;
+  const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="${buttonBase};width:100%;background:none;border:1px solid var(--border2);color:var(--text)">Susisiekti</button>`;
   const okBtnStyle = isSingleAction
     ? `${buttonBase};width:100%;max-width:260px`
     : `${buttonBase};width:100%`;
@@ -1592,7 +1593,7 @@ function renderAppDialog(){
       <p style="font-size:14px;color:var(--text2);line-height:1.45;margin:0 0 18px;text-align:${textAlign}">${esc(d.message||'')}</p>
       <div style="${actionWrapStyle}">
         ${supportBtn}
-        <button id="appDialogOkBtn" class="save-btn" style="${okBtnStyle}">Gerai</button>
+        <button id="appDialogOkBtn" class="save-btn" style="${okBtnStyle}">${d.okText || 'Gerai'}</button>
       </div>
     </div>
   </div>`;
@@ -1932,7 +1933,7 @@ function attachEvents(){
   // Settings
   on('upgradeBtnSettings','click',()=>{state._premiumReturnView='settings';state.view='premium';render();});
   on('premiumBackBtn','click',()=>{state.view=state._premiumReturnView||'list';render();});
-  on('premiumBuyBtn','click',()=>toast('Premium netrukus! 🚀'));
+  on('premiumBuyBtn','click',()=>toast('Premium prenumerata dar ruošiama'));
   onAll('.theme-opt','click',e=>{
     const t=e.currentTarget.dataset.theme;
     state.theme=t; localStorage.setItem('galio_theme',t); applyTheme(); render();
@@ -2264,7 +2265,7 @@ async function testNotification(){
     console.warn('Test error:', e);
     // Išvalyti jei liko
     if(tempId){ try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',tempId)); }catch(_){} }
-    showAppDialog('Klaida','Testas nepavyko: '+(e.message||'nežinoma klaida')+'. Patikrinkite ar Cloud Function deploy\'inta.','',{hideSupport:true});
+    showAppDialog('Testas nepavyko','Nepavyko patikrinti pranešimų. Patikrinkite, ar pranešimų serveris paruoštas.','',{hideSupport:true});
   }
 }
 
@@ -2330,7 +2331,7 @@ async function updateItem(){
   if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !isPremiumUser()){
-    showAppDialog('Premium neaktyvus', 'Prieš redaguojant debesyje saugomus įrašus perkelkite juos į šį telefoną arba atnaujinkite Premium.', '');
+    showAppDialog('Reikia Premium', 'Prieš redaguojant Galio debesyje saugomus įrašus atnaujinkite Premium arba perkelkite įrašus į šį įrenginį.', '');
     return;
   }
   const payload = {
@@ -2377,7 +2378,7 @@ async function saveItem(){
   if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !isPremiumUser()){
-    showAppDialog('Premium neaktyvus', 'Prieš pridėdami naujus įrašus perkelkite esamus į šį telefoną arba atnaujinkite Premium.', '');
+    showAppDialog('Reikia Premium', 'Prieš pridėdami naujus įrašus atnaujinkite Premium arba perkelkite esamus įrašus į šį įrenginį.', '');
     return;
   }
 
@@ -2507,7 +2508,7 @@ async function saveMultiItems(){
 
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !isPremiumUser()){
-    showAppDialog('Premium neaktyvus', 'Prieš pridėdami naujus įrašus perkelkite esamus į šį telefoną arba atnaujinkite Premium.', '');
+    showAppDialog('Reikia Premium', 'Prieš pridėdami naujus įrašus atnaujinkite Premium arba perkelkite esamus įrašus į šį įrenginį.', '');
     return;
   }
   let saved=0, failed=0;
@@ -2935,7 +2936,7 @@ async function checkPolicy(item){
 async function toggleNotify(){
   if(!state.user)return;
   if(state.storageMode!=='cloud'){
-    showAppDialog('Priminimai neveiks', 'Automatiniai pranešimai veikia tik su Galio debesyje esančiais įrašais. Įrašams, laikomiems tik telefone, galite matyti terminus programėlėje, bet telefonas negaus automatinių priminimų.');
+    showAppDialog('Priminimai neįjungti', 'Automatiniai pranešimai veikia tik su Galio debesyje esančiais įrašais. Jei įrašai laikomi tik šiame įrenginyje, terminus matysite programėlėje, bet pranešimų negausite.', '', {hideSupport:true});
     return;
   }
   const current = state.userDoc?.notifyEnabled !== false;
@@ -3057,7 +3058,7 @@ async function toggleStorageModeOld(){
       });
       attachItemsListener(state.user.uid);
     }
-    toast('Perkelta ✓');
+    toast('Įrašai perkelti');
   }catch(e){
     console.warn('Storage mode migration error:', e);
     toast('Klaida perkeliant duomenis – patikrinkite sąrašą, kai kurie įrašai gali būti nepilnai perkelti');
@@ -3192,12 +3193,12 @@ async function toggleStorageMode(){
     }
     state.storageError = '';
     showAppDialog(
-      'Pakeista',
+      wantsCloud ? 'Įrašai perkelti' : 'Saugojimas pakeistas',
       docMoveFailures
         ? `${wantsCloud ? 'Įrašai perkelti į Galio debesį' : 'Įrašai perkelti į telefoną'}, bet ${docMoveFailures} dokumento ar nuotraukos perkelti nepavyko. Patikrinkite įrašus.`
         : (wantsCloud ? 'Įrašai perkelti į Galio debesį.' : 'Įrašai saugomi tik šiame telefone.'),
       '',
-      {hideSupport:true, variant:'success', align:'center'}
+      {hideSupport:true, variant:'success', align:'center', okText:'Gerai'}
     );
   }catch(e){
     console.warn('Storage mode migration error:', e);
