@@ -1308,10 +1308,10 @@ function renderSettings(){
 
     <p class="form-label-section" style="margin:0 16px 8px">Duomenų vieta</p>
     <div class="form-section" style="margin:0 16px 8px">
-      <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
+      <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;align-items:flex-start;gap:12px;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label">${isCloud?'Atsarginė kopija įjungta':'Tik šiame telefone'}<small>${isCloud?'Įrašai pasiekiami kituose įrenginiuose, veikia automatiniai priminimai':'Įrašai lieka tik šiame įrenginyje, automatiniai priminimai neveikia'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600">${isCloud?'Išjungti':'Įjungti atsarginę kopiją'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Atsarginė kopija įjungta':'Tik šiame telefone'}<small>${isCloud?'Įrašai pasiekiami kituose įrenginiuose, veikia automatiniai priminimai':'Įrašai lieka tik šiame įrenginyje, automatiniai priminimai neveikia'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.25;text-align:right;max-width:120px">${isCloud?'Išjungti':'Įjungti kopiją'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
       </button>
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
@@ -1493,7 +1493,7 @@ function renderPremium(){
   const feats = [
     { icon:'ti-bell-ringing', color:'var(--accent)', title:'Automatiniai priminimai',
       text:'Pranešimai prieš garantijos pabaigą ir grąžinimo terminą — net kai programėlė uždaryta.' },
-    { icon:'ti-cloud', color:'#3b9eff', title:'Paskyros saugykla',
+    { icon:'ti-cloud', color:'#3b9eff', title:'Atsarginė kopija',
       text:'Įrašai sinchronizuojami su jūsų paskyra ir pasiekiami iš bet kurio įrenginio.' },
     { icon:'ti-sparkles', color:'#f5a623', title:`Iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną`,
       text:`Skenuokite kvitus be rūpesčių — ${PREMIUM_MONTHLY_LIMIT} analizių per mėnesį (nemokamai tik ${AI_FREE_USES} visam laikui).` },
@@ -2187,7 +2187,7 @@ async function saveNotifSettings(skip=false){
 async function testNotification(){
   if(state.userDoc?.role!=='admin'){ toast('Tik administratoriui'); return; }
   if(state.storageMode!=='cloud'){
-    showAppDialog('Reikia paskyros saugyklos','Testui įjunkite paskyros saugyklą (nustatymuose), nes serverio pranešimai veikia tik su ja.','',{hideSupport:true});
+    showAppDialog('Reikia atsarginės kopijos','Priminimų testui pirmiausia įjunkite atsarginę kopiją nustatymuose. Serverio pranešimai veikia tik su įrašais, kurie saugomi paskyroje.','',{hideSupport:true});
     return;
   }
 
@@ -3068,11 +3068,22 @@ async function toggleStorageMode(){
 
   try{
     if(wantsCloud){
-      await updateDoc(doc(db,'users',state.user.uid), {
+      const profilePatch = {
         itemCount: itemsToMigrate.length,
         storageMode: 'cloud',
         premiumDowngradeRequired: false,
-      });
+      };
+      if(state.userDoc?.role==='admin' && state.userDoc?.plan!=='premium'){
+        profilePatch.plan = 'premium';
+        profilePatch.planSource = 'admin';
+        profilePatch.subscriptionStatus = '';
+      }
+      await updateDoc(doc(db,'users',state.user.uid), profilePatch);
+      if(profilePatch.plan){
+        state.userDoc.plan = profilePatch.plan;
+        state.userDoc.planSource = profilePatch.planSource;
+        state.userDoc.subscriptionStatus = '';
+      }
 
       if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
 
