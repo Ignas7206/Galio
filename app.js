@@ -1311,12 +1311,18 @@ function renderSettings(){
     </div>` : ''}
 
     <p class="form-label-section" style="margin:0 16px 8px">Įrašų saugojimas</p>
-    <div class="form-section" style="margin:0 16px 10px">
-      <button class="settings-row tappable" id="storageModeToggle" style="width:100%;min-height:76px;background:none;border:none;text-align:left;align-items:center;gap:12px;padding:14px 16px;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
-        <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon" style="align-self:center"></i>
-        <div class="settings-row-label" style="min-width:0;flex:1;display:flex;flex-direction:column;gap:4px;line-height:1.2">${isCloud?'Galio debesyje':'Šiame įrenginyje'}<small style="display:block;line-height:1.35;color:var(--text3);white-space:normal">${isCloud?'Įrašai ir dokumentai saugomi Galio debesyje':'Įrašai ir dokumentai saugomi tik šiame įrenginyje'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:700;line-height:1.25;text-align:right;white-space:normal;max-width:116px;flex-shrink:0">${isCloud?'Laikyti tik įrenginyje':'Perkelti į Galio debesį'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
-      </button>
+    <div class="form-section" style="margin:0 16px 10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:14px;padding:16px">
+        <i class="ti ti-${isCloud?'cloud':'device-mobile'}" style="font-size:24px;color:var(--accent);flex-shrink:0"></i>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:16px;font-weight:600;color:var(--text)">${isCloud?'Galio debesyje':'Šiame įrenginyje'}</div>
+          <div style="font-size:13px;color:var(--text3);line-height:1.35;margin-top:2px">${isCloud?'Įrašai ir dokumentai saugomi Galio debesyje':'Įrašai ir dokumentai saugomi tik šiame įrenginyje'}</div>
+        </div>
+        ${(!isPremium && !isCloud) ? '<i class="ti ti-lock" style="color:var(--text3);font-size:16px;flex-shrink:0"></i>' : ''}
+      </div>
+      ${(isPremium || isCloud) ? `<button class="tappable" id="storageModeToggle" style="width:100%;background:none;border:none;border-top:0.5px solid var(--border);padding:14px 16px;font-size:15px;font-weight:600;color:var(--accent);cursor:pointer;text-align:center">
+        ${isCloud?'Laikyti tik įrenginyje':'Perkelti į Galio debesį'}
+      </button>` : ''}
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5;margin:0">
       ${isCloud?'Jūsų įrašai, čekiai ir nuotraukos laikomi Galio debesyje ir pasiekiami prisijungus prie Galio kituose įrenginiuose.':isPremium?'Jūsų įrašai, čekiai ir nuotraukos dabar laikomi tik šiame įrenginyje. Perkelkite į Galio debesį, jei norite juos pasiekti kituose įrenginiuose.':'Nemokamame plane įrašai, čekiai ir nuotraukos laikomi tik šiame įrenginyje. Galio debesis įeina į Premium.'}
