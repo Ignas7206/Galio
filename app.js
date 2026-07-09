@@ -1137,10 +1137,14 @@ function renderAdd(){
           <label>Pirkimo data</label>
           <input type="date" id="f_purchaseDate" value="${esc(f.purchaseDate)}" />
         </div>
-        <div class="form-field-row form-field" id="warrantyBtn" style="cursor:pointer;flex-direction:row">
+        <div class="form-field" id="warrantyBtn" style="cursor:pointer">
           <label>Garantija</label>
-          <span class="fv${!f.warrantyMonths&&f.warrantyMonths!==0?' fv-placeholder':''}">${esc(selOpt.l)}<i class="ti ti-chevron-right" style="font-size:14px;color:var(--text3)"></i></span>
+          <span style="font-size:16px;color:${!f.warrantyMonths&&f.warrantyMonths!==0?'var(--text3)':'var(--text)'};display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">
+            ${esc(selOpt.l)}
+            <i class="ti ti-chevron-right" style="font-size:14px;color:var(--text3);flex-shrink:0"></i>
+          </span>
         </div>
+        ${f.warrantyMonths===null?`<div class="form-field"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
         <div class="form-field">
           <label>Grąžinimas, dienos</label>
           <input type="number" id="f_returnDays" min="1" max="365" inputmode="numeric" value="${esc(normalizeReturnDays(f.returnDays, f.shop))}" />
@@ -1151,9 +1155,7 @@ function renderAdd(){
         <i class="ti ti-info-circle" style="color:var(--orange);flex-shrink:0"></i>
         <div class="pb-text" style="color:var(--text);font-size:14px">AI: šiai prekei garantija paprastai netaikoma. Jei vis tiek norite saugoti, nurodykite garantijos pabaigos datą rankiniu būdu.</div>
       </div>` : ''}
-        ${f.warrantyMonths===null?`<div class="form-field"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
         ${!f.warrantyEnd?`<div style="font-size:13px;color:var(--orange);padding:10px 2px 0">Nurodykite garantijos pabaigos datą, kad galėtumėte išsaugoti.</div>`:''}
-      </div>
 
       <p class="form-label-section">Dokumentas</p>
       <div class="form-section">
