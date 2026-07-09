@@ -23,7 +23,8 @@ const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:2
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
 const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos; compression brings this down before upload
 const MAX_PDF       = 5*1024*1024;
-const AI_FREE_USES  = 5; // lifetime AI document-analysis uses before Premium is required
+const AI_FREE_USES  = 3; // lifetime AI document-analysis uses before Premium is required
+const FREE_DOC_LIMIT = 3; // non-Premium users can view/attach up to 3 document photos/files
 const PREMIUM_DAILY_LIMIT   = 30;  // Premium is capped, not unlimited — bounds our Anthropic billing exposure
 const PREMIUM_MONTHLY_LIMIT = 300;
 
@@ -82,8 +83,17 @@ applyTheme();
 
 function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
 
-// Admin, tester ir friend vartotojai automatiškai gauna premium teises
-function isPremiumUser(){ return ['premium','tester','friend'].includes(state.userDoc?.plan) || state.userDoc?.role==='admin'; }
+// Admin and active Premium users get Premium rights.
+function isPremiumUser(){ return state.userDoc?.plan==='premium' || state.userDoc?.role==='admin'; }
+function premiumKind(user){
+  if(user?.role==='admin') return 'admin';
+  if(user?.plan!=='premium') return 'free';
+  if(user?.planSource==='purchase' || user?.subscriptionStatus==='active') return 'purchased';
+  return 'manual';
+}
+function needsCloudDowngrade(){
+  return !!state.user && !isPremiumUser() && state.storageMode==='cloud';
+}
 
 // Resets everything tied to "adding one new item" — the form fields plus
 // the per-item AI retry counter and pending-charge flag. Centralized here
@@ -206,6 +216,45 @@ function effectiveDoc(item){
     docFileName: docItem.docFileName,
     docStoragePath: docItem.docStoragePath,
   } : { docUrl:null, docMime:null, docFileName:null, docStoragePath:null };
+}
+function docIdentity(item){
+  const doc = effectiveDoc(item);
+  return doc.docStoragePath || doc.docUrl || item?.docFileName || item?.id || '';
+}
+function freeDocIndex(item){
+  const seen = [];
+  for(const it of state.items){
+    const doc = effectiveDoc(it);
+    if(!doc.docUrl) continue;
+    const key = docIdentity(it);
+    if(key && !seen.includes(key)) seen.push(key);
+  }
+  const key = docIdentity(item);
+  const idx = seen.indexOf(key);
+  return idx < 0 ? seen.length : idx;
+}
+function visibleDocCount(){
+  const seen = new Set();
+  for(const it of state.items){
+    const doc = effectiveDoc(it);
+    if(doc.docUrl) seen.add(docIdentity(it));
+  }
+  return seen.size;
+}
+function canViewDoc(item){
+  if(isPremiumUser()) return true;
+  return freeDocIndex(item) < FREE_DOC_LIMIT;
+}
+function canAttachNewDoc(){
+  return isPremiumUser() || visibleDocCount() < FREE_DOC_LIMIT;
+}
+function lockedDocHtml(compact=false){
+  return `<div class="${compact?'card-icon':'detail-section'}" style="${compact?'':'padding:16px;text-align:center'};background:var(--bg2)">
+    <i class="ti ti-lock" style="font-size:${compact?'24px':'34px'};color:var(--text3)"></i>
+    ${compact?'':`<div style="font-size:15px;font-weight:700;color:var(--text);margin-top:10px">Dokumentas užrakintas</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.4;margin-top:4px">Nemokamai matomi ${FREE_DOC_LIMIT} dokumentai. Atnaujinkite į Premium, kad matytumėte visas čekio nuotraukas.</div>
+    <button class="save-btn" id="upgradeBtnDoc" style="margin-top:14px">Premium</button>`}
+  </div>`;
 }
 function toast(msg, ms=5200){
   document.querySelectorAll('.toast').forEach(e=>e.remove());
@@ -611,6 +660,10 @@ window.addEventListener('popstate', () => {
 // Nav handler — vienkartinis, iš index.html
 window._appNav = (tab) => { state.view=tab; render(); };
 window._appStartNewItem = (mode) => {
+  if(mode==='photo' && !canAttachNewDoc()){
+    showAppDialog('Dokumentų limitas pasiektas', `Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
+    return;
+  }
   startNewItem(mode);
   if(mode==='photo'){ renderSync(); requestAnimationFrame(()=>document.getElementById('docInput')?.click()); }
   else render();
@@ -813,9 +866,14 @@ function renderList(){
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const planBanner = !isPremium ? `<div class="plan-banner">
     <i class="ti ti-sparkles"></i>
-    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · ${state.storageMode==='cloud'?'Atsarginė kopija įjungta':'Tik šiame telefone'}</div>
+    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · Nemokamai matomi ${FREE_DOC_LIMIT} dokumentai</div>
     <button id="upgradeBtn">Premium</button>
   </div>`:'';
+  const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
+    <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
+    <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Perkelkite įrašus į šį telefoną arba atnaujinkite Premium, kad veiktų atsarginė kopija ir priminimai.</div>
+    <button id="downgradeStorageBtn" style="background:var(--orange)">Perkelti</button>
+  </div>` : '';
 
   const verifyBanner = !state.user.emailVerified ? `<div class="plan-banner" style="background:var(--accent-bg)">
     <i class="ti ti-mail-exclamation" style="color:var(--accent)"></i>
@@ -831,9 +889,11 @@ function renderList(){
     const returnDeadline = effectiveReturnDeadline(item);
     const returnLine = returnLineHtml(returnDeadline);
     let thumb;
-    if(doc.docMime==='application/pdf')
+    if(doc.docUrl && !canViewDoc(item))
+      thumb=lockedDocHtml(true);
+    else if(doc.docMime==='application/pdf')
       thumb=`<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
-    else if(doc.docUrl)
+    else if(doc.docUrl && canViewDoc(item))
       thumb=`<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`;
     else
       thumb=`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
@@ -867,6 +927,7 @@ function renderList(){
     <div style="height:14px"></div>
     ${statsHtml}
     ${verifyBanner}
+    ${downgradeBanner}
     ${planBanner}
     <div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
       <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
@@ -916,7 +977,7 @@ function renderSearch(){
   const cardsHtml=results.map(item=>{
     const days=daysLeft(item.warrantyEnd);
     const doc=effectiveDoc(item);
-    const thumb=doc.docUrl&&doc.docMime!=='application/pdf'?`<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`:`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
+    const thumb=doc.docUrl&&doc.docMime!=='application/pdf'&&canViewDoc(item)?`<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`:doc.docUrl?lockedDocHtml(true):`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
     return`<button class="card" data-id="${esc(item.id)}">
       ${thumb}
       <div class="card-body">
@@ -943,13 +1004,14 @@ function renderPicker(){
   const isPremium = isPremiumUser();
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const aiExhausted = !isPremium && aiLeft<=0;
+  const docLimitReached = !canAttachNewDoc();
 
   return`<div>
     <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Pridėti garantiją</h2></div>
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Su dokumentu${aiExhausted?'':' + AI'}</h3><p>${aiExhausted?'AI analizės išnaudotos – galite vis tiek prisegti dokumentą be automatinio atpažinimo':`Nufotografuok arba įkelk – AI ištrauks informaciją automatiškai${!isPremium?` (liko ${aiLeft})`:''}`}</p></div>
+        <div><h3>Su dokumentu${docLimitReached?'':aiExhausted?'':' + AI'}</h3><p>${docLimitReached?`Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium – visi čekiai ir nuotraukos.`:aiExhausted?'AI analizės išnaudotos – galite vis tiek prisegti dokumentą be automatinio atpažinimo':`Nufotografuok arba įkelk – AI ištrauks informaciją automatiškai${!isPremium?` (liko ${aiLeft})`:''}`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
@@ -967,6 +1029,7 @@ function renderAdd(){
   const selOpt=WARRANTY_OPTS.find(o=>o.m===f.warrantyMonths)||WARRANTY_OPTS[WARRANTY_OPTS.length-1];
   const hasPdf=f.docData&&f.docMime==='application/pdf';
   const hasImg=f.docData&&f.docMime!=='application/pdf';
+  const docLimitReached = !canAttachNewDoc() && !f.docData;
 
   let docAreaHtml='';
   const qrButtonHtml = !f.docData ? `<button type="button" class="qr-link-btn" disabled style="opacity:0.5;cursor:default"><i class="ti ti-qrcode"></i>QR skanavimas — netrukus</button>` : '';
@@ -974,6 +1037,12 @@ function renderAdd(){
     docAreaHtml=`<div class="doc-preview-pdf"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(f.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">PDF pridėtas</div></div></div>`;
   }else if(hasImg){
     docAreaHtml=`<div style="position:relative"><img class="doc-preview-img" id="docThumb" src="${esc(f.docData)}" alt="" /><div style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.55);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;pointer-events:none"><i class="ti ti-zoom-in" style="font-size:14px;color:#fff"></i></div></div>`;
+  }else if(docLimitReached){
+    docAreaHtml=`<div class="doc-drop-zone" style="cursor:default">
+      <i class="ti ti-lock"></i>
+      <p>Dokumentų limitas pasiektas</p>
+      <span>Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.</span>
+    </div>`;
   }else{
     docAreaHtml=`${qrButtonHtml}<label class="doc-drop-zone" for="docInput">
       <i class="ti ti-${isPhoto?'camera':'paperclip'}"></i>
@@ -1017,7 +1086,7 @@ function renderAdd(){
       ${multiItemBanner}
       <div class="doc-upload-area">
         ${docAreaHtml}
-        <input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto?'capture="environment"':''} style="display:none" />
+        ${docLimitReached?'':`<input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto?'capture="environment"':''} style="display:none" />`}
         ${f.docData?`<button class="doc-remove-btn" id="removeDoc"><i class="ti ti-trash" style="font-size:14px"></i>Pašalinti dokumentą</button>`:''}
         ${state.docError?`<p class="doc-error">${esc(state.docError)}</p>`:''}
         ${state.analyzing?`<div class="analyzing-row"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI analizuoja dokumentą...</span></div>`:''}
@@ -1128,7 +1197,9 @@ function renderDetail(){
   const isPremium = isPremiumUser();
 
   let docHtml='';
-  if(doc.docUrl&&doc.docMime==='application/pdf'){
+  if(doc.docUrl&&!canViewDoc(item)){
+    docHtml=lockedDocHtml(false);
+  }else if(doc.docUrl&&doc.docMime==='application/pdf'){
     docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${esc(doc.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(doc.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
   }else if(doc.docUrl){
     docHtml=`<div class="detail-section"><img src="${esc(doc.docUrl)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
@@ -1193,13 +1264,9 @@ function renderSettings(){
   const uidShort = u.uid ? u.uid.slice(0,8) : '—';
   const planLabel = state.userDoc?.role==='admin'
     ? '<i class="ti ti-shield-check" style="font-size:15px"></i> Administratorius'
-    : state.userDoc?.plan==='tester'
-      ? '<i class="ti ti-flask" style="font-size:15px"></i> Testeris · Premium teisės'
-      : state.userDoc?.plan==='friend'
-        ? '<i class="ti ti-heart" style="font-size:15px"></i> Draugas · Premium teisės'
-        : isPremium
-          ? '<i class="ti ti-crown" style="font-size:15px"></i> Premium narys'
-          : `Nemokamas planas · ${state.items.length} įrašų`;
+    : isPremium
+      ? '<i class="ti ti-crown" style="font-size:15px"></i> Premium narys'
+      : `Nemokamas planas · ${state.items.length} įrašų`;
 
   return `<div>
     <div class="page-header">
@@ -1219,7 +1286,11 @@ function renderSettings(){
       </div>
     </div>
 
-    ${!isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
+    ${needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 16px">
+      <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
+      <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Debesies kopija liko įjungta tik tam, kad galėtumėte saugiai perkelti įrašus į telefoną.</div>
+      <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
+    </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
       <div class="pb-text">Atsinaujinkite į Premium – paskyros sinchronizacija ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
       <button id="upgradeBtnSettings">Premium</button>
@@ -1234,7 +1305,7 @@ function renderSettings(){
       </button>
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Įrašai saugomi atsarginėje kopijoje: juos matysite prisijungę kituose įrenginiuose, o pasirinkti priminimai galės būti siunčiami į telefoną.':isPremium?'Dabar įrašai laikomi tik šiame telefone. Įjunkite atsarginę kopiją, jei norite juos matyti kituose įrenginiuose ir gauti automatinius priminimus.':'Nemokamame plane įrašai saugomi tik telefone. Atsarginė kopija ir automatiniai priminimai prieinami Premium / Tester / Draugas paskyroms.'}
+      ${isCloud?'Įrašai saugomi atsarginėje kopijoje: juos matysite prisijungę kituose įrenginiuose, o pasirinkti priminimai galės būti siunčiami į telefoną.':isPremium?'Dabar įrašai laikomi tik šiame telefone. Įjunkite atsarginę kopiją, jei norite juos matyti kituose įrenginiuose ir gauti automatinius priminimus.':'Nemokamame plane įrašai saugomi tik telefone. Atsarginė kopija ir automatiniai priminimai prieinami Premium paskyroms.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -1527,7 +1598,7 @@ function renderAdminStats(){
     <div class="stats-row" style="padding:16px">
       <div class="stat-tile"><div class="n">${s.totalUsers}</div><div class="l">Vartotojų</div></div>
       <div class="stat-tile"><div class="n" style="color:var(--gold)">${s.premiumUsers}</div><div class="l">Premium</div></div>
-      <div class="stat-tile"><div class="n" style="color:var(--accent)">${s.testerUsers}</div><div class="l">Testerių</div></div>
+      <div class="stat-tile"><div class="n" style="color:var(--accent)">${s.purchasedPremiumUsers||0}</div><div class="l">Pirktų</div></div>
     </div>
     <div class="detail-section" style="margin:0 16px 16px">
       <div class="detail-rows">
@@ -1541,21 +1612,20 @@ function renderAdminStats(){
     <div class="form-section" style="margin:0 16px 16px;padding:0">
       ${users.length===0 ? `<div style="padding:16px;text-align:center;color:var(--text3);font-size:14px">Nėra vartotojų</div>` :
         users.map(u => {
-          const planLabel = u.plan==='premium' ? '👑 Premium' : u.plan==='tester' ? '🧪 Testeris' : u.plan==='friend' ? '❤️ Draugas' : 'Nemokamas';
-          const planColor = u.plan==='premium' ? 'var(--gold)' : u.plan==='tester' ? 'var(--accent)' : u.plan==='friend' ? 'var(--red)' : 'var(--text3)';
-          const isTester = u.plan==='tester';
-          const isFriend = u.plan==='friend';
-          const isPremiumPlan = u.plan==='premium';
+          const kind = premiumKind(u);
+          const planLabel = kind==='purchased' ? 'Premium · pirktas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
+          const planColor = kind==='purchased' ? 'var(--gold)' : kind==='manual' ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
+          const isPremiumPlan = kind==='purchased' || kind==='manual';
           const isAdminUser = u.role==='admin';
+          const actionLabel = kind==='purchased' ? 'Pirktas' : isPremiumPlan ? 'Nuimti suteiktą' : 'Suteikti Premium';
+          const actionDisabled = kind==='purchased';
           return `<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding:12px 14px">
             <div style="display:flex;width:100%;align-items:center;gap:6px;flex-wrap:wrap">
               <div style="flex:1 1 100%;min-width:0">
                 <div style="font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email}</div>
                 <div style="font-size:15px;color:${planColor};margin-top:2px">${planLabel}${isAdminUser?' · Admin':''}${u.emailVerified?' · ✓':''} · ${u.itemCount||0} įrašų</div>
               </div>
-              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${u.uid}" data-action="togglePremium" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isPremiumPlan?'? Premium':'Premium'}</button>` : ''}
-              ${!isAdminUser ? `<button class="chip${isTester?' active':''}" data-uid="${u.uid}" data-action="toggleTester" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isTester?'✓ Testeris':'Testeris'}</button>
-              <button class="chip${isFriend?' active':''}" data-uid="${u.uid}" data-action="toggleFriend" style="font-size:15px;padding:3px 8px;flex-shrink:0">${isFriend?'✓ Draugas':'Draugas'}</button>` : ''}
+              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${u.uid}" data-action="togglePremium" ${actionDisabled?'disabled':''} style="font-size:15px;padding:3px 8px;flex-shrink:0;${actionDisabled?'opacity:.55':''}">${actionLabel}</button>` : ''}
             </div>
           </div>`;
         }).join('')
@@ -1571,7 +1641,7 @@ async function loadAdminStats(){
   render();
   try{
     const snap = await getDocs(collection(db,'users'));
-    let totalUsers=0, premiumUsers=0, testerUsers=0, activeUsers=0, totalItems=0, verifiedUsers=0, newLast7Days=0;
+    let totalUsers=0, premiumUsers=0, purchasedPremiumUsers=0, activeUsers=0, totalItems=0, verifiedUsers=0, newLast7Days=0;
     const weekAgoMs = Date.now() - 7*86400000;
     const usersList = [];
 
@@ -1580,7 +1650,7 @@ async function loadAdminStats(){
       const u = d.data();
       totalUsers++;
       if(u.plan==='premium') premiumUsers++;
-      if(u.plan==='tester') testerUsers++;
+      if(premiumKind(u)==='purchased') purchasedPremiumUsers++;
       if(u.emailVerified) verifiedUsers++;
       if(u.createdAt?.toMillis && u.createdAt.toMillis() > weekAgoMs) newLast7Days++;
 
@@ -1593,11 +1663,11 @@ async function loadAdminStats(){
 
       if(realCount > 0) activeUsers++;
       totalItems += realCount;
-      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified });
+      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', planSource: u.planSource||'', subscriptionStatus: u.subscriptionStatus||'', storageMode: u.storageMode||'local', premiumDowngradeRequired: !!u.premiumDowngradeRequired, role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified });
     }));
 
     usersList.sort((a,b)=>a.email.localeCompare(b.email));
-    state.adminStats = { totalUsers, premiumUsers, testerUsers, activeUsers, totalItems, verifiedUsers, newLast7Days };
+    state.adminStats = { totalUsers, premiumUsers, purchasedPremiumUsers, activeUsers, totalItems, verifiedUsers, newLast7Days };
     state.adminUsers = usersList;
   }catch(e){
     toast('Nepavyko įkelti statistikos');
@@ -1664,9 +1734,19 @@ function attachEvents(){
     },200);
   });
 
-  on('rescanBtn','click',()=>{ state.form.qualityWarning=null; state.form.docData=null; state.form.docMime=null; state.form.docFileName=null; renderSync(); document.getElementById('docInput')?.click(); });
+  on('rescanBtn','click',()=>{
+    if(!canAttachNewDoc()){
+      showAppDialog('Dokumentų limitas pasiektas', `Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
+      return;
+    }
+    state.form.qualityWarning=null; state.form.docData=null; state.form.docMime=null; state.form.docFileName=null; renderSync(); document.getElementById('docInput')?.click();
+  });
   on('modePhoto','click',()=>{
     if(document.getElementById('modePhoto')?.disabled)return;
+    if(!canAttachNewDoc()){
+      showAppDialog('Dokumentų limitas pasiektas', `Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
+      return;
+    }
     state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];state.aiNameReview=false;
     renderSync();
     requestAnimationFrame(()=>{ document.getElementById('docInput')?.click(); });
@@ -1709,7 +1789,8 @@ function attachEvents(){
   on('qrScanBtn','click',startQrScanner);
   on('removeDoc','click',()=>{state.form.docData=null;state.form.docMime=null;state.form.docFileName=null;state.docError='';render();});
   on('docThumb','click',()=>{if(state.form.docData)state.lightbox=state.form.docData;render();});
-  on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);const doc=effectiveDoc(it);if(doc.docUrl)state.lightbox=doc.docUrl;render();});
+  on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);const doc=effectiveDoc(it);if(doc.docUrl&&canViewDoc(it))state.lightbox=doc.docUrl;render();});
+  on('upgradeBtnDoc','click',()=>toast('Premium netrukus! 🚀'));
 
   on('saveBtn','click',()=>{
     if(state.multiEditIdx!=null){
@@ -1748,6 +1829,7 @@ function attachEvents(){
   on('editItemBtn','click',()=>{
     const item = state.items.find(i=>i.id===state.selected);
     if(!item) return;
+    const editableDoc = canViewDoc(item) ? effectiveDoc(item) : {docUrl:null,docMime:null,docFileName:null,docStoragePath:null};
     state.form = {
       name: item.name||'',
       category: item.category||'',
@@ -1759,10 +1841,10 @@ function attachEvents(){
       docType: item.docType||'Kvitas / čekis',
       docNumber: item.docNumber||'',
       notes: item.notes||'',
-      docData: item.docUrl||null,
-      docMime: item.docMime||null,
-      docFileName: item.docFileName||null,
-      docStoragePath: item.docStoragePath||null,
+      docData: editableDoc.docUrl||null,
+      docMime: editableDoc.docMime||null,
+      docFileName: editableDoc.docFileName||null,
+      docStoragePath: editableDoc.docStoragePath||null,
       notifyEnabled: item.notifyEnabled!==false,
       warrantyAppliesWarning: false,
       qualityWarning: null,
@@ -1783,6 +1865,8 @@ function attachEvents(){
   });
   on('notifyToggle','click',toggleNotify);
   on('storageModeToggle','click',toggleStorageMode);
+  on('downgradeStorageBtn','click',toggleStorageMode);
+  on('downgradeStorageBtn2','click',toggleStorageMode);
   on('changePwdBtn','click',()=>{
     if(!state.user.email)return;
     sendPasswordResetEmail(auth,state.user.email)
@@ -1892,40 +1976,25 @@ function attachEvents(){
     const uid = e.currentTarget.dataset.uid;
     const user = state.adminUsers?.find(u=>u.uid===uid);
     if(!user) return;
-    const newPlan = user.plan==='premium' ? 'free' : 'premium';
-    if(!confirm(`${newPlan==='premium'?'Suteikti Premium planą':'Atimti Premium planą'} vartotojui ${user.email}?`)) return;
+    const kind = premiumKind(user);
+    if(kind==='purchased'){ toast('Pirktas Premium bus valdomas per mokėjimų sistemą'); return; }
+    const newPlan = kind==='manual' ? 'free' : 'premium';
+    if(!confirm(`${newPlan==='premium'?'Suteikti Premium planą':'Nuimti suteiktą Premium'} vartotojui ${user.email}?`)) return;
     try{
-      await updateDoc(doc(db,'users',uid), { plan: newPlan });
+      await updateDoc(doc(db,'users',uid), {
+        plan: newPlan,
+        planSource: newPlan==='premium'?'manual':'',
+        subscriptionStatus: '',
+        premiumDowngradeRequired: newPlan==='free',
+        premiumRevokedAt: newPlan==='free' ? serverTimestamp() : null,
+      });
       user.plan = newPlan;
+      user.planSource = newPlan==='premium' ? 'manual' : '';
+      user.subscriptionStatus = '';
+      user.premiumDowngradeRequired = newPlan==='free';
       toast(newPlan==='premium' ? `✓ ${user.email} dabar Premium` : `✓ ${user.email} grąžintas į nemokamą planą`);
       render();
     }catch(err){ toast('Nepavyko — ' + (err.message||'klaida'), 9000); }
-  });
-  onAll('[data-action="toggleTester"]','click', async e=>{
-    const uid = e.currentTarget.dataset.uid;
-    const user = state.adminUsers?.find(u=>u.uid===uid);
-    if(!user) return;
-    const newPlan = user.plan==='tester' ? 'free' : 'tester';
-    if(!confirm(`${newPlan==='tester'?'Suteikti testerio planą':'Atimti testerio planą'} vartotojui ${user.email}?`)) return;
-    try{
-      await updateDoc(doc(db,'users',uid), { plan: newPlan });
-      user.plan = newPlan;
-      toast(newPlan==='tester' ? `✓ ${user.email} dabar testeris` : `✓ ${user.email} grąžintas į nemokamą planą`);
-      render();
-    }catch(err){ toast('Nepavyko — ' + (err.message||'klaida')); }
-  });
-  onAll('[data-action="toggleFriend"]','click', async e=>{
-    const uid = e.currentTarget.dataset.uid;
-    const user = state.adminUsers?.find(u=>u.uid===uid);
-    if(!user) return;
-    const newPlan = user.plan==='friend' ? 'free' : 'friend';
-    if(!confirm(`${newPlan==='friend'?'Suteikti draugo planą':'Atimti draugo planą'} vartotojui ${user.email}?`)) return;
-    try{
-      await updateDoc(doc(db,'users',uid), { plan: newPlan });
-      user.plan = newPlan;
-      toast(newPlan==='friend' ? `✓ ${user.email} dabar draugas` : `✓ ${user.email} grąžintas į nemokamą planą`);
-      render();
-    }catch(err){ toast('Nepavyko — ' + (err.message||'klaida')); }
   });
 }
 
@@ -2113,6 +2182,10 @@ async function updateItem(){
   }
   if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
   const isCloud = state.storageMode==='cloud';
+  if(isCloud && !isPremiumUser()){
+    showAppDialog('Premium neaktyvus', 'Prieš redaguojant debesyje saugomus įrašus perkelkite juos į šį telefoną arba atnaujinkite Premium.', '');
+    return;
+  }
   const payload = {
     name: f.name.trim().slice(0,200),
     category: f.category||'Kita',
@@ -2156,6 +2229,10 @@ async function saveItem(){
   }
   if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
   const isCloud = state.storageMode==='cloud';
+  if(isCloud && !isPremiumUser()){
+    showAppDialog('Premium neaktyvus', 'Prieš pridėdami naujus įrašus perkelkite esamus į šį telefoną arba atnaujinkite Premium.', '');
+    return;
+  }
 
   // Charge AI quota now, only if this save includes AI-assisted data the
   // user is actually keeping. Scans that were retried/discarded never
@@ -2282,6 +2359,10 @@ async function saveMultiItems(){
   if(expired && !confirmExpiredWarranty(multiWarrantyEnd(expired,r), `Prekės „${expired.name||'be pavadinimo'}“`)) return;
 
   const isCloud = state.storageMode==='cloud';
+  if(isCloud && !isPremiumUser()){
+    showAppDialog('Premium neaktyvus', 'Prieš pridėdami naujus įrašus perkelkite esamus į šį telefoną arba atnaujinkite Premium.', '');
+    return;
+  }
   let saved=0, failed=0;
   const savedIds = [];
   let sharedDocMeta = null;
@@ -2572,6 +2653,11 @@ async function looksLikeHeic(file){
 
 function handleDoc(e){
   const file=e.target.files[0];if(!file)return;
+  if(!canAttachNewDoc() && !state.form.docData){
+    state.docError=`Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Atnaujinkite į Premium, kad galėtumėte prisegti daugiau čekių.`;
+    render();
+    return;
+  }
   const isPdf=file.type==='application/pdf';
   const isImg=ALLOWED_IMG.includes(file.type);
   if(!isPdf&&!isImg){state.docError='Leidžiami formatai: JPG, PNG, WebP, HEIC, PDF';render();return;}
@@ -2751,6 +2837,7 @@ async function toggleStorageModeOld(){
       await updateDoc(doc(db,'users',state.user.uid), {
         itemCount: itemsToMigrate.length,
         storageMode: 'cloud',
+        premiumDowngradeRequired: false,
       });
 
       // Stop the items listener during migration so the live onSnapshot
@@ -2819,6 +2906,7 @@ async function toggleStorageModeOld(){
       await updateDoc(doc(db,'users',state.user.uid), {
         itemCount: 0,
         storageMode: 'local',
+        premiumDowngradeRequired: false,
       });
       attachItemsListener(state.user.uid);
     }
@@ -2841,7 +2929,7 @@ async function toggleStorageMode(){
   if(wantsCloud && !isPremium){
     showAppDialog(
       'Atsarginė kopija neprieinama',
-      'Ši funkcija prieinama Premium, Tester arba Draugas paskyroms.',
+      'Ši funkcija prieinama Premium paskyroms.',
       'Nepavyksta įjungti atsarginės kopijos. Mano paskyra: ' + (state.user?.email || '')
     );
     return;
@@ -2863,6 +2951,7 @@ async function toggleStorageMode(){
       await updateDoc(doc(db,'users',state.user.uid), {
         itemCount: itemsToMigrate.length,
         storageMode: 'cloud',
+        premiumDowngradeRequired: false,
       });
 
       if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
@@ -2923,6 +3012,7 @@ async function toggleStorageMode(){
       await updateDoc(doc(db,'users',state.user.uid), {
         itemCount: 0,
         storageMode: 'local',
+        premiumDowngradeRequired: false,
       });
       attachItemsListener(state.user.uid);
     }
