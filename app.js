@@ -64,6 +64,9 @@ let state = {
   policyChecking: false, policyResult: null, policyResultFor: null,
   contactBusy: false, contactSent: false, contactError: '', contactDraft: '',
   adminUsers: [],
+  adminSearch: '',
+  adminPlanFilter: 'all',
+  adminSort: 'email',
   theme: localStorage.getItem('galio_theme') || 'auto',
 };
 try{
@@ -1659,6 +1662,47 @@ function renderMultiSelect(){
 function renderAdminStats(){
   const s = state.adminStats;
   const users = state.adminUsers || [];
+  const adminSearch = (state.adminSearch || '').trim().toLowerCase();
+  const adminPlanFilter = state.adminPlanFilter || 'all';
+  const adminSort = state.adminSort || 'email';
+  const filteredUsers = users
+    .filter(u => {
+      const kind = premiumKind(u);
+      const haystack = `${u.email||''} ${u.uid||''} ${u.plan||''} ${u.planSource||''} ${u.role||''} ${u.storageMode||''}`.toLowerCase();
+      const matchesSearch = !adminSearch || haystack.includes(adminSearch);
+      const matchesFilter =
+        adminPlanFilter === 'all' ||
+        (adminPlanFilter === 'premium' && kind !== 'free') ||
+        (adminPlanFilter === 'purchased' && kind === 'purchased') ||
+        (adminPlanFilter === 'manual' && kind === 'manual') ||
+        (adminPlanFilter === 'free' && kind === 'free') ||
+        (adminPlanFilter === 'admin' && kind === 'admin') ||
+        (adminPlanFilter === 'cloud' && u.storageMode === 'cloud');
+      return matchesSearch && matchesFilter;
+    })
+    .sort((a,b) => {
+      if(adminSort === 'items') return (b.itemCount||0) - (a.itemCount||0) || String(a.email||'').localeCompare(String(b.email||''), 'lt');
+      if(adminSort === 'plan') return premiumKind(a).localeCompare(premiumKind(b), 'lt') || String(a.email||'').localeCompare(String(b.email||''), 'lt');
+      if(adminSort === 'storage') return String(a.storageMode||'').localeCompare(String(b.storageMode||''), 'lt') || String(a.email||'').localeCompare(String(b.email||''), 'lt');
+      if(adminSort === 'verified') return Number(!!b.emailVerified) - Number(!!a.emailVerified) || String(a.email||'').localeCompare(String(b.email||''), 'lt');
+      return String(a.email||'').localeCompare(String(b.email||''), 'lt');
+    });
+  const filterOptions = [
+    ['all','Visi'],
+    ['premium','Premium'],
+    ['purchased','Pirkti'],
+    ['manual','Suteikti'],
+    ['free','Nemokami'],
+    ['admin','Admin'],
+    ['cloud','Debesyje'],
+  ];
+  const sortOptions = [
+    ['email','El. paštas'],
+    ['items','Įrašų kiekis'],
+    ['plan','Planas'],
+    ['storage','Saugojimas'],
+    ['verified','Patvirtinti'],
+  ];
   return `<div>
     <div class="page-header-sm">
       <button class="back-btn" id="adminBackBtn"><i class="ti ti-arrow-left"></i></button>
@@ -1687,9 +1731,25 @@ function renderAdminStats(){
     </div>
 
     <p class="form-label-section" style="margin:0 16px 8px">Vartotojai</p>
+    <div class="form-section" style="margin:0 16px 12px;padding:12px">
+      <div style="display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:12px;padding:10px 12px;margin-bottom:10px">
+        <i class="ti ti-search" style="font-size:18px;color:var(--text3);flex-shrink:0"></i>
+        <input id="adminUserSearch" value="${esc(state.adminSearch||'')}" placeholder="Ieškoti pagal el. paštą, UID, planą" style="width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;min-width:0" />
+      </div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:10px">
+        ${filterOptions.map(([value,label])=>`<button class="chip${adminPlanFilter===value?' active':''}" data-admin-filter="${value}" style="flex-shrink:0">${label}</button>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center">
+        <select id="adminSortSelect" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;padding:10px 12px;outline:none">
+          ${sortOptions.map(([value,label])=>`<option value="${value}" ${adminSort===value?'selected':''}>Rikiuoti: ${label}</option>`).join('')}
+        </select>
+        <button id="adminRefreshBtn" class="chip" style="font-size:15px;padding:9px 12px;white-space:nowrap"><i class="ti ti-refresh" style="font-size:16px"></i> Atnaujinti</button>
+      </div>
+      <div style="font-size:13px;color:var(--text3);margin-top:10px">${filteredUsers.length} iš ${users.length} vartotojų</div>
+    </div>
     <div class="form-section" style="margin:0 16px 16px;padding:0">
-      ${users.length===0 ? `<div style="padding:16px;text-align:center;color:var(--text3);font-size:14px">Nėra vartotojų</div>` :
-        users.map(u => {
+      ${filteredUsers.length===0 ? `<div style="padding:18px;text-align:center;color:var(--text3);font-size:14px">Nieko nerasta</div>` :
+        filteredUsers.map(u => {
           const kind = premiumKind(u);
           const planLabel = kind==='purchased' ? 'Premium · pirktas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
           const planColor = kind==='purchased' ? 'var(--gold)' : kind==='manual' ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
@@ -1697,13 +1757,16 @@ function renderAdminStats(){
           const isAdminUser = u.role==='admin';
           const actionLabel = kind==='purchased' ? 'Pirktas' : isPremiumPlan ? 'Nuimti suteiktą' : 'Suteikti Premium';
           const actionDisabled = kind==='purchased';
-          return `<div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding:12px 14px">
-            <div style="display:flex;width:100%;align-items:center;gap:6px;flex-wrap:wrap">
-              <div style="flex:1 1 100%;min-width:0">
-                <div style="font-size:15px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.email}</div>
-                <div style="font-size:15px;color:${planColor};margin-top:2px">${planLabel}${isAdminUser?' · Admin':''}${u.emailVerified?' · ✓':''} · ${u.itemCount||0} įrašų</div>
+          const storageLabel = u.storageMode === 'cloud' ? 'Galio debesyje' : 'Šiame įrenginyje';
+          const verifiedLabel = u.emailVerified ? 'El. paštas patvirtintas' : 'El. paštas nepatvirtintas';
+          return `<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px">
+            <div style="display:flex;width:100%;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
+                <div style="font-size:14px;color:${planColor};margin-top:4px;font-weight:600">${planLabel}${isAdminUser?' · Administratorius':''}</div>
+                <div style="font-size:13px;color:var(--text3);margin-top:4px;line-height:1.35">${storageLabel} · ${u.itemCount||0} įrašų · ${verifiedLabel} · ID ${esc((u.uid||'').slice(0,8))}</div>
               </div>
-              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${u.uid}" data-action="togglePremium" ${actionDisabled?'disabled':''} style="font-size:15px;padding:3px 8px;flex-shrink:0;${actionDisabled?'opacity:.55':''}">${actionLabel}</button>` : ''}
+              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${esc(u.uid)}" data-action="togglePremium" ${actionDisabled?'disabled':''} style="font-size:14px;padding:6px 10px;flex-shrink:0;${actionDisabled?'opacity:.55':''}">${actionLabel}</button>` : ''}
             </div>
           </div>`;
         }).join('')
@@ -1741,7 +1804,7 @@ async function loadAdminStats(){
 
       if(realCount > 0) activeUsers++;
       totalItems += realCount;
-      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', planSource: u.planSource||'', subscriptionStatus: u.subscriptionStatus||'', storageMode: u.storageMode||'local', premiumDowngradeRequired: !!u.premiumDowngradeRequired, role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified });
+      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', planSource: u.planSource||'', subscriptionStatus: u.subscriptionStatus||'', storageMode: u.storageMode||'local', premiumDowngradeRequired: !!u.premiumDowngradeRequired, role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified, createdAtMs: u.createdAt?.toMillis ? u.createdAt.toMillis() : 0 });
     }));
 
     usersList.sort((a,b)=>a.email.localeCompare(b.email));
@@ -2054,6 +2117,31 @@ function attachEvents(){
   on('appDialogSupportBtn','click',openSupportFromDialog);
   on('adminBackBtn','click',()=>{state.view='settings';render();});
   on('adminTestNotifBtn','click', testNotification);
+  on('adminUserSearch','input',e=>{
+    state.adminSearch = e.currentTarget.value || '';
+    const input = e.currentTarget;
+    clearTimeout(state._adminSearchTimer);
+    state._adminSearchTimer = setTimeout(()=>{
+      render();
+      requestAnimationFrame(()=>{
+        const next = document.getElementById('adminUserSearch');
+        if(next){
+          next.focus();
+          const len = next.value.length;
+          try{ next.setSelectionRange(len, len); }catch(_){}
+        }
+      });
+    }, 180);
+  });
+  onAll('[data-admin-filter]','click',e=>{
+    state.adminPlanFilter = e.currentTarget.dataset.adminFilter || 'all';
+    render();
+  });
+  on('adminSortSelect','change',e=>{
+    state.adminSort = e.currentTarget.value || 'email';
+    render();
+  });
+  on('adminRefreshBtn','click',loadAdminStats);
   onAll('[data-action="togglePremium"]','click', async e=>{
     const uid = e.currentTarget.dataset.uid;
     const user = state.adminUsers?.find(u=>u.uid===uid);
