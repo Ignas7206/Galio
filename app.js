@@ -132,6 +132,28 @@ function normalizeSearchText(value){
     .replace(/į/g,'i').replace(/š/g,'s').replace(/ų/g,'u').replace(/ū/g,'u').replace(/ž/g,'z')
     .trim();
 }
+function normalizeKey(value){
+  return normalizeSearchText(value).replace(/[^a-z0-9]+/g,' ').trim();
+}
+function sameLoose(a,b){
+  const x = normalizeKey(a);
+  const y = normalizeKey(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+}
+function findDuplicateItem(candidate, ignoreId=null){
+  const docNo = normalizeKey(candidate.docNumber);
+  const shop = normalizeKey(candidate.shop);
+  const name = normalizeKey(candidate.name);
+  const purchaseDate = candidate.purchaseDate || '';
+  return state.items.find(existing=>{
+    if(ignoreId && existing.id===ignoreId) return false;
+    const sameReceipt =
+      (docNo && normalizeKey(existing.docNumber)===docNo) ||
+      (purchaseDate && existing.purchaseDate===purchaseDate && (!shop || !existing.shop || normalizeKey(existing.shop)===shop));
+    if(!sameReceipt) return false;
+    return sameLoose(existing.name, name);
+  }) || null;
+}
 function inferReturnDays(shop=''){
   const s = normalizeSearchText(shop);
   if(s.includes('regatta')) return 30;
@@ -2524,6 +2546,16 @@ async function saveItem(){
     showAppDialog('Reikia Premium', 'Prieš pridėdami naujus įrašus atnaujinkite Premium arba perkelkite esamus įrašus į šį įrenginį.', '');
     return;
   }
+  const duplicate = findDuplicateItem({
+    name: f.name,
+    shop: f.shop,
+    purchaseDate: f.purchaseDate,
+    docNumber: f.docNumber,
+  });
+  if(duplicate){
+    showAppDialog('Toks įrašas jau yra', `Šis čekis ir prekė panašūs į jau išsaugotą įrašą „${duplicate.name || 'be pavadinimo'}“. Jei reikia pakeisti duomenis, atidarykite esamą įrašą ir redaguokite jį.`, '', {hideSupport:true});
+    return;
+  }
 
   // Charge AI quota now, only if this save includes AI-assisted data the
   // user is actually keeping. Scans that were retried/discarded never
@@ -2652,6 +2684,27 @@ async function saveMultiItems(){
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !isPremiumUser()){
     showAppDialog('Reikia Premium', 'Prieš pridėdami naujus įrašus atnaujinkite Premium arba perkelkite esamus įrašus į šį įrenginį.', '');
+    return;
+  }
+  const duplicates = selected
+    .map(item=>({
+      item,
+      existing: findDuplicateItem({
+        name: item.name,
+        shop: r.shop,
+        purchaseDate: r.purchaseDate,
+        docNumber: r.docNumber,
+      })
+    }))
+    .filter(x=>x.existing);
+  if(duplicates.length){
+    const names = duplicates.slice(0,3).map(x=>`„${x.item.name || x.existing.name || 'be pavadinimo'}“`).join(', ');
+    showAppDialog(
+      'Šis čekis jau pridėtas',
+      `Radau ${duplicates.length} jau išsaugotą prek${duplicates.length===1?'ę':'es'} iš šio čekio: ${names}${duplicates.length>3?' ir kt.':''}. Dublikatų nekuriu. Jei reikia pataisyti duomenis, redaguokite esamus įrašus.`,
+      '',
+      {hideSupport:true}
+    );
     return;
   }
   let saved=0, failed=0;
@@ -3523,6 +3576,20 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     }else{
       state.aiNameReview = false;
       const warrantyCount = items.filter(i=>i.warrantyApplies!==false).length;
+      const duplicateCount = items.filter(it=>findDuplicateItem({
+        name: it.name,
+        shop: p.shop,
+        purchaseDate: p.purchaseDate,
+        docNumber: p.docNumber,
+      })).length;
+      if(duplicateCount){
+        showAppDialog(
+          'Šis čekis jau yra',
+          `Radau ${duplicateCount} prek${duplicateCount===1?'ę':'es'}, kurios jau išsaugotos iš šio čekio. Dublikatų nekursiu; jei reikia, redaguokite esamus įrašus.`,
+          '',
+          {hideSupport:true}
+        );
+      }
       state.multiItemReceipt = {
         items: items.map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _returnDays:normalizeReturnDays(p.returnDays, p.shop), _docType:p.docType, _docNumber:p.docNumber, selected:it.warrantyApplies!==false})),
         shop: p.shop, purchaseDate: p.purchaseDate, returnDays: normalizeReturnDays(p.returnDays, p.shop), docType: p.docType, docNumber: p.docNumber,
