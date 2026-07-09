@@ -1232,6 +1232,22 @@ function renderDetail(){
     {i:'ti-calendar-due',l:'Garantija iki',v:fmtDate(item.warrantyEnd)},
     ...(daysLeft(effectiveReturnDeadline(item))!==null && daysLeft(effectiveReturnDeadline(item))>=0 ? [{i:'ti-rotate-2',l:`${effectiveReturnDays(item)} d. grąžinimas iki`,v:fmtDate(effectiveReturnDeadline(item))}] : []),
   ].map(r=>`<div class="detail-row"><i class="ti ${r.i}"></i><span class="dr-label">${esc(r.l)}</span><span class="dr-val">${esc(r.v)}</span></div>`).join('');
+  const warrantyNotifs = Array.isArray(item.notifyDays) ? [...item.notifyDays].sort((a,b)=>a-b) : [];
+  const returnNotifs = Array.isArray(item.notifyReturnDays) ? [...item.notifyReturnDays].sort((a,b)=>a-b) : [];
+  const remindersOn = item.notifyEnabled !== false && (warrantyNotifs.length || returnNotifs.length || item.notifyRepeatDays);
+  const reminderText = remindersOn
+    ? [
+        warrantyNotifs.length ? `Garantija: ${warrantyNotifs.map(d=>d===1?'1 d.':d===7?'1 sav.':d===30?'1 mėn.':d+' d.').join(', ')}` : '',
+        returnNotifs.length ? `Grąžinimas: ${returnNotifs.map(d=>d===1?'1 d.':d===7?'1 sav.':d+' d.').join(', ')}` : '',
+      ].filter(Boolean).join(' · ')
+    : 'Priminimai šiam įrašui išjungti';
+  const remindersSection = state.storageMode==='cloud' ? `<div class="detail-section">
+    <button class="settings-row tappable" id="editRemindersBtn" style="width:100%;background:var(--bg2);border:none;text-align:left;border-radius:var(--radius);padding:14px 16px">
+      <i class="ti ti-bell row-icon" style="color:${remindersOn?'var(--accent)':'var(--text3)'}"></i>
+      <span class="settings-row-label">Priminimai<small>${esc(reminderText)}</small></span>
+      <span style="color:var(--accent);font-weight:700;font-size:15px;white-space:nowrap">Keisti</span>
+    </button>
+  </div>` : '';
 
   const policySection = isPremium ? `<div class="detail-section">
     ${state.policyChecking ? `<div class="analyzing-row" style="justify-content:center"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI tikrina garantijos politiką...</span></div>`
@@ -1254,6 +1270,7 @@ function renderDetail(){
     </div>
     ${docHtml}
     <div class="detail-section"><div class="detail-rows">${rows}</div></div>
+    ${remindersSection}
     ${item.notes?`<div class="detail-section"><div class="notes-card"><div class="nc-label">Pastabos</div><p>${esc(item.notes)}</p></div></div>`:''}
     ${policySection}
     <div class="detail-section"><button class="delete-btn" id="deleteBtn2"><i class="ti ti-trash"></i>Ištrinti įrašą</button></div>
@@ -1438,14 +1455,17 @@ function showNotifModal(itemId, itemData){
 
   const returnDeadline = effectiveReturnDeadline(item);
   const suggested = suggestNotifDays(item?.warrantyMonths, !!returnDeadline);
-  // Naudoti paskutinius nustatymus jei yra, kitaip siūlomus
-  const defaults = state._lastNotifDays || suggested;
+  // Editing an existing item should show its saved choices. New items use the last preference.
+  const savedWarrantyDays = Array.isArray(item.notifyDays) ? item.notifyDays : null;
+  const savedReturnDays = Array.isArray(item.notifyReturnDays) ? item.notifyReturnDays : null;
+  const defaults = savedWarrantyDays || state._lastNotifDays || suggested;
 
   state.notifModal = {
     itemId: firstItemId,
     itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
+    enabled: item.notifyEnabled !== false,
     selectedDays: [...defaults],
-    returnSelectedDays: returnDeadline ? (state._lastReturnNotifDays || [3]) : [],
+    returnSelectedDays: returnDeadline ? [...(savedReturnDays || state._lastReturnNotifDays || [3])] : [],
     hasReturn: !!returnDeadline,
     repeatEnabled: false,
     repeatInterval: 7,
@@ -1461,41 +1481,40 @@ function renderNotifModal(){
   const DAY_OPTS = [1,3,7,14,30,60];
   const sel = new Set(m.selectedDays);
   const retSel = new Set(m.returnSelectedDays);
+  const enabled = m.enabled !== false;
+  const canSave = !enabled || sel.size > 0 || retSel.size > 0;
 
   return `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-end">
-    <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 40px;max-height:85vh;overflow-y:auto">
+    <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 34px;max-height:85vh;overflow-y:auto">
       <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
-      <h3 style="font-size:18px;font-weight:700;margin:0 0 6px">Priminimai</h3>
-      <p style="font-size:14px;color:var(--text3);margin:0 0 20px">Pasirinkite, kada norite gauti priminimą. Šiuos pasirinkimus prisiminsime kitam įrašui.</p>
+      <h3 style="font-size:19px;font-weight:750;margin:0 0 6px">Kada priminti?</h3>
+      <p style="font-size:14px;color:var(--text2);margin:0 0 18px;line-height:1.4">Pasirinkite priminimus šiam įrašui. Tuos pačius pasirinkimus pasiūlysime ir kitą kartą.</p>
 
-      ${m.item?.warrantyEnd ? `
-      <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Prieš garantijos pabaigą</p>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+        <button id="notifMasterOn" class="chip${enabled?' active':''}" style="justify-content:center;height:44px;border-radius:14px;font-size:15px">Gauti priminimus</button>
+        <button id="notifMasterOff" class="chip${!enabled?' active':''}" style="justify-content:center;height:44px;border-radius:14px;font-size:15px">Nepriminti</button>
+      </div>
+
+      ${enabled && m.item?.warrantyEnd ? `
+      <p style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.4px;margin:0 0 10px">Garantija</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px">
         ${DAY_OPTS.map(d=>`
-          <button class="notif-day-btn${sel.has(d)?' active':''}" data-day="${d}" style="padding:8px 14px;border-radius:20px;border:1.5px solid ${sel.has(d)?'var(--accent)':'var(--border2)'};background:${sel.has(d)?'var(--accent)':'transparent'};color:${sel.has(d)?'#fff':'var(--text2)'};font-size:14px;font-weight:500;cursor:pointer">
+          <button class="notif-day-btn chip${sel.has(d)?' active':''}" data-day="${d}" style="height:40px;border-radius:999px;font-size:14px">
             ${d===1?'1 dieną':d===7?'1 savaitę':d===30?'1 mėnesį':d===60?'2 mėnesius':d+' d.'}
           </button>`).join('')}
       </div>` : ''}
 
-      ${m.hasReturn ? `
-      <p style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px">Prieš grąžinimo terminą</p>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+      ${enabled && m.hasReturn ? `
+      <p style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.4px;margin:0 0 10px">Grąžinimas</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px">
         ${[1,2,3,5,7].map(d=>`
-          <button class="notif-ret-btn${retSel.has(d)?' active':''}" data-day="${d}" style="padding:8px 14px;border-radius:20px;border:1.5px solid ${retSel.has(d)?'var(--accent)':'var(--border2)'};background:${retSel.has(d)?'var(--accent)':'transparent'};color:${retSel.has(d)?'#fff':'var(--text2)'};font-size:14px;font-weight:500;cursor:pointer">
+          <button class="notif-ret-btn chip${retSel.has(d)?' active':''}" data-day="${d}" style="height:40px;border-radius:999px;font-size:14px">
             ${d===1?'1 dieną':d===7?'1 savaitę':d+' d.'}
           </button>`).join('')}
       </div>` : ''}
 
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-top:0.5px solid var(--border);margin-bottom:20px">
-        <div>
-          <div style="font-size:15px;font-weight:500">Kartoti kas savaitę</div>
-          <div style="font-size:13px;color:var(--text3)">Nuo 30 dienų iki pabaigos</div>
-        </div>
-        <button class="toggle-switch${m.repeatEnabled?' on':''}" id="notifRepeatToggle"><div class="knob"></div></button>
-      </div>
-
-      <button id="notifSaveBtn" class="save-btn" style="margin-bottom:10px">Išsaugoti</button>
-      <button id="notifSkipBtn" style="background:none;border:none;color:var(--text3);font-size:14px;width:100%;padding:12px;cursor:pointer">Nepriminti</button>
+      ${enabled && !canSave ? `<p style="font-size:13px;color:var(--orange);margin:-8px 0 14px">Pasirinkite bent vieną priminimo laiką.</p>` : ''}
+      <button id="notifSaveBtn" class="save-btn" ${canSave?'':'disabled'}>Išsaugoti pasirinkimą</button>
     </div>
   </div>`;
 }
@@ -2086,8 +2105,22 @@ function attachEvents(){
     if(state.multiItemReceipt) state.multiItemReceipt.items[idx].category=e.target.value;
   });
   on('multiSaveBtn','click', saveMultiItems);
-  on('notifSkipBtn','click',()=>saveNotifSettings(true));
-  on('notifRepeatToggle','click',()=>{ if(state.notifModal) state.notifModal.repeatEnabled=!state.notifModal.repeatEnabled; render(); });
+  on('editRemindersBtn','click',()=>{
+    const item = state.items.find(i=>i.id===state.selected);
+    if(item) showNotifModal(item.id, item);
+  });
+  on('notifMasterOn','click',()=>{
+    if(!state.notifModal) return;
+    state.notifModal.enabled = true;
+    if(!state.notifModal.selectedDays?.length) state.notifModal.selectedDays = suggestNotifDays(state.notifModal.item?.warrantyMonths, state.notifModal.hasReturn);
+    if(state.notifModal.hasReturn && !state.notifModal.returnSelectedDays?.length) state.notifModal.returnSelectedDays = [3];
+    render();
+  });
+  on('notifMasterOff','click',()=>{
+    if(!state.notifModal) return;
+    state.notifModal.enabled = false;
+    render();
+  });
   on('notifSaveBtn','click', saveNotifSettings);
   onAll('.notif-day-btn','click',e=>{
     const d=parseInt(e.currentTarget.dataset.day);
@@ -2242,9 +2275,10 @@ async function saveNotifSettings(skip=false){
   const m = state.notifModal;
   if(!m) return;
 
-  const selectedDays = skip ? [] : [...m.selectedDays];
-  const returnDays = skip ? [] : [...m.returnSelectedDays];
-  const enabled = !skip && (selectedDays.length>0 || returnDays.length>0 || m.repeatEnabled);
+  const enabledByUser = m.enabled !== false;
+  const selectedDays = skip || !enabledByUser ? [] : [...m.selectedDays];
+  const returnDays = skip || !enabledByUser ? [] : [...m.returnSelectedDays];
+  const enabled = !skip && enabledByUser && (selectedDays.length>0 || returnDays.length>0);
 
   // Išsaugoti kaip naujus defaults, kad kitas įrašas siūlytų tą patį.
   state._lastNotifDays = selectedDays;
@@ -2257,7 +2291,7 @@ async function saveNotifSettings(skip=false){
     notifyReturnDays: returnDays,
     returnDays: effectiveReturnDays(m.item),
     returnDeadline: effectiveReturnDeadline(m.item),
-    notifyRepeatDays: enabled && m.repeatEnabled ? { interval: m.repeatInterval, startDay: 30 } : null,
+    notifyRepeatDays: null,
   };
 
   try{
