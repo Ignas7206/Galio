@@ -256,11 +256,11 @@
     .detail-status .ds-val { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
     .detail-section { margin: 0 16px 16px; }
     .detail-rows { background: var(--bg2); border-radius: var(--radius); overflow: hidden; }
-    .detail-row { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-bottom: 0.5px solid var(--border); }
+    .detail-row { display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border-bottom: 0.5px solid var(--border); }
     .detail-row:last-child { border-bottom: none; }
-    .detail-row i { font-size: 18px; color: var(--text3); width: 20px; flex-shrink: 0; }
-    .detail-row .dr-label { font-size: 14px; color: var(--text2); flex: 1; }
-    .detail-row .dr-val { font-size: 14px; font-weight: 500; color: var(--text); text-align: right; }
+    .detail-row i { font-size: 18px; color: var(--text3); width: 20px; flex-shrink: 0; margin-top: 1px; }
+    .detail-row .dr-label { font-size: 14px; color: var(--text2); flex-shrink: 0; }
+    .detail-row .dr-val { font-size: 14px; font-weight: 500; color: var(--text); text-align: right; flex: 1; min-width: 0; word-break: break-word; }
     .notes-card { background: var(--bg2); border-radius: var(--radius); padding: 14px 16px; }
     .notes-card .nc-label { font-size: 13px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
     .notes-card p { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
