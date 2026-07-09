@@ -880,7 +880,7 @@ function renderList(){
   </div>` : '';
   const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Perkelkite įrašus į šį telefoną arba atnaujinkite Premium, kad veiktų atsarginė kopija ir priminimai.</div>
+    <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Perkelkite įrašus į šį telefoną arba atnaujinkite Premium, kad jie liktų paskyroje ir veiktų priminimai.</div>
     <button id="downgradeStorageBtn" style="background:var(--orange)">Perkelti</button>
   </div>` : '';
 
@@ -1298,7 +1298,7 @@ function renderSettings(){
 
     ${needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 16px">
       <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-      <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Debesies kopija liko įjungta tik tam, kad galėtumėte saugiai perkelti įrašus į telefoną.</div>
+      <div class="pb-text" style="color:var(--text)">Premium neaktyvus. Įrašai dar laikomi paskyroje tik tam, kad galėtumėte juos saugiai perkelti į telefoną.</div>
       <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
     </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
@@ -1306,16 +1306,16 @@ function renderSettings(){
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
 
-    <p class="form-label-section" style="margin:0 16px 8px">Duomenų vieta</p>
+    <p class="form-label-section" style="margin:0 16px 8px">Kur saugomi įrašai</p>
     <div class="form-section" style="margin:0 16px 8px">
       <button class="settings-row tappable" id="storageModeToggle" style="width:100%;background:none;border:none;text-align:left;align-items:flex-start;gap:12px;${(!isPremium && !isCloud)?'opacity:0.65':''}" ${(!isPremium && !isCloud)?'disabled':''}>
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i>
-        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Atsarginė kopija įjungta':'Tik šiame telefone'}<small>${isCloud?'Įrašai pasiekiami kituose įrenginiuose, veikia automatiniai priminimai':'Įrašai lieka tik šiame įrenginyje, automatiniai priminimai neveikia'}</small></div>
-        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.25;text-align:right;max-width:120px">${isCloud?'Išjungti':'Įjungti kopiją'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
+        <div class="settings-row-label" style="min-width:0;flex:1">${isCloud?'Paskyroje':'Tik šiame telefone'}<small>${isCloud?'Matysite kituose įrenginiuose, veiks pasirinkti priminimai':'Veikia be debesies, bet tik šiame įrenginyje'}</small></div>
+        ${isPremium || isCloud ? `<span style="font-size:14px;color:var(--accent);font-weight:600;line-height:1.25;text-align:right;max-width:132px">${isCloud?'Palikti tik telefone':'Saugoti paskyroje'}</span>` : '<i class="ti ti-lock" style="color:var(--text3);font-size:16px"></i>'}
       </button>
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5">
-      ${isCloud?'Įrašai saugomi atsarginėje kopijoje: juos matysite prisijungę kituose įrenginiuose, o pasirinkti priminimai galės būti siunčiami į telefoną.':isPremium?'Dabar įrašai laikomi tik šiame telefone. Įjunkite atsarginę kopiją, jei norite juos matyti kituose įrenginiuose ir gauti automatinius priminimus.':'Nemokamame plane įrašai saugomi tik telefone. Atsarginė kopija ir automatiniai priminimai prieinami Premium paskyroms.'}
+      ${isCloud?'Įrašai susieti su jūsų paskyra: prisijungę juos matysite kitame telefone, o pasirinkti priminimai galės būti siunčiami automatiškai.':isPremium?'Dabar įrašai laikomi tik šiame telefone. Pasirinkite „Saugoti paskyroje“, jei norite juos matyti kituose įrenginiuose ir gauti automatinius priminimus.':'Nemokamame plane įrašai laikomi tik telefone. Premium leidžia saugoti paskyroje ir gauti automatinius priminimus.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -1351,7 +1351,7 @@ function renderSettings(){
     <div class="form-section" style="margin:0 16px 20px">
       <div class="settings-row" style="${!isCloud?'opacity:0.65':''}">
         <i class="ti ti-bell row-icon"></i>
-        <div class="settings-row-label">Priminimai<small>${isCloud?'Siunčiami tik pasirinkus priminimus prie įrašo':'Veikia tik įjungus atsarginę kopiją'}</small></div>
+        <div class="settings-row-label">Priminimai<small>${isCloud?'Siunčiami tik pasirinkus priminimus prie įrašo':'Veikia tik kai įrašai saugomi paskyroje'}</small></div>
         <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
       </div>
     </div>
@@ -1493,7 +1493,7 @@ function renderPremium(){
   const feats = [
     { icon:'ti-bell-ringing', color:'var(--accent)', title:'Automatiniai priminimai',
       text:'Pranešimai prieš garantijos pabaigą ir grąžinimo terminą — net kai programėlė uždaryta.' },
-    { icon:'ti-cloud', color:'#3b9eff', title:'Atsarginė kopija',
+    { icon:'ti-cloud', color:'#3b9eff', title:'Įrašai paskyroje',
       text:'Įrašai sinchronizuojami su jūsų paskyra ir pasiekiami iš bet kurio įrenginio.' },
     { icon:'ti-sparkles', color:'#f5a623', title:`Iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną`,
       text:`Skenuokite kvitus be rūpesčių — ${PREMIUM_MONTHLY_LIMIT} analizių per mėnesį (nemokamai tik ${AI_FREE_USES} visam laikui).` },
@@ -2187,7 +2187,7 @@ async function saveNotifSettings(skip=false){
 async function testNotification(){
   if(state.userDoc?.role!=='admin'){ toast('Tik administratoriui'); return; }
   if(state.storageMode!=='cloud'){
-    showAppDialog('Reikia atsarginės kopijos','Priminimų testui pirmiausia įjunkite atsarginę kopiją nustatymuose. Serverio pranešimai veikia tik su įrašais, kurie saugomi paskyroje.','',{hideSupport:true});
+    showAppDialog('Reikia saugoti paskyroje','Priminimų testui pirmiausia nustatymuose pasirinkite „Saugoti paskyroje“. Automatiniai priminimai veikia tik su įrašais, kurie susieti su paskyra.','',{hideSupport:true});
     return;
   }
 
@@ -2908,7 +2908,7 @@ async function checkPolicy(item){
 async function toggleNotify(){
   if(!state.user)return;
   if(state.storageMode!=='cloud'){
-    showAppDialog('Priminimai neveiks', 'Automatiniai pranešimai veikia tik tada, kai įrašai saugomi atsarginėje kopijoje. Įrašams, laikomiems tik telefone, priminimų serveris nemato.');
+    showAppDialog('Priminimai neveiks', 'Automatiniai pranešimai veikia tik tada, kai įrašai saugomi paskyroje. Įrašams, laikomiems tik telefone, galite matyti terminus programėlėje, bet telefonas negaus automatinių priminimų.');
     return;
   }
   const current = state.userDoc?.notifyEnabled !== false;
@@ -3048,22 +3048,22 @@ async function toggleStorageMode(){
 
   if(wantsCloud && !isPremium){
     showAppDialog(
-      'Atsarginė kopija neprieinama',
+      'Saugoti paskyroje negalima',
       'Ši funkcija prieinama Premium paskyroms.',
-      'Nepavyksta įjungti atsarginės kopijos. Mano paskyra: ' + (state.user?.email || '')
+      'Nepavyksta pasirinkti saugojimo paskyroje. Mano paskyra: ' + (state.user?.email || '')
     );
     return;
   }
 
   const confirmMsg = wantsCloud
-    ? `Įjungti atsarginę kopiją?\n\nJūsų įrašai bus saugomi saugiai ir matomi kituose jūsų įrenginiuose prisijungus tuo pačiu el. paštu.`
-    : `Išjungti atsarginę kopiją?\n\nJūsų ${state.items.length} įrašai liks tik šiame telefone. Kituose įrenginiuose jų nebematysite, o praradus telefoną galite prarasti ir šiuos įrašus.`;
+    ? `Saugoti įrašus paskyroje?\n\nJuos matysite kituose įrenginiuose prisijungę tuo pačiu el. paštu, o pasirinkti priminimai galės veikti automatiškai.`
+    : `Palikti įrašus tik šiame telefone?\n\nJūsų ${state.items.length} įrašai nebebus matomi kituose įrenginiuose, o automatiniai priminimai neveiks.`;
   if(!confirm(confirmMsg)) return;
 
-  if(!wantsCloud && !confirm('Patvirtinkite: išjungti atsarginę kopiją ir laikyti įrašus tik šiame telefone.')) return;
+  if(!wantsCloud && !confirm('Patvirtinkite: įrašus laikyti tik šiame telefone.')) return;
 
   const itemsToMigrate = state.items.slice();
-  toast(wantsCloud ? 'Įjungiama atsarginė kopija...' : 'Išjungiama atsarginė kopija...', 8000);
+  toast(wantsCloud ? 'Įrašai perkeliami į paskyrą...' : 'Įrašai perkeliami į telefoną...', 8000);
   state.migratingStorage = true;
 
   try{
@@ -3073,17 +3073,7 @@ async function toggleStorageMode(){
         storageMode: 'cloud',
         premiumDowngradeRequired: false,
       };
-      if(state.userDoc?.role==='admin' && state.userDoc?.plan!=='premium'){
-        profilePatch.plan = 'premium';
-        profilePatch.planSource = 'admin';
-        profilePatch.subscriptionStatus = '';
-      }
       await updateDoc(doc(db,'users',state.user.uid), profilePatch);
-      if(profilePatch.plan){
-        state.userDoc.plan = profilePatch.plan;
-        state.userDoc.planSource = profilePatch.planSource;
-        state.userDoc.subscriptionStatus = '';
-      }
 
       if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
 
@@ -3150,7 +3140,7 @@ async function toggleStorageMode(){
     state.storageError = '';
     showAppDialog(
       'Pakeista',
-      wantsCloud ? 'Atsarginė kopija įjungta.' : 'Atsarginė kopija išjungta. Įrašai saugomi tik šiame telefone.'
+      wantsCloud ? 'Įrašai saugomi paskyroje.' : 'Įrašai saugomi tik šiame telefone.'
     );
   }catch(e){
     console.warn('Storage mode migration error:', e);
@@ -3158,7 +3148,7 @@ async function toggleStorageMode(){
     showAppDialog(
       'Nepavyko pakeisti nustatymo',
       'Nepavyko pakeisti, kur saugomi įrašai. Patikrinkite, ar matote visus savo įrašus, ir susisiekite su pagalba.',
-      `Nepavyko pakeisti įrašų saugojimo nustatymo.\nPaskyra: ${state.user?.email || ''}\nVeiksmas: ${wantsCloud ? 'įjungti atsarginę kopiją' : 'išjungti atsarginę kopiją'}`
+      `Nepavyko pakeisti įrašų saugojimo nustatymo.\nPaskyra: ${state.user?.email || ''}\nVeiksmas: ${wantsCloud ? 'saugoti paskyroje' : 'laikyti tik telefone'}`
     );
   }finally{
     state.migratingStorage = false;
