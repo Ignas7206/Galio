@@ -3063,20 +3063,29 @@ async function toggleStorageMode(){
   if(!wantsCloud && !confirm('Patvirtinkite: įrašus laikyti tik šiame telefone.')) return;
 
   const itemsToMigrate = state.items.slice();
+  const hasDocumentsToMove = itemsToMigrate.some(item => !!(item.docUrl && item.docMime));
+  let migrationStep = wantsCloud ? 'Galio debesies įjungimas' : 'perkėlimas į telefoną';
+  let docMoveFailures = 0;
   toast(wantsCloud ? 'Įrašai perkeliami į Galio debesį...' : 'Įrašai perkeliami į telefoną...', 8000);
   state.migratingStorage = true;
 
   try{
     if(wantsCloud){
+      migrationStep = 'Galio debesies įjungimas';
       const profilePatch = {
         itemCount: itemsToMigrate.length,
         storageMode: 'cloud',
-        premiumDowngradeRequired: false,
       };
       await updateDoc(doc(db,'users',state.user.uid), profilePatch);
+      try{
+        await updateDoc(doc(db,'users',state.user.uid), { premiumDowngradeRequired: false });
+      }catch(e){
+        console.warn('Could not clear downgrade flag; continuing migration:', e);
+      }
 
       if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
 
+      migrationStep = 'įrašų kūrimas Galio debesyje';
       for(const item of itemsToMigrate){
         const payload = {
           name:item.name, category:item.category, shop:item.shop||'',
@@ -3087,6 +3096,7 @@ async function toggleStorageMode(){
         };
         const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), payload);
         if(item.docUrl && item.docMime){
+          migrationStep = 'nuotraukų ir dokumentų perkėlimas';
           try{
             const ext = item.docMime==='application/pdf'?'pdf':(item.docMime.split('/')[1]||'jpg');
             const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
@@ -3095,17 +3105,24 @@ async function toggleStorageMode(){
             await uploadBytes(ref(storage,path), blob, {contentType:item.docMime});
             const url = await getDownloadURL(ref(storage,path));
             await updateDoc(docRef, { docUrl:url, docMime:item.docMime, docFileName:item.docFileName, docStoragePath:path });
-          }catch(e){ console.warn('Migration upload failed for item:', item.id, e); }
+          }catch(e){
+            docMoveFailures++;
+            console.warn('Migration upload failed for item:', item.id, e);
+          }
+          migrationStep = 'įrašų kūrimas Galio debesyje';
         }
       }
+      migrationStep = 'vietinių įrašų užbaigimas';
       await localClear(state.user.uid);
       attachItemsListener(state.user.uid);
     }else{
       if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
 
+      migrationStep = 'įrašų perkėlimas į telefoną';
       for(const item of itemsToMigrate){
         let localDocUrl = null;
         if(item.docUrl){
+          migrationStep = 'nuotraukų ir dokumentų perkėlimas';
           try{
             const resp = await fetch(item.docUrl);
             const blob = await resp.blob();
@@ -3115,7 +3132,11 @@ async function toggleStorageMode(){
               r.onerror = rej;
               r.readAsDataURL(blob);
             });
-          }catch(e){ console.warn('Migration download failed for item:', item.id, e); }
+          }catch(e){
+            docMoveFailures++;
+            console.warn('Migration download failed for item:', item.id, e);
+          }
+          migrationStep = 'įrašų perkėlimas į telefoną';
         }
         const localItem = {
           id: genLocalId(), name:item.name, category:item.category, shop:item.shop||'',
@@ -3130,25 +3151,40 @@ async function toggleStorageMode(){
         }
         try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',item.id)); }catch(e){}
       }
+      migrationStep = 'telefono režimo įjungimas';
       await updateDoc(doc(db,'users',state.user.uid), {
         itemCount: 0,
         storageMode: 'local',
-        premiumDowngradeRequired: false,
       });
+      try{
+        await updateDoc(doc(db,'users',state.user.uid), { premiumDowngradeRequired: false });
+      }catch(e){
+        console.warn('Could not clear downgrade flag; continuing migration:', e);
+      }
       attachItemsListener(state.user.uid);
     }
     state.storageError = '';
     showAppDialog(
       'Pakeista',
-      wantsCloud ? 'Įrašai perkelti į Galio debesį.' : 'Įrašai saugomi tik šiame telefone.'
+      docMoveFailures
+        ? `${wantsCloud ? 'Įrašai perkelti į Galio debesį' : 'Įrašai perkelti į telefoną'}, bet ${docMoveFailures} dokumento ar nuotraukos perkelti nepavyko. Patikrinkite įrašus.`
+        : (wantsCloud ? 'Įrašai perkelti į Galio debesį.' : 'Įrašai saugomi tik šiame telefone.')
     );
   }catch(e){
     console.warn('Storage mode migration error:', e);
     state.storageError = '';
+    const code = e?.code || '';
+    const permissionProblem = code.includes('permission-denied');
+    const documentHint = hasDocumentsToMove
+      ? 'Jei klaida kartosis, gali būti, kad nepavyksta perkelti dokumentų ar nuotraukų.'
+      : 'Šiame perkėlime nėra dokumentų ar nuotraukų, todėl klaida ne dėl jų.';
+    const message = permissionProblem
+      ? `Trūksta leidimo atlikti veiksmą: ${migrationStep}. ${documentHint}`
+      : `Nepavyko atlikti veiksmo: ${migrationStep}. ${documentHint}`;
     showAppDialog(
       'Nepavyko pakeisti nustatymo',
-      'Nepavyko pakeisti, kur saugomi įrašai. Patikrinkite, ar matote visus savo įrašus, ir susisiekite su pagalba.',
-      `Nepavyko pakeisti įrašų saugojimo nustatymo.\nEl. paštas: ${state.user?.email || ''}\nVeiksmas: ${wantsCloud ? 'perkelti į Galio debesį' : 'laikyti tik telefone'}`
+      message,
+      `Nepavyko pakeisti įrašų saugojimo nustatymo.\nEl. paštas: ${state.user?.email || ''}\nVeiksmas: ${wantsCloud ? 'perkelti į Galio debesį' : 'laikyti tik telefone'}\nEtapas: ${migrationStep}\nKodas: ${code || 'nežinomas'}`
     );
   }finally{
     state.migratingStorage = false;
