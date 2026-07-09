@@ -2186,10 +2186,6 @@ async function saveNotifSettings(skip=false){
 
 async function testNotification(){
   if(state.userDoc?.role!=='admin'){ toast('Tik administratoriui'); return; }
-  if(state.storageMode!=='cloud'){
-    showAppDialog('Reikia Galio debesies','Priminimų testui pirmiausia perkelkite įrašus į Galio debesį. Automatiniai priminimai veikia tik su debesyje esančiais įrašais.','',{hideSupport:true});
-    return;
-  }
 
   toast('1/4 Ruošiamas testas...');
   let tempId=null;
@@ -2198,6 +2194,25 @@ async function testNotification(){
     const ok = await requestPushPermission();
     if(!ok){
       showAppDialog('Nepavyko','Nepavyko gauti pranešimų leidimo. Įjunkite pranešimus naršyklės nustatymuose šiai svetainei.','',{hideSupport:true});
+      return;
+    }
+
+    if(state.storageMode!=='cloud'){
+      toast('2/2 Siunčiamas tiesioginis testas...');
+      const directUrl = `https://europe-west1-garantijos-4f397.cloudfunctions.net/testWarrantyNotification?uid=${state.user.uid}&date=${today()}&direct=1`;
+      const resp = await fetch(directUrl);
+      const data = await resp.json();
+      if(data.sent>0){
+        showAppDialog(
+          'Push testas pavyko ✓',
+          'Pranešimas išsiųstas. Nuotraukų ar čekių šiam testui nereikia. Tikri terminų priminimai veiks tada, kai įrašai bus Galio debesyje.',
+          '',
+          {hideSupport:true}
+        );
+      }else{
+        const reason = data.reason || data.error || 'nežinoma priežastis';
+        showAppDialog('Testas neišsiuntė',`Pranešimas neišsiųstas. Priežastis: ${reason}. Nuotraukos tam įtakos neturi.`,'',{hideSupport:true});
+      }
       return;
     }
 
