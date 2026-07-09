@@ -1144,6 +1144,7 @@ function renderAdd(){
         <div class="form-field">
           <label>Grąžinimas, dienos</label>
           <input type="number" id="f_returnDays" min="1" max="365" inputmode="numeric" value="${esc(normalizeReturnDays(f.returnDays, f.shop))}" />
+          ${f.purchaseDate?`<div style="font-size:13px;color:var(--text2);margin-top:6px;line-height:1.35">Grąžinti iki ${fmtDate(calcReturnDeadline(f.purchaseDate,f.returnDays,f.shop))}</div>`:''}
         </div>
       </div>
       ${f.warrantyAppliesWarning ? `<div class="plan-banner" style="margin-bottom:16px;background:var(--orange-bg)">
@@ -1151,13 +1152,6 @@ function renderAdd(){
         <div class="pb-text" style="color:var(--text);font-size:14px">AI: šiai prekei garantija paprastai netaikoma. Jei vis tiek norite saugoti, nurodykite garantijos pabaigos datą rankiniu būdu.</div>
       </div>` : ''}
         ${f.warrantyMonths===null?`<div class="form-field"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
-        ${f.purchaseDate?`<div style="background:rgba(59,130,246,.12);border-radius:var(--radius);padding:14px 16px;margin-top:12px;display:flex;gap:12px;align-items:flex-start">
-          <i class="ti ti-rotate-2" style="font-size:22px;color:#60a5fa;flex-shrink:0"></i>
-          <div>
-            <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:3px">${normalizeReturnDays(f.returnDays, f.shop)} d. grąžinimas iki ${fmtDate(calcReturnDeadline(f.purchaseDate,f.returnDays,f.shop))}</div>
-            <div style="font-size:13px;color:var(--text2);line-height:1.35">Patogu sekti internetinių pirkinių grąžinimo terminą.</div>
-          </div>
-        </div>`:''}
         ${!f.warrantyEnd?`<div style="font-size:13px;color:var(--orange);padding:10px 2px 0">Nurodykite garantijos pabaigos datą, kad galėtumėte išsaugoti.</div>`:''}
       </div>
 
@@ -1897,7 +1891,7 @@ function attachEvents(){
       purchaseDate: item.purchaseDate||'',
       warrantyEnd: item.warrantyEnd||'',
       warrantyMonths: item.warrantyMonths??24,
-      returnDays: item.returnDays??14,
+      returnDays: effectiveReturnDays(item),
       docType: item.docType||'Kvitas / čekis',
       docNumber: item.docNumber||'',
       notes: item.notes||'',
