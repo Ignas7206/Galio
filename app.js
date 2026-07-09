@@ -2553,7 +2553,7 @@ async function saveItem(){
     docNumber: f.docNumber,
   });
   if(duplicate){
-    showAppDialog('Toks įrašas jau yra', `Šis čekis ir prekė panašūs į jau išsaugotą įrašą „${duplicate.name || 'be pavadinimo'}“. Jei reikia pakeisti duomenis, atidarykite esamą įrašą ir redaguokite jį.`, '', {hideSupport:true});
+    showAppDialog('Įrašas jau išsaugotas', `Ši prekė jau yra jūsų garantijų sąraše: „${duplicate.name || 'be pavadinimo'}“. Norėdami pakeisti informaciją, atidarykite esamą įrašą ir pasirinkite redagavimą.`, '', {hideSupport:true});
     return;
   }
 
@@ -2700,8 +2700,8 @@ async function saveMultiItems(){
   if(duplicates.length){
     const names = duplicates.slice(0,3).map(x=>`„${x.item.name || x.existing.name || 'be pavadinimo'}“`).join(', ');
     showAppDialog(
-      'Šis čekis jau pridėtas',
-      `Radau ${duplicates.length} jau išsaugotą prek${duplicates.length===1?'ę':'es'} iš šio čekio: ${names}${duplicates.length>3?' ir kt.':''}. Dublikatų nekuriu. Jei reikia pataisyti duomenis, redaguokite esamus įrašus.`,
+      'Čekis jau išsaugotas',
+      `Šio čekio prekės jau yra garantijų sąraše: ${names}${duplicates.length>3?' ir kt.' : ''}. Norėdami pakeisti informaciją, redaguokite esamus įrašus.`,
       '',
       {hideSupport:true}
     );
@@ -3584,8 +3584,8 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
       })).length;
       if(duplicateCount){
         showAppDialog(
-          'Šis čekis jau yra',
-          `Radau ${duplicateCount} prek${duplicateCount===1?'ę':'es'}, kurios jau išsaugotos iš šio čekio. Dublikatų nekursiu; jei reikia, redaguokite esamus įrašus.`,
+          'Čekis jau išsaugotas',
+          `Šio čekio prekės jau yra garantijų sąraše. Norėdami pakeisti informaciją, redaguokite esamus įrašus.`,
           '',
           {hideSupport:true}
         );
