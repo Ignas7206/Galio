@@ -421,6 +421,20 @@
 <script type="module" src="app.js?v=20260710-0037"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js?v=20260710-0045').then(reg => {
+        reg.update();
+        reg.addEventListener('updatefound', () => {
+          const worker = reg.installing;
+          if (!worker) return;
+          worker.addEventListener('statechange', () => {
+            if (worker.state === 'activated' && navigator.serviceWorker.controller) {
+              location.reload();
+            }
+          });
+        });
+      }).catch(() => {});
+    }
     // Nav mygtukų listener'iai — vieną kartą
     document.getElementById('navList')?.addEventListener('click',()=>{ window._appNav('list'); });
     document.getElementById('navSearch')?.addEventListener('click',()=>{ window._appNav('search'); });

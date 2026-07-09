@@ -2,7 +2,7 @@
   "name": "Galio",
   "short_name": "Galio",
   "description": "Sekite savo daiktų garantijas",
-  "start_url": "/Galio/",
+  "start_url": "/Galio/?v=20260710-0045",
   "scope": "/Galio/",
   "display": "standalone",
   "background_color": "#ffffff",
