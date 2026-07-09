@@ -269,7 +269,14 @@ function toast(msg, ms=5200){
   setTimeout(()=>el.remove(),ms);
 }
 function showAppDialog(title, message, supportDraft='', options={}){
-  state.appDialog = { title, message, supportDraft, hideSupport: !!options.hideSupport };
+  state.appDialog = {
+    title,
+    message,
+    supportDraft,
+    hideSupport: !!options.hideSupport,
+    variant: options.variant || 'default',
+    align: options.align || 'left',
+  };
   render();
 }
 function maybeShowReturnFeatureIntro(existingUserDoc=false){
@@ -1567,16 +1574,25 @@ function renderContact(){
 function renderAppDialog(){
   const d = state.appDialog;
   if(!d) return '';
-  const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="flex:1;background:none;border:1px solid var(--border2);color:var(--text);font-size:15px;font-weight:600;border-radius:12px;padding:12px 14px">Pagalba</button>`;
+  const isSingleAction = d.hideSupport;
+  const textAlign = d.align === 'center' ? 'center' : 'left';
+  const actionWrapStyle = isSingleAction
+    ? 'display:flex;justify-content:center'
+    : 'display:grid;grid-template-columns:1fr 1fr;gap:10px';
+  const buttonBase = 'min-height:48px;border-radius:12px;padding:12px 14px;font-size:15px;font-weight:700;box-sizing:border-box;display:flex;align-items:center;justify-content:center';
+  const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="${buttonBase};width:100%;background:none;border:1px solid var(--border2);color:var(--text)">Pagalba</button>`;
+  const okBtnStyle = isSingleAction
+    ? `${buttonBase};width:100%;max-width:260px`
+    : `${buttonBase};width:100%`;
   return `<div class="warranty-sheet" id="appDialog">
     <div class="warranty-overlay"></div>
     <div class="warranty-panel" style="box-sizing:border-box;padding-left:20px;padding-right:20px">
       <div class="warranty-handle"></div>
       <div class="warranty-title">${esc(d.title||'Pranešimas')}</div>
-      <p style="font-size:14px;color:var(--text2);line-height:1.4;margin:0 0 16px;text-align:left">${esc(d.message||'')}</p>
-      <div style="display:flex;gap:10px">
+      <p style="font-size:14px;color:var(--text2);line-height:1.45;margin:0 0 18px;text-align:${textAlign}">${esc(d.message||'')}</p>
+      <div style="${actionWrapStyle}">
         ${supportBtn}
-        <button id="appDialogOkBtn" class="save-btn" style="flex:1">Gerai</button>
+        <button id="appDialogOkBtn" class="save-btn" style="${okBtnStyle}">Gerai</button>
       </div>
     </div>
   </div>`;
@@ -3179,7 +3195,9 @@ async function toggleStorageMode(){
       'Pakeista',
       docMoveFailures
         ? `${wantsCloud ? 'Įrašai perkelti į Galio debesį' : 'Įrašai perkelti į telefoną'}, bet ${docMoveFailures} dokumento ar nuotraukos perkelti nepavyko. Patikrinkite įrašus.`
-        : (wantsCloud ? 'Įrašai perkelti į Galio debesį.' : 'Įrašai saugomi tik šiame telefone.')
+        : (wantsCloud ? 'Įrašai perkelti į Galio debesį.' : 'Įrašai saugomi tik šiame telefone.'),
+      '',
+      {hideSupport:true, variant:'success', align:'center'}
     );
   }catch(e){
     console.warn('Storage mode migration error:', e);
