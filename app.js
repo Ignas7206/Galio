@@ -164,6 +164,12 @@ function returnBadgeHtml(deadline){
   const label = d===0 ? 'Grąžinti šiandien' : d<=3 ? `Grąžinti liko ${d}d.` : `Grąžinti ${d}d.`;
   return `<span class="badge" style="background:rgba(59,130,246,.16);color:#60a5fa">${label}</span>`;
 }
+function returnLineHtml(deadline){
+  const d = daysLeft(deadline);
+  if(d===null || d<0) return '';
+  const left = d===0 ? 'šiandien' : `liko ${d} d.`;
+  return `<div class="card-date" style="color:#60a5fa;font-weight:600"><i class="ti ti-rotate-2" style="font-size:14px"></i>Grąžinti iki ${fmtDate(deadline)} (${left})</div>`;
+}
 function isExpiredDate(dateStr){
   if(!dateStr)return false;
   const d = new Date(dateStr + 'T23:59:59');
@@ -218,13 +224,13 @@ function showAppDialog(title, message, supportDraft='', options={}){
   render();
 }
 function maybeShowReturnFeatureIntro(existingUserDoc=false){
-  const seenKey = 'galio_return_deadline_intro_v1';
+  const seenKey = 'galio_return_deadline_intro_v2';
   const onboarded = localStorage.getItem('galio_onboarded') || localStorage.getItem('garantijos_onboarded');
   if(!existingUserDoc || !onboarded || localStorage.getItem(seenKey)==='1') return;
   localStorage.setItem(seenKey,'1');
   state.appDialog = {
     title: 'Nauja: grąžinimo terminai',
-    message: 'Pirk internetu ir nesuk galvos, kada baigiasi grąžinimo laikas. Nuskenuok čekį ar sąskaitą, o Galio parodys iki kada dar gali grąžinti prekę ir primins prieš terminą.',
+    message: 'Pirk internetu ramiau. Nuskenuok čekį ar sąskaitą, o Galio parodys iki kada gali grąžinti prekę ir primins prieš terminą.',
     supportDraft: '',
     hideSupport: true,
   };
@@ -823,8 +829,7 @@ function renderList(){
     const days=daysLeft(item.warrantyEnd);
     const doc = effectiveDoc(item);
     const returnDeadline = effectiveReturnDeadline(item);
-    const returnDays = daysLeft(returnDeadline);
-    const returnLine = returnDays!==null && returnDays>=0 ? `<div class="card-date" style="color:#60a5fa;font-weight:600"><i class="ti ti-rotate-2" style="font-size:14px"></i>Grąžinti iki ${fmtDate(returnDeadline)}</div>` : '';
+    const returnLine = returnLineHtml(returnDeadline);
     let thumb;
     if(doc.docMime==='application/pdf')
       thumb=`<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
@@ -838,10 +843,10 @@ function renderList(){
       <button class="card${urgentClass}" data-id="${esc(item.id)}">
         ${thumb}
         <div class="card-body">
-          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${(returnDays!==null&&returnDays>=0?returnBadgeHtml(returnDeadline):'')||badgeHtml(days)}</div>
+          <div class="card-top"><span class="card-name">${esc(item.name)}</span>${badgeHtml(days)}</div>
           <div class="card-sub">${esc(item.shop||item.category)}</div>
-          ${returnLine}
           ${item.warrantyEnd?`<div class="card-date"><i class="ti ti-calendar" style="font-size:14px"></i>Iki ${fmtDate(item.warrantyEnd)}</div>`:''}
+          ${returnLine}
         </div>
       </button>
     </div>`;
@@ -1326,7 +1331,8 @@ function suggestNotifDays(warrantyMonths, hasReturn){
 
 function showNotifModal(itemId, itemData){
   if(!itemId){ state.view='list'; render(); return; }
-  const item = itemData || state.items.find(i=>i.id===itemId);
+  const firstItemId = Array.isArray(itemId) ? itemId[0] : itemId;
+  const item = itemData || state.items.find(i=>i.id===firstItemId);
   if(!item){ state.view='list'; render(); return; }
 
   if(state.storageMode !== 'cloud'){
@@ -1345,7 +1351,8 @@ function showNotifModal(itemId, itemData){
   const defaults = state._lastNotifDays || suggested;
 
   state.notifModal = {
-    itemId,
+    itemId: firstItemId,
+    itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
     selectedDays: [...defaults],
     returnSelectedDays: returnDeadline ? (state._lastReturnNotifDays || [3]) : [],
     hasReturn: !!returnDeadline,
@@ -1445,10 +1452,10 @@ function renderAppDialog(){
   const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="flex:1;background:none;border:1px solid var(--border2);color:var(--text);font-size:15px;font-weight:600;border-radius:12px;padding:12px 14px">Pagalba</button>`;
   return `<div class="warranty-sheet" id="appDialog">
     <div class="warranty-overlay"></div>
-    <div class="warranty-panel">
+    <div class="warranty-panel" style="box-sizing:border-box;padding-left:20px;padding-right:20px">
       <div class="warranty-handle"></div>
       <div class="warranty-title">${esc(d.title||'Pranešimas')}</div>
-      <p style="font-size:15px;color:var(--text2);line-height:1.45;margin:0 0 16px">${esc(d.message||'')}</p>
+      <p style="font-size:14px;color:var(--text2);line-height:1.4;margin:0 0 16px;text-align:left">${esc(d.message||'')}</p>
       <div style="display:flex;gap:10px">
         ${supportBtn}
         <button id="appDialogOkBtn" class="save-btn" style="flex:1">Gerai</button>
@@ -2022,14 +2029,17 @@ async function saveNotifSettings(skip=false){
       }
     }
 
+    const targetIds = Array.isArray(m.itemIds) && m.itemIds.length ? m.itemIds : [m.itemId];
     // Išsaugoti į Firestore arba IndexedDB
     if(state.storageMode==='cloud'){
-      await updateDoc(doc(db,'users',state.user.uid,'warranties',m.itemId), notifData);
+      await Promise.all(targetIds.map(id=>updateDoc(doc(db,'users',state.user.uid,'warranties',id), notifData)));
     }else{
-      const item = state.items.find(i=>i.id===m.itemId);
-      if(item){
-        Object.assign(item, notifData);
-        await localPut(state.user.uid, item);
+      for(const id of targetIds){
+        const item = state.items.find(i=>i.id===id);
+        if(item){
+          Object.assign(item, notifData);
+          await localPut(state.user.uid, item);
+        }
       }
     }
     toast(enabled ? 'Priminimai išsaugoti ✓' : 'Priminimai išjungti');
@@ -2243,6 +2253,9 @@ async function saveItem(){
     showNotifModal(state._lastSavedId, {
       warrantyMonths: savedForm.warrantyMonths,
       warrantyEnd: savedForm.warrantyEnd,
+      purchaseDate: savedForm.purchaseDate,
+      shop: savedForm.shop,
+      returnDays: normalizeReturnDays(savedForm.returnDays, savedForm.shop),
       returnDeadline: calcReturnDeadline(savedForm.purchaseDate, savedForm.returnDays, savedForm.shop),
     });
   }else{
@@ -2270,8 +2283,7 @@ async function saveMultiItems(){
 
   const isCloud = state.storageMode==='cloud';
   let saved=0, failed=0;
-  const defaultWarrantyNotifDays = Array.isArray(state._lastNotifDays) ? state._lastNotifDays : null;
-  const defaultReturnNotifDays = Array.isArray(state._lastReturnNotifDays) ? state._lastReturnNotifDays : null;
+  const savedIds = [];
   let sharedDocMeta = null;
 
   // Charge one AI scan for the whole receipt (already scanned once)
@@ -2323,8 +2335,6 @@ async function saveMultiItems(){
 
   for(const item of selected){
     try{
-      const warrantyNotifDays = defaultWarrantyNotifDays ?? suggestNotifDays(item.warrantyMonths||24, !!r.purchaseDate);
-      const returnNotifDays = r.purchaseDate ? (defaultReturnNotifDays ?? [3]) : [];
       const payload={
         name:item.name.trim().slice(0,200),
         category:item.category||'Kita',
@@ -2338,14 +2348,15 @@ async function saveMultiItems(){
         docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
         returnDays: normalizeReturnDays(r.returnDays, r.shop),
         returnDeadline: calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop),
-        notifyEnabled: warrantyNotifDays.length>0 || returnNotifDays.length>0,
-        notifyDays: warrantyNotifDays,
-        notifyReturnDays: returnNotifDays,
+        notifyEnabled: false,
+        notifyDays: [],
+        notifyReturnDays: [],
         createdAtMs: Date.now(),
       };
 
       if(isCloud){
         const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'),{...payload,...(sharedDocMeta||{}),createdAt:serverTimestamp()});
+        savedIds.push(docRef.id);
         await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(1)});
       }else{
         const localItem={
@@ -2356,6 +2367,7 @@ async function saveMultiItems(){
         };
         await localPut(state.user.uid,localItem);
         state.items.unshift(localItem);
+        savedIds.push(localItem.id);
       }
       saved++;
     }catch(e){
@@ -2366,10 +2378,21 @@ async function saveMultiItems(){
 
   state.multiItemReceipt=null;
   state.pendingAiCharge=false;
-  state.view='list';
-  render();
   if(failed>0) toast(`Išsaugota ${saved}, nepavyko ${failed}`);
   else toast(`Išsaugota ${saved} prekių ✓`);
+  if(savedIds.length>0){
+    showNotifModal(savedIds, {
+      warrantyMonths: selected[0]?.warrantyMonths || 24,
+      warrantyEnd: multiWarrantyEnd(selected[0], r),
+      purchaseDate: r.purchaseDate,
+      shop: r.shop,
+      returnDays: normalizeReturnDays(r.returnDays, r.shop),
+      returnDeadline: calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop),
+    });
+  }else{
+    state.view='list';
+    render();
+  }
 }
 
 function base64ToBlob(b64,mime){
