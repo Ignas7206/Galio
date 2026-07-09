@@ -255,7 +255,7 @@ function lockedDocHtml(compact=false){
   return `<div class="${compact?'card-icon':'detail-section'}" style="${compact?'':'padding:16px;text-align:center'};background:var(--bg2)">
     <i class="ti ti-lock" style="font-size:${compact?'24px':'34px'};color:var(--text3)"></i>
     ${compact?'':`<div style="font-size:15px;font-weight:700;color:var(--text);margin-top:10px">Dokumentas užrakintas</div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.4;margin-top:4px">Nemokamai matomi ${FREE_DOC_LIMIT} dokumentai. Atnaujinkite į Premium, kad matytumėte visas čekio nuotraukas.</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.4;margin-top:4px">Nemokamame plane matomi ${FREE_DOC_LIMIT} dokumentai. Su Premium matysite visus čekius ir nuotraukas.</div>
     <button class="save-btn" id="upgradeBtnDoc" style="margin-top:14px">Premium</button>`}
   </div>`;
 }
@@ -672,7 +672,7 @@ window.addEventListener('popstate', () => {
 window._appNav = (tab) => { state.view=tab; render(); };
 window._appStartNewItem = (mode) => {
   if(mode==='photo' && !canAttachNewDoc()){
-    showAppDialog('Dokumentų limitas pasiektas', `Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
+    showAppDialog('Dokumentų limitas pasiektas', `Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
     return;
   }
   startNewItem(mode);
@@ -878,7 +878,7 @@ function renderList(){
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const planBanner = !isPremium ? `<div class="plan-banner">
     <i class="ti ti-sparkles"></i>
-    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> nemokam${aiLeft===1?'a':'os'} AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · Nemokamai matomi ${FREE_DOC_LIMIT} dokumentai</div>
+    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · Nemokamame plane matomi ${FREE_DOC_LIMIT} dokumentai</div>
     <button id="upgradeBtn">Premium</button>
   </div>`:'';
 
@@ -1032,11 +1032,11 @@ function renderPicker(){
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Nuskaityti dokumentą</h3><p>${docLimitReached?`Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium – visi čekiai ir nuotraukos.`:aiExhausted?'AI analizės išnaudotos. Įveskite duomenis rankiniu būdu arba atsinaujinkite į Premium.':`Nufotografuokite arba įkelkite čekį. AI užpildys duomenis automatiškai${!isPremium?` (liko ${aiLeft})`:''}.`}</p></div>
+        <div><h3>Nuskaityti dokumentą</h3><p>${docLimitReached?`Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium – visi čekiai ir nuotraukos.`:aiExhausted?'AI analizės išnaudotos. Įveskite duomenis rankiniu būdu arba atsinaujinkite į Premium.':`Nufotografuokite arba įkelkite čekį. AI užpildys duomenis automatiškai${!isPremium?` (liko ${aiLeft}, dokumentų limitas ${FREE_DOC_LIMIT})`:''}.`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
-        <div><h3>Įvesti rankiniu būdu</h3><p>Patys įrašykite prekės, parduotuvės ir terminų duomenis. AI analizė nenaudojama.</p></div>
+        <div><h3>Įvesti rankiniu būdu</h3><p>Patys įrašykite prekės, parduotuvės ir terminų duomenis. AI analizė ir dokumento įkėlimas nenaudojami.</p></div>
       </button>
     </div>
     ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
@@ -1062,7 +1062,7 @@ function renderAdd(){
     docAreaHtml=`<div class="doc-drop-zone" style="cursor:default">
       <i class="ti ti-lock"></i>
       <p>Dokumentų limitas pasiektas</p>
-      <span>Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.</span>
+      <span>Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.</span>
     </div>`;
   }else{
     docAreaHtml=`${qrButtonHtml}<label class="doc-drop-zone" for="docInput">
@@ -1910,7 +1910,7 @@ function attachEvents(){
 
   on('rescanBtn','click',()=>{
     if(!canAttachNewDoc()){
-      showAppDialog('Dokumentų limitas pasiektas', `Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
+      showAppDialog('Dokumentų limitas pasiektas', `Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
       return;
     }
     state.form.qualityWarning=null; state.form.docData=null; state.form.docMime=null; state.form.docFileName=null; renderSync(); document.getElementById('docInput')?.click();
@@ -1918,7 +1918,7 @@ function attachEvents(){
   on('modePhoto','click',()=>{
     if(document.getElementById('modePhoto')?.disabled)return;
     if(!canAttachNewDoc()){
-      showAppDialog('Dokumentų limitas pasiektas', `Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
+      showAppDialog('Dokumentų limitas pasiektas', `Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
       return;
     }
     state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];state.aiNameReview=false;
@@ -2945,7 +2945,7 @@ async function looksLikeHeic(file){
 function handleDoc(e){
   const file=e.target.files[0];if(!file)return;
   if(!canAttachNewDoc() && !state.form.docData){
-    state.docError=`Nemokamai galima saugoti ${FREE_DOC_LIMIT} dokumentus. Atnaujinkite į Premium, kad galėtumėte prisegti daugiau čekių.`;
+    state.docError=`Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Atnaujinkite į Premium, kad galėtumėte prisegti daugiau čekių.`;
     render();
     return;
   }
