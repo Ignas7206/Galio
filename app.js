@@ -20,6 +20,7 @@ const WORKER_URL    = 'https://long-moon-d252.ltdigitaltools.workers.dev';
 const CATEGORIES    = ['Elektronika','Buitinė technika','Avalynė / drabužiai','Baldai','Automobiliai','Kita'];
 const DOC_TYPES     = ['Kvitas / čekis','Sąskaita-faktūra (SF)','Banko išrašas','Kita'];
 const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
+const RETURN_DAY_OPTS = [7,14,30,45,60,90];
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
 const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos; compression brings this down before upload
 const MAX_PDF       = 5*1024*1024;
@@ -38,7 +39,7 @@ let state = {
   lightbox:null, analyzing:false, uploadPct:null,
   authMode:'login', authError:'', authInfo:'', authBusy:false,
   authEmail:'', authPwd:'', authPwd2:'',
-  docError:'', showWarranty:false,
+  docError:'', showWarranty:false, showReturnDays:false,
   online: navigator.onLine,
   onboardSlide: 0,
   showOnboarding: !localStorage.getItem('galio_onboarded') && !localStorage.getItem('garantijos_onboarded'),
@@ -186,6 +187,21 @@ function effectiveReturnDeadline(item){
   return item.returnDeadline || null;
 }
 function fmtSize(b){return b<1024*1024?(b/1024).toFixed(0)+'KB':(b/1024/1024).toFixed(1)+'MB';}
+function ltCount(n, one, few, many){
+  const abs = Math.abs(Number(n) || 0);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if(mod10 === 1 && mod100 !== 11) return one;
+  if(mod10 >= 2 && mod10 <= 9 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+function extractPriceFromNotes(notes=''){
+  const m = String(notes || '').match(/(?:^|\n)Kaina:\s*([^\n]+)/i);
+  return m ? m[1].trim() : '';
+}
+function notesWithoutPrice(notes=''){
+  return String(notes || '').replace(/(?:^|\n)Kaina:\s*[^\n]+/i,'').trim();
+}
 function badgeHtml(days){
   if(days===null)return '';
   if(days<0)return`<span class="badge badge-exp">Baigėsi</span>`;
@@ -1108,6 +1124,15 @@ function renderAdd(){
       ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
     </div>
   </div>`:'';
+  const currentReturnDays = normalizeReturnDays(f.returnDays, f.shop);
+  const returnDaysSheet=state.showReturnDays?`<div class="warranty-sheet" id="returnDaysSheet">
+    <div class="warranty-overlay" id="returnDaysOverlay"></div>
+    <div class="warranty-panel">
+      <div class="warranty-handle"></div>
+      <div class="warranty-title">Grąžinimo terminas</div>
+      ${RETURN_DAY_OPTS.map(d=>`<button class="return-days-opt${currentReturnDays===d?' selected':''}" data-days="${d}">${d} d.${currentReturnDays===d?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
+    </div>
+  </div>`:'';
 
   const nameReviewModal=state.aiNameReview?`<div class="warranty-sheet" id="aiNameReviewSheet">
     <div class="warranty-overlay"></div>
@@ -1178,11 +1203,14 @@ function renderAdd(){
           </span>
         </div>
         ${f.warrantyMonths===null?`<div class="form-field"><label>Galioja iki</label><input type="date" id="f_warrantyEnd" value="${esc(f.warrantyEnd)}" /></div>`:''}
-        <div class="form-field">
-          <label>Grąžinimas, dienos</label>
-          <input type="number" id="f_returnDays" min="1" max="365" inputmode="numeric" value="${esc(normalizeReturnDays(f.returnDays, f.shop))}" />
+        <button type="button" class="form-field tappable" id="returnDaysBtn" style="background:none;border:none;text-align:left;width:100%">
+          <label>Grąžinimas</label>
+          <div class="form-field-row">
+            <div class="fv">${currentReturnDays} d.</div>
+            <i class="ti ti-chevron-right form-row-chevron"></i>
+          </div>
           ${f.purchaseDate?`<div style="font-size:13px;color:var(--text2);margin-top:6px;line-height:1.35">Grąžinti iki ${fmtDate(calcReturnDeadline(f.purchaseDate,f.returnDays,f.shop))}</div>`:''}
-        </div>
+        </button>
       </div>
       ${f.warrantyAppliesWarning ? `<div class="plan-banner" style="margin-bottom:16px;background:var(--orange-bg)">
         <i class="ti ti-info-circle" style="color:var(--orange);flex-shrink:0"></i>
@@ -1214,6 +1242,7 @@ function renderAdd(){
       <div style="height:80px"></div>
     </div>
     ${warrantySheet}
+    ${returnDaysSheet}
     ${nameReviewModal}
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
       <button class="save-btn" id="saveBtn" ${f.name.trim()&&f.warrantyEnd&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
@@ -1244,8 +1273,11 @@ function renderDetail(){
     docHtml=`<div class="detail-section"><img src="${esc(doc.docUrl)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
   }
 
+  const itemPrice = extractPriceFromNotes(item.notes);
+  const visibleNotes = notesWithoutPrice(item.notes);
   const rows=[
     {i:'ti-tag',l:'Prekės pavadinimas',v:item.name},
+    ...(itemPrice ? [{i:'ti-cash',l:'Kaina',v:itemPrice}] : []),
     {i:'ti-building-store',l:'Parduotuvė',v:item.shop||'—'},
     {i:'ti-category',l:'Kategorija',v:item.category},
     {i:'ti-file-description',l:'Dok. tipas',v:item.docType||'—'},
@@ -1298,7 +1330,7 @@ function renderDetail(){
     ${docHtml}
     <div class="detail-section"><div class="detail-rows">${rows}</div></div>
     ${remindersSection}
-    ${item.notes?`<div class="detail-section"><div class="notes-card"><div class="nc-label">Pastabos</div><p>${esc(item.notes)}</p></div></div>`:''}
+    ${visibleNotes?`<div class="detail-section"><div class="notes-card"><div class="nc-label">Pastabos</div><p>${esc(visibleNotes)}</p></div></div>`:''}
     ${policySection}
     <div class="detail-section"><button class="delete-btn" id="deleteBtn2"><i class="ti ti-trash"></i>Ištrinti įrašą</button></div>
     <div style="height:8px"></div>
@@ -1367,8 +1399,8 @@ function renderSettings(){
         </div>
         ${(!isPremium && !isCloud) ? '<i class="ti ti-lock" style="color:var(--text3);font-size:16px;flex-shrink:0"></i>' : ''}
       </div>
-      ${(isPremium || isCloud) ? `<button class="tappable" id="storageModeToggle" style="width:100%;background:none;border:none;border-top:0.5px solid var(--border);padding:14px 16px;font-size:15px;font-weight:600;color:var(--accent);cursor:pointer;text-align:center">
-        ${isCloud?'Laikyti tik įrenginyje':'Perkelti į Galio saugyklą'}
+      ${(isPremium || isCloud) ? `<button class="tappable" id="storageModeToggle" ${state.migratingStorage?'disabled':''} style="width:100%;background:none;border:none;border-top:0.5px solid var(--border);padding:14px 16px;font-size:15px;font-weight:600;color:var(--accent);cursor:${state.migratingStorage?'default':'pointer'};text-align:center;opacity:${state.migratingStorage?'0.55':'1'}">
+        ${state.migratingStorage?'Perkeliama...':(isCloud?'Laikyti tik įrenginyje':'Perkelti į Galio saugyklą')}
       </button>` : ''}
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5;margin:0">
@@ -1969,9 +2001,15 @@ function attachEvents(){
     else{const m=parseInt(v);state.form.warrantyMonths=m;if(state.form.purchaseDate)state.form.warrantyEnd=addMonths(state.form.purchaseDate,m);}
     state.showWarranty=false;render();
   });
+  on('returnDaysBtn','click',()=>{state.showReturnDays=true;render();});
+  on('returnDaysOverlay','click',()=>{state.showReturnDays=false;render();});
+  onAll('.return-days-opt','click',e=>{
+    state.form.returnDays = normalizeReturnDays(e.currentTarget.dataset.days, state.form.shop);
+    state.showReturnDays=false;
+    syncSave();
+    render();
+  });
   on('f_warrantyEnd','change',e=>{state.form.warrantyEnd=e.target.value;});
-  on('f_returnDays','input',e=>{state.form.returnDays=normalizeReturnDays(e.target.value,state.form.shop);syncSave();});
-  on('f_returnDays','change',e=>{state.form.returnDays=normalizeReturnDays(e.target.value,state.form.shop);syncSave();});
 
   ['name','shop','purchaseDate','docType','docNumber','category','notes'].forEach(k=>{
     on(`f_${k}`,'input',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
@@ -2825,6 +2863,19 @@ function base64ToBlob(b64,mime){
   for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);
   return new Blob([a],{type:mime});
 }
+async function docBlobFromItem(item){
+  if(!item?.docUrl || !item?.docMime) return null;
+  if(String(item.docUrl).startsWith('data:')){
+    const b64 = item.docUrl.split(',')[1];
+    return base64ToBlob(b64, item.docMime);
+  }
+  if(item.docMime === 'application/pdf' && !String(item.docUrl).startsWith('http')){
+    return base64ToBlob(item.docUrl, item.docMime);
+  }
+  const resp = await fetch(item.docUrl);
+  if(!resp.ok) throw new Error('document-download-failed');
+  return await resp.blob();
+}
 
 // ── Document picking ───────────────────────────────────────────────────────
 // ── QR scanner ─────────────────────────────────────────────────────────────
@@ -3265,6 +3316,7 @@ async function toggleStorageModeOld(){
 
 async function toggleStorageMode(){
   if(!state.user) return;
+  if(state.migratingStorage) return;
   state.storageError = '';
 
   const isPremium = isPremiumUser();
@@ -3290,8 +3342,10 @@ async function toggleStorageMode(){
   const hasDocumentsToMove = itemsToMigrate.some(item => !!(item.docUrl && item.docMime));
   let migrationStep = wantsCloud ? 'Galio saugyklos įjungimas' : 'perkėlimas į telefoną';
   let docMoveFailures = 0;
+  let retainedRemoteDocs = 0;
   toast(wantsCloud ? 'Įrašai perkeliami į Galio saugyklą...' : 'Įrašai perkeliami į telefoną...', 8000);
   state.migratingStorage = true;
+  render();
 
   try{
     if(wantsCloud){
@@ -3324,11 +3378,13 @@ async function toggleStorageMode(){
           try{
             const ext = item.docMime==='application/pdf'?'pdf':(item.docMime.split('/')[1]||'jpg');
             const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
-            const b64 = item.docMime==='application/pdf' ? item.docUrl : item.docUrl.split(',')[1];
-            const blob = base64ToBlob(b64, item.docMime);
+            const blob = await docBlobFromItem(item);
             await uploadBytes(ref(storage,path), blob, {contentType:item.docMime});
             const url = await getDownloadURL(ref(storage,path));
             await updateDoc(docRef, { docUrl:url, docMime:item.docMime, docFileName:item.docFileName, docStoragePath:path });
+            if(item.docStoragePath && item.docStoragePath !== path){
+              try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){}
+            }
           }catch(e){
             docMoveFailures++;
             console.warn('Migration upload failed for item:', item.id, e);
@@ -3345,10 +3401,14 @@ async function toggleStorageMode(){
       migrationStep = 'įrašų perkėlimas į telefoną';
       for(const item of itemsToMigrate){
         let localDocUrl = null;
+        let localDocMime = null;
+        let localDocFileName = null;
+        let localDocStoragePath = null;
         if(item.docUrl){
           migrationStep = 'nuotraukų ir dokumentų perkėlimas';
           try{
             const resp = await fetch(item.docUrl);
+            if(!resp.ok) throw new Error('document-download-failed');
             const blob = await resp.blob();
             localDocUrl = await new Promise((res,rej)=>{
               const r = new FileReader();
@@ -3356,8 +3416,15 @@ async function toggleStorageMode(){
               r.onerror = rej;
               r.readAsDataURL(blob);
             });
+            localDocMime = item.docMime || blob.type || null;
+            localDocFileName = item.docFileName || null;
           }catch(e){
             docMoveFailures++;
+            retainedRemoteDocs++;
+            localDocUrl = item.docUrl;
+            localDocMime = item.docMime || null;
+            localDocFileName = item.docFileName || null;
+            localDocStoragePath = item.docStoragePath || null;
             console.warn('Migration download failed for item:', item.id, e);
           }
           migrationStep = 'įrašų perkėlimas į telefoną';
@@ -3367,10 +3434,13 @@ async function toggleStorageMode(){
           purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
           docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
           notifyEnabled:true, createdAtMs:item.createdAtMs||Date.now(),
-          docUrl: localDocUrl, docMime: localDocUrl?item.docMime:null, docFileName: localDocUrl?item.docFileName:null,
+          docUrl: localDocUrl,
+          docMime: localDocUrl ? localDocMime : null,
+          docFileName: localDocUrl ? localDocFileName : null,
+          docStoragePath: localDocStoragePath,
         };
         await localPut(state.user.uid, localItem);
-        if(item.docStoragePath){
+        if(item.docStoragePath && localDocUrl && !localDocStoragePath){
           try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){}
         }
         try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',item.id)); }catch(e){}
@@ -3388,11 +3458,17 @@ async function toggleStorageMode(){
       attachItemsListener(state.user.uid);
     }
     state.storageError = '';
+    const docWord = ltCount(docMoveFailures, 'dokumentą ar nuotrauką', 'dokumentus ar nuotraukas', 'dokumentų ar nuotraukų');
+    const failureMessage = wantsCloud
+      ? `Įrašai perkelti į Galio saugyklą, bet ${docMoveFailures} ${docWord} perkelti nepavyko. Patikrinkite įrašus.`
+      : retainedRemoteDocs
+        ? `Įrašai perkelti į įrenginį. ${retainedRemoteDocs} ${ltCount(retainedRemoteDocs, 'dokumentas ar nuotrauka liko', 'dokumentai ar nuotraukos liko', 'dokumentų ar nuotraukų liko')} Galio saugykloje, nes jų nepavyko saugiai atsisiųsti.`
+        : `Įrašai perkelti į įrenginį, bet ${docMoveFailures} ${docWord} perkelti nepavyko. Patikrinkite įrašus.`;
     showAppDialog(
       wantsCloud ? 'Įrašai perkelti' : 'Saugojimas pakeistas',
       docMoveFailures
-        ? `${wantsCloud ? 'Įrašai perkelti į Galio saugyklą' : 'Įrašai perkelti į telefoną'}, bet ${docMoveFailures} dokumento ar nuotraukos perkelti nepavyko. Patikrinkite įrašus.`
-        : (wantsCloud ? 'Įrašai perkelti į Galio saugyklą.' : 'Įrašai saugomi tik šiame telefone.'),
+        ? failureMessage
+        : (wantsCloud ? 'Įrašai perkelti į Galio saugyklą.' : 'Įrašai saugomi tik šiame įrenginyje.'),
       '',
       {hideSupport:true, variant:'success', align:'center', okText:'Gerai'}
     );
@@ -3414,6 +3490,7 @@ async function toggleStorageMode(){
     );
   }finally{
     state.migratingStorage = false;
+    render();
   }
 }
 
