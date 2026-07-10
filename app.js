@@ -3172,7 +3172,14 @@ async function looksLikeHeic(file){
 }
 
 function handleDoc(e){
-  const file=e.target.files[0];if(!file)return;
+  const input = e.target;
+  const file = input.files?.[0];
+  if(input) input.value = '';
+  if(!file)return;
+  if(state.analyzing || state.uploadPct!==null){
+    toast('Palaukite, ankstesnis failas dar apdorojamas');
+    return;
+  }
   if(!canAttachNewDoc() && !state.form.docData){
     state.docError=`Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Atnaujinkite į Premium, kad galėtumėte prisegti daugiau čekių.`;
     render();
@@ -3235,15 +3242,29 @@ function proceedWithFile(file, isPdf){
           return;
         }
         state.form.docData=compressed; state.form.docMime='image/jpeg'; state.form.docFileName=file.name.replace(/\.[^.]+$/,'.jpg');
-        if(state.addMode==='photo'){state.analyzing=true;startAnalyzeWatchdog();render();await analyzeDoc(compB64,'image/jpeg');clearAnalyzeWatchdog();state.analyzing=false;}
+        if(state.addMode==='photo'){
+          state.analyzing=true;
+          startAnalyzeWatchdog();
+          render();
+          try{
+            await analyzeDoc(compB64,'image/jpeg');
+          }finally{
+            clearAnalyzeWatchdog();
+            state.analyzing=false;
+          }
+        }
         render();
       }catch(err){
         console.warn('Image processing failed:', err);
+        clearAnalyzeWatchdog();
+        state.analyzing=false;
         state.docError='Nepavyko apdoroti nuotraukos — pabandykite dar kartą arba kitą failą (jei tai HEIC formatas, pakeiskite kameros nustatymus į JPEG)';render();
       }
     }
   };
   reader.onerror=()=>{
+    clearAnalyzeWatchdog();
+    state.analyzing=false;
     state.docError='Nepavyko nuskaityti failo';render();
   };
   reader.readAsDataURL(file);
