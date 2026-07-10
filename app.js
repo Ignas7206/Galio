@@ -46,11 +46,15 @@ let state = {
   swipe: { id:null, startX:0, currentX:0, dragging:false },
   addPulse: false,
   qrScanning: false, qrStream: null,
+  analysisRunId: 0,
+  pendingAnalysisExit: null,
+  pendingUnsavedExit: null,
   aiRetriesUsedThisItem: 0, // resets each time the add-form is freshly opened; max 2 scan attempts before quota is charged on save
   pendingAiCharge: false, // true once a scan succeeds — saveItem() consumes one quota unit if this is set
   aiMultiItems: [],
   multiItemReceipt: null,
   multiEditIdx: null,
+  multiSaving: false,
   aiNameReview: false,
   editItemId: null,
   notifModal: null,
@@ -112,6 +116,7 @@ function startNewItem(mode){
   state.aiMultiItems=[];
   state.multiItemReceipt=null;
   state.multiEditIdx=null;
+  state.multiSaving=false;
   state.aiNameReview=false;
   state.editItemId=null;
 }
@@ -126,6 +131,60 @@ function discardPendingAdd(){
   state.multiEditIdx=null;
   state.aiNameReview=false;
   state.editItemId=null;
+}
+function hasUnsavedAddWork(){
+  if(state.view!=='add' || !state.addMode || state.editItemId || state.multiEditIdx!=null) return false;
+  const f = state.form || {};
+  const empty = emptyForm();
+  const fields = ['name','category','shop','purchaseDate','warrantyEnd','docType','docNumber','notes','docData'];
+  return fields.some(k => (f[k] || '') !== (empty[k] || ''))
+    || f.warrantyMonths !== empty.warrantyMonths
+    || f.returnDays !== empty.returnDays
+    || !!state.aiMultiItems?.length
+    || !!state.multiItemReceipt;
+}
+function requestUnsavedAddExit(targetView='list'){
+  if(state.analyzing) return requestAnalysisExit(targetView);
+  if(!hasUnsavedAddWork()) return false;
+  state.pendingUnsavedExit = { targetView };
+  showAppDialog(
+    'Išeiti neišsaugojus?',
+    'Šis įrašas dar neišsaugotas. Išeinant įvesti duomenys ir dokumentas bus prarasti.',
+    '',
+    {hideSupport:false, supportText:'Išeiti neišsaugojus', okText:'Likti', supportAction:'discardAdd', align:'center'}
+  );
+  return true;
+}
+function discardAddAndLeave(){
+  const target = state.pendingUnsavedExit?.targetView || 'list';
+  state.pendingUnsavedExit=null;
+  state.appDialog=null;
+  discardPendingAdd();
+  state.view=target;
+  render();
+}
+function requestAnalysisExit(targetView='list'){
+  if(!state.analyzing) return false;
+  state.pendingAnalysisExit = { targetView };
+  showAppDialog(
+    'Analizė vyksta',
+    'Dokumentas dar analizuojamas. Galite palaukti arba atšaukti analizę ir išeiti iš šio įrašo.',
+    '',
+    {hideSupport:false, supportText:'Atšaukti analizę', okText:'Palaukti', supportAction:'cancelAnalysis', align:'center'}
+  );
+  return true;
+}
+function cancelAnalysisAndLeave(){
+  const target = state.pendingAnalysisExit?.targetView || 'list';
+  state.analysisRunId++;
+  clearAnalyzeWatchdog();
+  state.analyzing=false;
+  state.uploadPct=null;
+  state.pendingAnalysisExit=null;
+  state.appDialog=null;
+  discardPendingAdd();
+  state.view=target;
+  render();
 }
 function today(){return new Date().toISOString().slice(0,10);}
 function addMonths(d,m){if(!d)return '';const r=new Date(d);r.setMonth(r.getMonth()+m);return r.toISOString().slice(0,10);}
@@ -254,6 +313,16 @@ function confirmExpiredWarranty(dateStr, label='Šios prekės'){
   if(!isExpiredDate(dateStr)) return true;
   return confirm(`${label} garantija jau pasibaigusi (${fmtDate(dateStr)}).\n\nAr tikrai norite pridėti šį įrašą?`);
 }
+function confirmExpiredTerms({warrantyEnd, returnDeadline, label='Šios prekės'}){
+  const parts = [];
+  if(isExpiredDate(warrantyEnd)) parts.push(`garantija jau pasibaigusi (${fmtDate(warrantyEnd)})`);
+  if(isExpiredDate(returnDeadline)) parts.push(`nemokamo grąžinimo laikas jau pasibaigęs (${fmtDate(returnDeadline)})`);
+  if(!parts.length) return true;
+  const intro = parts.length === 1
+    ? `${label} ${parts[0]}.`
+    : `${label} ${parts.join(' ir ')}.`;
+  return confirm(`${intro}\n\nAr tikrai norite išsaugoti šį įrašą?`);
+}
 function multiWarrantyEnd(item, receipt){
   if(item?.warrantyEnd) return item.warrantyEnd;
   if(receipt?.purchaseDate && item?.warrantyMonths) return addMonths(receipt.purchaseDate, item.warrantyMonths);
@@ -342,6 +411,8 @@ function showAppDialog(title, message, supportDraft='', options={}){
     variant: options.variant || 'default',
     align: options.align || 'left',
     okText: options.okText || '',
+    supportText: options.supportText || '',
+    supportAction: options.supportAction || '',
   };
   render();
 }
@@ -723,6 +794,8 @@ window.addEventListener('popstate', () => {
   // exiting — matches the in-app back button's behavior.
   if(state.lightbox){ state.lightbox=null; render(); return; }
   if(state.qrScanning){ stopQrScanner(); return; }
+  if(state.analyzing && state.view==='add'){ requestAnalysisExit('list'); return; }
+  if(requestUnsavedAddExit('list')) return;
   if(state.view==='multi-select'){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view==='add'&&state.addMode){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view!=='list'){ state.view='list'; render(); return; }
@@ -732,8 +805,20 @@ window.addEventListener('popstate', () => {
 });
 
 // Nav handler — vienkartinis, iš index.html
-window._appNav = (tab) => { state.view=tab; render(); };
+window._appNav = (tab) => {
+  if(state.analyzing && state.view==='add'){
+    requestAnalysisExit(tab);
+    return;
+  }
+  if(requestUnsavedAddExit(tab)) return;
+  state.view=tab; render();
+};
 window._appStartNewItem = (mode) => {
+  if(state.analyzing && state.view==='add'){
+    requestAnalysisExit('list');
+    return;
+  }
+  if(requestUnsavedAddExit('list')) return;
   if(mode==='photo' && !canAttachNewDoc()){
     showAppDialog('Dokumentų limitas pasiektas', `Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
     return;
@@ -1146,7 +1231,7 @@ function renderAdd(){
     <div class="warranty-panel">
       <div class="warranty-handle"></div>
       <div class="warranty-title">Garantijos trukmė</div>
-      ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
+      ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt warranty-duration-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
     </div>
   </div>`:'';
   const currentReturnDays = normalizeReturnDays(f.returnDays, f.shop);
@@ -1163,12 +1248,14 @@ function renderAdd(){
     <div class="warranty-overlay"></div>
     <div class="warranty-panel">
       <div class="warranty-handle"></div>
-      <div class="warranty-title">Patikrinkite pavadinimą</div>
-      <p style="font-size:14px;color:var(--text2);margin:0 0 14px">AI pasiūlė pavadinimą. Pakeiskite jį į tokį, kokį norėsite matyti garantijų sąraše.</p>
-      <div class="form-field" style="margin-bottom:14px">
-        <input type="text" id="aiNameReviewInput" value="${esc(f.name)}" placeholder="Prekės pavadinimas" autofocus />
+      <div class="warranty-title" style="font-size:17px;color:var(--text);margin-bottom:16px">Pavadinimas</div>
+      <div style="padding:0 20px 20px">
+        <div class="form-field" style="margin-bottom:14px">
+          <label>Prekės pavadinimas</label>
+          <input type="text" id="aiNameReviewInput" value="${esc(f.name)}" placeholder="Įrašykite pavadinimą" autofocus />
+        </div>
+        <button class="save-btn" id="aiNameReviewSave" ${f.name.trim()?'':'disabled'} style="margin:0">Patvirtinti</button>
       </div>
-      <button class="save-btn" id="aiNameReviewSave" ${f.name.trim()?'':'disabled'}>Tinka</button>
     </div>
   </div>`:'';
 
@@ -1537,23 +1624,17 @@ function showNotifModal(itemId, itemData){
     return;
   }
 
-  const warrantyActive = daysLeft(item.warrantyEnd) !== null && daysLeft(item.warrantyEnd) >= 0;
+  const warrantyDaysLeft = daysLeft(item.warrantyEnd);
+  const hasWarrantyDate = !!item.warrantyEnd;
+  const warrantyActive = warrantyDaysLeft !== null && warrantyDaysLeft >= 0;
+  const warrantyExpired = hasWarrantyDate && warrantyDaysLeft !== null && warrantyDaysLeft < 0;
   const returnDeadline = effectiveReturnDeadline(item);
-  const returnActive = daysLeft(returnDeadline) !== null && daysLeft(returnDeadline) >= 0;
-  if(!warrantyActive && !returnActive){
-    const hasWarrantyDate = !!item.warrantyEnd;
-    const hasReturnDate = !!returnDeadline;
-    const title = hasWarrantyDate && hasReturnDate
-      ? 'Terminai pasibaigę'
-      : hasReturnDate
-      ? 'Grąžinimo laikas pasibaigęs'
-      : 'Garantija pasibaigusi';
-    const message = hasWarrantyDate && hasReturnDate
-      ? 'Garantija ir nemokamo grąžinimo laikas jau pasibaigę.'
-      : hasReturnDate
-      ? 'Nemokamo grąžinimo laikas jau pasibaigęs.'
-      : 'Garantijos laikas jau pasibaigęs.';
-    showAppDialog(title, message, '', {hideSupport:true, align:'center'});
+  const returnDaysLeft = daysLeft(returnDeadline);
+  const hasReturnDate = !!returnDeadline;
+  const returnActive = returnDaysLeft !== null && returnDaysLeft >= 0;
+  const returnExpired = hasReturnDate && returnDaysLeft !== null && returnDaysLeft < 0;
+  if(!hasWarrantyDate && !hasReturnDate){
+    showAppDialog('Nėra termino', 'Šiam įrašui nėra datos, pagal kurią būtų galima siųsti priminimą.', '', {hideSupport:true, align:'center'});
     return;
   }
 
@@ -1566,11 +1647,15 @@ function showNotifModal(itemId, itemData){
   state.notifModal = {
     itemId: firstItemId,
     itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
-    enabled: item.notifyEnabled !== false,
-    selectedDays: [...defaults],
+    enabled: true,
+    selectedDays: warrantyActive ? [...defaults] : [],
     returnSelectedDays: returnActive ? [...(savedReturnDays || state._lastReturnNotifDays || [3])] : [],
-    hasWarranty: warrantyActive,
-    hasReturn: returnActive,
+    hasWarranty: hasWarrantyDate,
+    hasReturn: hasReturnDate,
+    warrantyActive,
+    returnActive,
+    warrantyExpired,
+    returnExpired,
     repeatEnabled: false,
     repeatInterval: 7,
     item,
@@ -1582,53 +1667,51 @@ function showNotifModal(itemId, itemData){
 function renderNotifModal(){
   const m = state.notifModal;
   if(!m) return '';
-  const enabled = m.enabled !== false;
   const warrantyDays = Array.isArray(m.selectedDays) ? [...m.selectedDays].sort((a,b)=>b-a) : [];
   const returnDays = Array.isArray(m.returnSelectedDays) ? [...m.returnSelectedDays].sort((a,b)=>b-a) : [];
-  const canSave = !enabled || warrantyDays.length > 0 || returnDays.length > 0;
   const unitFor = d => d % 30 === 0 ? '30' : d % 7 === 0 ? '7' : '1';
   const amountFor = d => Math.max(1, Math.round(d / parseInt(unitFor(d), 10)));
-  const rows = [
-    ...(m.hasWarranty ? warrantyDays.map(d=>({kind:'warranty', day:d})) : []),
-    ...(m.hasReturn ? returnDays.map(d=>({kind:'return', day:d})) : []),
-  ];
-  const rowHtml = rows.map((r, idx)=>{
-    const unit = unitFor(r.day);
-    const amount = amountFor(r.day);
-    return `<div class="notif-row" data-kind="${r.kind}" data-day="${r.day}" style="display:grid;grid-template-columns:72px 1fr 1fr 38px;gap:8px;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:10px;margin-bottom:8px">
-      <input class="notif-amount" data-kind="${r.kind}" data-day="${r.day}" type="number" min="1" max="99" value="${amount}" inputmode="numeric" style="width:100%;height:40px;border:none;background:var(--bg);border-radius:10px;color:var(--text);font-size:16px;font-weight:700;text-align:center;padding:0 8px">
-      <select class="notif-unit" data-kind="${r.kind}" data-day="${r.day}" style="width:100%;height:40px;border:none;background:var(--bg);border-radius:10px;color:var(--text);font-size:14px;font-weight:650;padding:0 8px">
-        <option value="1" ${unit==='1'?'selected':''}>dienos</option>
-        <option value="7" ${unit==='7'?'selected':''}>savaitės</option>
-        <option value="30" ${unit==='30'?'selected':''}>mėnesiai</option>
+  const rowHtml = (kind, days)=>days.map(day=>{
+    const unit = unitFor(day);
+    const amount = amountFor(day);
+    return `<div class="notif-row" data-kind="${kind}" data-day="${day}" style="display:grid;grid-template-columns:76px 1fr 38px;gap:8px;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:10px;margin-bottom:8px">
+      <input class="notif-amount" data-kind="${kind}" data-day="${day}" type="number" min="1" max="99" value="${amount}" inputmode="numeric" style="width:100%;height:40px;border:none;background:var(--bg);border-radius:10px;color:var(--text);font-size:16px;font-weight:700;text-align:center;padding:0 8px">
+      <select class="notif-unit" data-kind="${kind}" data-day="${day}" style="width:100%;height:40px;border:none;background:var(--bg);border-radius:10px;color:var(--text);font-size:14px;font-weight:650;padding:0 10px">
+        <option value="1" ${unit==='1'?'selected':''}>dienos prieš</option>
+        <option value="7" ${unit==='7'?'selected':''}>savaitės prieš</option>
+        <option value="30" ${unit==='30'?'selected':''}>mėnesiai prieš</option>
       </select>
-      ${m.hasWarranty && m.hasReturn ? `<select class="notif-kind" data-kind="${r.kind}" data-day="${r.day}" style="width:100%;height:40px;border:none;background:var(--bg);border-radius:10px;color:var(--text);font-size:14px;font-weight:650;padding:0 8px">
-        <option value="warranty" ${r.kind==='warranty'?'selected':''}>garantija</option>
-        <option value="return" ${r.kind==='return'?'selected':''}>grąžinimas</option>
-      </select>` : `<div style="height:40px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:10px;color:var(--text2);font-size:14px;font-weight:650">${r.kind==='warranty'?'garantija':'grąžinimas'}</div>`}
-      <button class="notif-remove" data-kind="${r.kind}" data-day="${r.day}" aria-label="Pašalinti priminimą" style="width:38px;height:38px;border:none;background:transparent;color:var(--text3);display:flex;align-items:center;justify-content:center"><i class="ti ti-x" style="font-size:20px"></i></button>
+      <button class="notif-remove" data-kind="${kind}" data-day="${day}" aria-label="Pašalinti priminimą" style="width:38px;height:38px;border:none;background:transparent;color:var(--text3);display:flex;align-items:center;justify-content:center"><i class="ti ti-x" style="font-size:20px"></i></button>
     </div>`;
   }).join('');
+  const sectionHtml = ({kind, title, active, expired, days})=>{
+    if(!active){
+      return `<div style="margin-bottom:18px;opacity:.55">
+        <div style="font-size:13px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">${title}</div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:14px;color:var(--text2);font-size:14px;line-height:1.35">
+          ${expired ? 'Terminas jau pasibaigęs, todėl priminimų pridėti negalima.' : 'Šiam terminui data nenurodyta.'}
+        </div>
+        <button disabled style="width:100%;height:44px;border:1px solid var(--border2);background:transparent;color:var(--text3);border-radius:14px;font-size:15px;font-weight:750;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;opacity:.65">
+          <i class="ti ti-plus"></i>Pridėti priminimą
+        </button>
+      </div>`;
+    }
+    return `<div style="margin-bottom:18px">
+      <div style="font-size:13px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">${title}</div>
+      ${rowHtml(kind, days)}
+      <button id="${kind==='warranty'?'notifAddWarrantyBtn':'notifAddReturnBtn'}" style="width:100%;height:44px;border:1px solid var(--border2);background:transparent;color:var(--accent);border-radius:14px;font-size:15px;font-weight:750;display:flex;align-items:center;justify-content:center;gap:8px">
+        <i class="ti ti-plus"></i>Pridėti priminimą
+      </button>
+    </div>`;
+  };
 
   return `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-end">
     <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 34px;max-height:85vh;overflow-y:auto">
       <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
       <h3 style="font-size:19px;font-weight:750;margin:0 0 18px;text-align:center">Kada priminti?</h3>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
-        <button id="notifMasterOn" class="chip${enabled?' active':''}" style="justify-content:center;height:44px;border-radius:14px;font-size:15px">Gauti priminimus</button>
-        <button id="notifMasterOff" class="chip${!enabled?' active':''}" style="justify-content:center;height:44px;border-radius:14px;font-size:15px">Nepriminti</button>
-      </div>
-
-      ${enabled ? `<div style="margin-bottom:16px">
-        ${rowHtml || `<div style="background:var(--bg2);border:1px dashed var(--border2);border-radius:14px;padding:16px;text-align:center;color:var(--text2);font-size:14px;margin-bottom:10px">Pridėkite bent vieną priminimą.</div>`}
-        <button id="notifAddBtn" style="width:100%;height:44px;border:1px solid var(--border2);background:transparent;color:var(--accent);border-radius:14px;font-size:15px;font-weight:750;display:flex;align-items:center;justify-content:center;gap:8px">
-          <i class="ti ti-plus"></i>Pridėti priminimą
-        </button>
-      </div>` : ''}
-
-      ${enabled && !canSave ? `<p style="font-size:13px;color:var(--orange);margin:-8px 0 14px">Pasirinkite bent vieną priminimo laiką.</p>` : ''}
-      <button id="notifSaveBtn" class="save-btn" ${canSave?'':'disabled'}>Išsaugoti pasirinkimą</button>
+      ${m.hasWarranty ? sectionHtml({kind:'warranty', title:'Garantija', active:m.warrantyActive, expired:m.warrantyExpired, days:warrantyDays}) : ''}
+      ${m.hasReturn ? sectionHtml({kind:'return', title:'Grąžinimas', active:m.returnActive, expired:m.returnExpired, days:returnDays}) : ''}
+      <button id="notifSaveBtn" class="save-btn">Išsaugoti</button>
     </div>
   </div>`;
 }
@@ -1650,10 +1733,11 @@ function setNotifArray(kind, arr){
   if(kind === 'return') state.notifModal.returnSelectedDays = cleanNotifArray(arr);
   else state.notifModal.selectedDays = cleanNotifArray(arr);
 }
-function addNotifReminder(){
+function addNotifReminder(kind){
   const m = state.notifModal;
   if(!m) return;
-  const kind = m.hasWarranty ? 'warranty' : 'return';
+  if(kind === 'warranty' && !m.warrantyActive) return;
+  if(kind === 'return' && !m.returnActive) return;
   const presets = kind === 'warranty' ? [7,14,30,60,1,3] : [3,2,1,5,7];
   const arr = notifArray(kind);
   const next = presets.find(d=>!arr.includes(d)) || 1;
@@ -1772,7 +1856,7 @@ function renderAppDialog(){
     ? 'display:flex;justify-content:center'
     : 'display:grid;grid-template-columns:1fr 1fr;gap:10px';
   const buttonBase = 'height:48px;min-height:48px;border-radius:12px;padding:0 14px;font-size:15px;font-weight:700;box-sizing:border-box;display:flex;align-items:center;justify-content:center;margin:0;line-height:1';
-  const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="${buttonBase};width:100%;background:none;border:1px solid var(--border2);color:var(--text)">Susisiekti</button>`;
+  const supportBtn = d.hideSupport ? '' : `<button id="appDialogSupportBtn" style="${buttonBase};width:100%;background:none;border:1px solid var(--border2);color:var(--text)">${esc(d.supportText || 'Susisiekti')}</button>`;
   const okBtnStyle = isSingleAction
     ? `${buttonBase};width:100%;max-width:260px`
     : `${buttonBase};width:100%`;
@@ -1833,8 +1917,8 @@ function renderMultiSelect(){
     </div>
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:10px;align-items:center">
       <button id="multiCancelBtn" style="background:none;border:1px solid var(--border2);color:var(--text3);font-size:14px;padding:10px 16px;border-radius:12px;cursor:pointer;flex-shrink:0">Atšaukti</button>
-      <button id="multiSaveBtn" ${selectedCount===0?'disabled':''} class="save-btn" style="flex:1;opacity:${selectedCount===0?'0.4':'1'}">
-        Išsaugoti${selectedCount>0?` (${selectedCount})`:''}
+      <button id="multiSaveBtn" ${selectedCount===0||state.multiSaving?'disabled':''} class="save-btn" style="flex:1;opacity:${selectedCount===0?'0.4':'1'}">
+        ${state.multiSaving?'Saugoma...':`Išsaugoti${selectedCount>0?` (${selectedCount})`:''}`}
       </button>
     </div>
   </div>`;
@@ -2078,6 +2162,11 @@ function attachEvents(){
   on('modeManual','click',()=>{state.addMode='manual';state.aiNameReview=false;render();});
 
   on('backBtn','click',()=>{
+    if(state.view==='add' && state.analyzing){
+      requestAnalysisExit('list');
+      return;
+    }
+    if(requestUnsavedAddExit('list')) return;
     if(state.view==='add' && state.multiEditIdx!=null){
       state.view='multi-select'; state.addMode=null; state.multiEditIdx=null; render();
     } else if(state.view==='add' && state.editItemId){
@@ -2091,7 +2180,7 @@ function attachEvents(){
 
   on('warrantyBtn','click',()=>{state.showWarranty=true;render();});
   on('warrantyOverlay','click',()=>{state.showWarranty=false;render();});
-  onAll('.warranty-opt','click',e=>{
+  onAll('.warranty-duration-opt','click',e=>{
     const v=e.currentTarget.dataset.wm;
     if(v==='x'){state.form.warrantyMonths=null;state.form.warrantyEnd='';}
     else{const m=parseInt(v);state.form.warrantyMonths=m;if(state.form.purchaseDate)state.form.warrantyEnd=addMonths(state.form.purchaseDate,m);}
@@ -2233,9 +2322,9 @@ function attachEvents(){
     const btn=document.getElementById('multiSaveBtn');
     if(btn){
       const n=r.items.filter(i=>i.selected).length;
-      btn.disabled=n===0;
+      btn.disabled=n===0 || state.multiSaving;
       btn.style.opacity=n===0?'0.4':'1';
-      btn.textContent=`Išsaugoti${n>0?` (${n})`:''}`;
+      btn.textContent=state.multiSaving ? 'Saugoma...' : `Išsaugoti${n>0?` (${n})`:''}`;
     }
   });
   onAll('.multi-name-input','input',e=>{
@@ -2278,20 +2367,9 @@ function attachEvents(){
     const item = state.items.find(i=>i.id===state.selected);
     if(item) showNotifModal(item.id, item);
   });
-  on('notifMasterOn','click',()=>{
-    if(!state.notifModal) return;
-    state.notifModal.enabled = true;
-    if(!state.notifModal.selectedDays?.length) state.notifModal.selectedDays = suggestNotifDays(state.notifModal.item?.warrantyMonths, state.notifModal.hasReturn);
-    if(state.notifModal.hasReturn && !state.notifModal.returnSelectedDays?.length) state.notifModal.returnSelectedDays = [3];
-    render();
-  });
-  on('notifMasterOff','click',()=>{
-    if(!state.notifModal) return;
-    state.notifModal.enabled = false;
-    render();
-  });
-  on('notifSaveBtn','click', saveNotifSettings);
-  on('notifAddBtn','click',addNotifReminder);
+  on('notifSaveBtn','click',()=>saveNotifSettings(false));
+  on('notifAddWarrantyBtn','click',()=>addNotifReminder('warranty'));
+  on('notifAddReturnBtn','click',()=>addNotifReminder('return'));
   onAll('.notif-remove','click',e=>{
     removeNotifReminder(e.currentTarget.dataset.kind, parseInt(e.currentTarget.dataset.day,10));
   });
@@ -2323,8 +2401,23 @@ function attachEvents(){
   on('contactBackBtn','click',()=>{ state.view='settings'; render(); });
   on('contactBackBtn2','click',()=>{ state.view='settings'; render(); });
   on('contactSendBtn','click', sendContactMessage);
-  on('appDialogOkBtn','click',()=>{ state.appDialog=null; render(); });
-  on('appDialogSupportBtn','click',openSupportFromDialog);
+  on('appDialogOkBtn','click',()=>{
+    if(state.appDialog?.supportAction==='cancelAnalysis') state.pendingAnalysisExit=null;
+    if(state.appDialog?.supportAction==='discardAdd') state.pendingUnsavedExit=null;
+    state.appDialog=null;
+    render();
+  });
+  on('appDialogSupportBtn','click',()=>{
+    if(state.appDialog?.supportAction==='cancelAnalysis'){
+      cancelAnalysisAndLeave();
+      return;
+    }
+    if(state.appDialog?.supportAction==='discardAdd'){
+      discardAddAndLeave();
+      return;
+    }
+    openSupportFromDialog();
+  });
   on('adminBackBtn','click',()=>{state.view='settings';render();});
   on('adminTestNotifBtn','click', testNotification);
   on('adminUserSearch','input',e=>{
@@ -2635,7 +2728,11 @@ async function updateItem(){
     showAppDialog('Trūksta garantijos datos', 'Nurodykite, iki kada galioja garantija. Prekės be garantijos datos neišsaugomos, kad sąraše neliktų neaiškių įrašų.');
     return;
   }
-  if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
+  if(!confirmExpiredTerms({
+    warrantyEnd: f.warrantyEnd,
+    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
+    label: 'Šios prekės'
+  })) return;
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !isPremiumUser()){
     showAppDialog('Reikia Premium', 'Prieš redaguojant Galio saugykloje saugomus įrašus atnaujinkite Premium arba perkelkite įrašus į šį įrenginį.', '');
@@ -2682,7 +2779,11 @@ async function saveItem(){
     showAppDialog('Trūksta garantijos datos', 'Nurodykite, iki kada galioja garantija. Prekės be garantijos datos neišsaugomos, kad sąraše neliktų neaiškių įrašų.');
     return;
   }
-  if(!confirmExpiredWarranty(f.warrantyEnd, 'Šios prekės')) return;
+  if(!confirmExpiredTerms({
+    warrantyEnd: f.warrantyEnd,
+    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
+    label: 'Šios prekės'
+  })) return;
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !isPremiumUser()){
     showAppDialog('Reikia Premium', 'Prieš pridėdami naujus įrašus atnaujinkite Premium arba perkelkite esamus įrašus į šį įrenginį.', '');
@@ -2808,8 +2909,8 @@ async function saveItem(){
 
 async function saveMultiItems(){
   const r = state.multiItemReceipt;
-  if(!r) return;
-  const selected = r.items.filter(i=>i.selected);
+  if(!r || state.multiSaving) return;
+  let selected = r.items.filter(i=>i.selected);
   if(selected.length===0) return;
   if(selected.some(i=>!String(i.name||'').trim())){
     toast('Įrašykite pavadinimą kiekvienai pasirinktai prekei');
@@ -2820,17 +2921,25 @@ async function saveMultiItems(){
     showAppDialog('Trūksta garantijos datos', `Prekei „${noWarrantyDate.name||'be pavadinimo'}“ nėra aiškios garantijos pabaigos datos. Atžymėkite šią prekę arba redaguokite ją ir nurodykite garantiją.`);
     return;
   }
-  const expired = selected.filter(i=>isExpiredDate(multiWarrantyEnd(i,r)));
-  if(expired.length){
-    const list = expired
+  const returnDeadlineForReceipt = calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop);
+  const expiredWarranty = selected.filter(i=>isExpiredDate(multiWarrantyEnd(i,r)));
+  const expiredReturn = isExpiredDate(returnDeadlineForReceipt) ? selected : [];
+  if(expiredWarranty.length || expiredReturn.length){
+    const affected = [...new Map([...expiredWarranty, ...expiredReturn].map(i=>[i.name || JSON.stringify(i), i])).values()];
+    const list = affected
       .slice(0, 6)
-      .map(i=>`• ${i.name || 'Be pavadinimo'} (${fmtDate(multiWarrantyEnd(i,r))})`)
+      .map(i=>{
+        const bits = [];
+        if(isExpiredDate(multiWarrantyEnd(i,r))) bits.push(`garantija iki ${fmtDate(multiWarrantyEnd(i,r))}`);
+        if(isExpiredDate(returnDeadlineForReceipt)) bits.push(`grąžinimas iki ${fmtDate(returnDeadlineForReceipt)}`);
+        return `• ${i.name || 'Be pavadinimo'} (${bits.join(', ')})`;
+      })
       .join('\n');
-    const more = expired.length > 6 ? `\n… ir dar ${expired.length - 6}` : '';
-    const heading = expired.length === 1
-      ? '1 prekės garantija jau pasibaigusi'
-      : `${expired.length} prekių garantijos jau pasibaigusios`;
-    if(!confirm(`${heading}:\n\n${list}${more}\n\nAr tikrai norite jas išsaugoti?`)) return;
+    const more = affected.length > 6 ? `\n… ir dar ${affected.length - 6}` : '';
+    const headingParts = [];
+    if(expiredWarranty.length) headingParts.push(expiredWarranty.length === 1 ? '1 prekės garantija pasibaigusi' : `${expiredWarranty.length} prekių garantijos pasibaigusios`);
+    if(expiredReturn.length) headingParts.push('nemokamo grąžinimo laikas pasibaigęs');
+    if(!confirm(`${headingParts.join(', ')}:\n\n${list}${more}\n\nAr tikrai norite išsaugoti šiuos įrašus?`)) return;
   }
 
   const isCloud = state.storageMode==='cloud';
@@ -2850,15 +2959,22 @@ async function saveMultiItems(){
     }))
     .filter(x=>x.existing);
   if(duplicates.length){
-    const names = duplicates.slice(0,3).map(x=>`„${x.item.name || x.existing.name || 'be pavadinimo'}“`).join(', ');
-    showAppDialog(
-      'Čekis jau išsaugotas',
-      `Šio čekio prekės jau yra garantijų sąraše: ${names}${duplicates.length>3?' ir kt.' : ''}. Norėdami pakeisti informaciją, redaguokite esamus įrašus.`,
-      '',
-      {hideSupport:true}
-    );
-    return;
+    const duplicateItems = new Set(duplicates.map(x=>x.item));
+    selected = selected.filter(item=>!duplicateItems.has(item));
+    if(selected.length===0){
+      const names = duplicates.slice(0,3).map(x=>`„${x.item.name || x.existing.name || 'be pavadinimo'}“`).join(', ');
+      showAppDialog(
+        'Prekės jau išsaugotos',
+        `Visos pasirinktos prekės jau yra garantijų sąraše: ${names}${duplicates.length>3?' ir kt.' : ''}. Norėdami pakeisti informaciją, redaguokite esamus įrašus.`,
+        '',
+        {hideSupport:true}
+      );
+      return;
+    }
+    toast(`Praleista ${duplicates.length} jau išsaugota ${duplicates.length===1?'prekė':'prekės'}`);
   }
+  state.multiSaving = true;
+  render();
   let saved=0, failed=0;
   const savedIds = [];
   let sharedDocMeta = null;
@@ -2953,8 +3069,10 @@ async function saveMultiItems(){
     }
   }
 
+  state.multiSaving=false;
   state.multiItemReceipt=null;
   state.pendingAiCharge=false;
+  if(isCloud) state.loadingItems = true;
   if(failed>0) toast(`${ltSavedProducts(saved).replace(' ✓','')}, nepavyko ${failed}`);
   else toast(ltSavedProducts(saved));
   if(savedIds.length>0){
@@ -3247,7 +3365,8 @@ function proceedWithFile(file, isPdf){
           startAnalyzeWatchdog();
           render();
           try{
-            await analyzeDoc(compB64,'image/jpeg');
+            const runId = ++state.analysisRunId;
+            await analyzeDoc(compB64,'image/jpeg', runId);
           }finally{
             clearAnalyzeWatchdog();
             state.analyzing=false;
@@ -3692,7 +3811,8 @@ async function confirmDeleteAccount(){
 // Premium isn't truly "unlimited" — that would mean unbounded exposure on
 // our own Anthropic billing if a Premium account is compromised, scripted,
 // or simply misused. Premium gets a generous but hard cap instead.
-async function analyzeDoc(b64,mime){
+async function analyzeDoc(b64,mime, runId=state.analysisRunId){
+  const stillCurrent = () => runId === state.analysisRunId;
   const isPremium = isPremiumUser();
   const usesLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
 
@@ -3759,15 +3879,18 @@ category kiekvienai prekei: viena iš: Elektronika, Buitinė technika, Avalynė 
 Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tuščią masyvą [].`}
       ]}]})
     });
+    if(!stillCurrent()) return;
     if(res.status===401){toast('Sesija pasibaigė, prisijunkite iš naujo');return;}
     if(res.status===403){toast('Patvirtinkite el. paštą, kad naudotumėte AI analizę');return;}
     if(res.status===429){toast('Pasiektas AI analizių limitas');return;}
     if(!res.ok)return;
 
     await chargeAiUsageNow();
+    if(!stillCurrent()) return;
     state.pendingAiCharge = false;
 
     const data=await res.json();
+    if(!stillCurrent()) return;
     const p=JSON.parse((data.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
 
     // Quality warning — surfaced to the user, not silently swallowed.
