@@ -1155,7 +1155,7 @@ function renderAdd(){
     <div class="warranty-panel">
       <div class="warranty-handle"></div>
       <div class="warranty-title">Grąžinimo terminas</div>
-      ${RETURN_DAY_OPTS.map(d=>`<button class="return-days-opt${currentReturnDays===d?' selected':''}" data-days="${d}">${d} d.${currentReturnDays===d?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
+      ${RETURN_DAY_OPTS.map(d=>`<button class="warranty-opt return-days-opt${currentReturnDays===d?' selected':''}" data-days="${d}">${d} d.${currentReturnDays===d?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
     </div>
   </div>`:'';
 
