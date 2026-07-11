@@ -89,7 +89,7 @@ function applyTheme(){
 }
 applyTheme();
 
-function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
+function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,returnDeadline:'',docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
 
 // Admin and active Premium users get Premium rights.
 function isPremiumUser(){ return state.userDoc?.plan==='premium' || state.userDoc?.role==='admin'; }
@@ -136,7 +136,7 @@ function hasUnsavedAddWork(){
   if(state.view!=='add' || !state.addMode || state.editItemId || state.multiEditIdx!=null) return false;
   const f = state.form || {};
   const empty = emptyForm();
-  const fields = ['name','category','shop','purchaseDate','warrantyEnd','docType','docNumber','notes','docData'];
+  const fields = ['name','category','shop','purchaseDate','warrantyEnd','returnDeadline','docType','docNumber','notes','docData'];
   return fields.some(k => (f[k] || '') !== (empty[k] || ''))
     || f.warrantyMonths !== empty.warrantyMonths
     || f.returnDays !== empty.returnDays
@@ -167,10 +167,10 @@ function requestAnalysisExit(targetView='list'){
   if(!state.analyzing) return false;
   state.pendingAnalysisExit = { targetView };
   showAppDialog(
-    'Analizė vyksta',
-    'Dokumentas dar analizuojamas. Galite palaukti arba atšaukti analizę ir išeiti iš šio įrašo.',
+    'Dokumentas skaitomas',
+    'Galio dar skaito dokumentą ir pildo informaciją. Palaukite kelias sekundes arba nutraukite skaitymą ir išeikite.',
     '',
-    {hideSupport:false, supportText:'Atšaukti analizę', okText:'Palaukti', supportAction:'cancelAnalysis', align:'center'}
+    {hideSupport:false, supportText:'Nutraukti', okText:'Palaukti', supportAction:'cancelAnalysis', align:'center'}
   );
   return true;
 }
@@ -198,6 +198,19 @@ window.addEventListener('offline',()=>{state.online=false;render();});
 function daysLeft(d){if(!d)return null;return Math.ceil((new Date(d)-new Date())/86400000);}
 function fmtDate(d){if(!d)return '—';return new Date(d).toLocaleDateString('lt-LT');}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function offlineDialog(title, message){
+  showAppDialog(
+    title || 'Nėra interneto ryšio',
+    message || 'Galite peržiūrėti šiame įrenginyje esančius įrašus. AI nuskaitymui, Galio saugyklai ir priminimų nustatymams reikės interneto.',
+    '',
+    {hideSupport:true, align:'center'}
+  );
+}
+function requireOnline(title, message){
+  if(state.online) return true;
+  offlineDialog(title, message);
+  return false;
+}
 function normalizeSearchText(value){
   return String(value ?? '')
     .toLowerCase()
@@ -243,20 +256,33 @@ function calcReturnDeadline(purchaseDate, returnDays, shop=''){
   if(!purchaseDate) return null;
   return addDays(purchaseDate, normalizeReturnDays(returnDays, shop));
 }
+function formReturnDaysForSave(form){
+  return form.returnDays === null ? null : normalizeReturnDays(form.returnDays, form.shop);
+}
+function formReturnDeadline(form){
+  if(form.returnDays === null) return form.returnDeadline || null;
+  return calcReturnDeadline(form.purchaseDate, form.returnDays, form.shop);
+}
+function receiptReturnDeadline(receipt){
+  if(!receipt) return null;
+  if(receipt.returnDays === null) return receipt.returnDeadline || null;
+  return calcReturnDeadline(receipt.purchaseDate, receipt.returnDays, receipt.shop);
+}
 function effectiveReturnDays(item){
   if(!item) return 14;
   const explicit = Number.parseInt(item.returnDays,10);
   if(Number.isFinite(explicit) && explicit > 0 && explicit <= 365) return explicit;
-  const inferred = inferReturnDays(item.shop);
-  if(inferred !== 14) return inferred;
   if(item.purchaseDate && item.returnDeadline){
     const diff = Math.round((new Date(item.returnDeadline) - new Date(item.purchaseDate)) / 86400000);
     if(Number.isFinite(diff) && diff > 0 && diff <= 365) return diff;
   }
+  const inferred = inferReturnDays(item.shop);
+  if(inferred !== 14) return inferred;
   return 14;
 }
 function effectiveReturnDeadline(item){
   if(!item) return null;
+  if((item.returnDays === null || item.returnDays === 'custom') && item.returnDeadline) return item.returnDeadline;
   if(item.purchaseDate) return calcReturnDeadline(item.purchaseDate, effectiveReturnDays(item), item.shop);
   return item.returnDeadline || null;
 }
@@ -285,11 +311,23 @@ function extractPriceFromNotes(notes=''){
 function notesWithoutPrice(notes=''){
   return String(notes || '').replace(/(?:^|\n)Kaina:\s*[^\n]+/i,'').trim();
 }
+function warrantyTimeLeftText(days){
+  if(days===null) return '';
+  if(days<0) return 'Baigėsi';
+  if(days===0) return 'Šiandien';
+  if(days<60) return `${days}d.`;
+  const months = Math.max(1, Math.round(days / 30.4375));
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  if(years <= 0) return `${months} mėn.`;
+  if(remMonths === 0) return `${years} m.`;
+  return `${years} m. ${remMonths} mėn.`;
+}
 function badgeHtml(days){
   if(days===null)return '';
   if(days<0)return`<span class="badge badge-exp">Baigėsi</span>`;
   if(days<=30)return`<span class="badge badge-warn">${days}d.</span>`;
-  return`<span class="badge badge-ok">${days}d.</span>`;
+  return`<span class="badge badge-ok">${warrantyTimeLeftText(days)}</span>`;
 }
 function returnBadgeHtml(deadline){
   const d = daysLeft(deadline);
@@ -314,14 +352,21 @@ function confirmExpiredWarranty(dateStr, label='Šios prekės'){
   return confirm(`${label} garantija jau pasibaigusi (${fmtDate(dateStr)}).\n\nAr tikrai norite pridėti šį įrašą?`);
 }
 function confirmExpiredTerms({warrantyEnd, returnDeadline, label='Šios prekės'}){
-  const parts = [];
-  if(isExpiredDate(warrantyEnd)) parts.push(`garantija jau pasibaigusi (${fmtDate(warrantyEnd)})`);
-  if(isExpiredDate(returnDeadline)) parts.push(`nemokamo grąžinimo laikas jau pasibaigęs (${fmtDate(returnDeadline)})`);
-  if(!parts.length) return true;
-  const intro = parts.length === 1
-    ? `${label} ${parts[0]}.`
-    : `${label} ${parts.join(' ir ')}.`;
-  return confirm(`${intro}\n\nAr tikrai norite išsaugoti šį įrašą?`);
+  if(isExpiredDate(warrantyEnd)){
+    const returnInfo = isExpiredDate(returnDeadline)
+      ? `\n\nNemokamo grąžinimo laikas taip pat pasibaigęs (${fmtDate(returnDeadline)}).`
+      : '';
+    return confirm(`${label} garantija jau pasibaigusi (${fmtDate(warrantyEnd)}).${returnInfo}\n\nAr tikrai norite išsaugoti šį įrašą?`);
+  }
+  if(isExpiredDate(returnDeadline)){
+    showAppDialog(
+      'Grąžinimo laikas pasibaigęs',
+      `Nemokamo grąžinimo terminas baigėsi ${fmtDate(returnDeadline)}. Įrašą išsaugosime, nes garantija dar galioja.`,
+      '',
+      {hideSupport:true, align:'center'}
+    );
+  }
+  return true;
 }
 function multiWarrantyEnd(item, receipt){
   if(item?.warrantyEnd) return item.warrantyEnd;
@@ -423,7 +468,7 @@ function maybeShowReturnFeatureIntro(existingUserDoc=false){
   localStorage.setItem(seenKey,'1');
   state.appDialog = {
     title: 'Nauja: grąžinimo terminai',
-    message: 'Pirk internetu ramiau. Nuskenuok čekį ar sąskaitą, o Galio parodys iki kada gali grąžinti prekę ir primins prieš terminą.',
+    message: 'Pirk internetu ramiau. Nuskenuok čekį ar sąskaitą, o Galio parodys konkrečią datą iki kada dar gali grąžinti prekę ir leis pasirinkti priminimą prieš terminą.',
     supportDraft: '',
     hideSupport: true,
   };
@@ -819,6 +864,13 @@ window._appStartNewItem = (mode) => {
     return;
   }
   if(requestUnsavedAddExit('list')) return;
+  if(mode==='photo' && !state.online){
+    offlineDialog(
+      'Nuskaitymui reikia interneto',
+      'Dokumento nuskaitymas veikia su AI, todėl jam reikia interneto. Dabar galite įvesti prekę rankiniu būdu, o dokumentą pridėti vėliau.'
+    );
+    return;
+  }
   if(mode==='photo' && !canAttachNewDoc()){
     showAppDialog('Dokumentų limitas pasiektas', `Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
     return;
@@ -860,7 +912,7 @@ function _doRender(){
 
   pushHistoryIfNeeded(viewKey);
 
-  const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto · veikia lokaliai'}</div>`;
+  const syncPill = `<div class="sync-pill${state.online?'':' offline'}"><span class="dot"></span>${state.online?'Sinchronizuota':'Be interneto · rodomi įrenginyje esantys įrašai'}</div>`;
   scr.innerHTML = (state.online?'':syncPill) + html + (state.notifModal ? renderNotifModal() : '') + (state.appDialog ? renderAppDialog() : '');
 
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.view));
@@ -876,9 +928,9 @@ function _doRender(){
 // ── Onboarding ─────────────────────────────────────────────────────────────
 const ONBOARD_SLIDES = [
   { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok čekį', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
-  { icon:'ti-rotate-2', bg:'rgba(59,130,246,.14)', color:'#60a5fa', title:'Pirk internetu ramiai', text:'Nuskenuok pirkinį, o Galio parodys iki kada dar gali grąžinti prekę. 14, 30 ar kitas terminas — nebereikia skaičiuoti galvoje.' },
+  { icon:'ti-rotate-2', bg:'rgba(59,130,246,.14)', color:'#60a5fa', title:'Nepražiopsok grąžinimo', text:'Pirk internetu ramiau: nuskenuok čekį, o Galio parodys tikslią datą iki kada gali grąžinti prekę ir leis pasirinkti priminimą prieš terminą.' },
   { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'Sąskaita kompiuteryje?', text:'Ne bėda — atidaryk ją ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotrauką.' },
-  { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Niekada nepraleisk garantijos', text:'Matykite iš karto, kurių daiktų garantija baigiasi greitai, ir nepraraskite teisės į nemokamą remontą.' },
+  { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Priminimai terminams', text:'Gauk priminimą prieš grąžinimo terminą arba garantijos pabaigą, kad nereikėtų visko laikyti galvoje.' },
   { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Įrašai gali būti laikomi Galio saugykloje, todėl jie nepririšti prie vieno įrenginio.' },
 ];
 function renderOnboarding(){
@@ -1031,10 +1083,14 @@ function renderList(){
   </div>`:'';
 
   // Subtilus priminimų kvietimas - tik jei yra artėjančių terminų ir ne premium
-  const soonExpiring = !isPremium && items.some(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0&&d<=60;});
+  const soonExpiring = !isPremium && items.some(i=>{
+    const warranty = daysLeft(i.warrantyEnd);
+    const returns = daysLeft(effectiveReturnDeadline(i));
+    return (warranty!==null&&warranty>=0&&warranty<=60) || (returns!==null&&returns>=0&&returns<=14);
+  });
   const notifPromo = soonExpiring ? `<div class="plan-banner" id="notifPromoBanner" style="background:var(--accent-bg);margin:0 16px 14px;cursor:pointer">
     <i class="ti ti-bell-ringing" style="color:var(--accent)"></i>
-    <div class="pb-text" style="color:var(--text)">Norite priminimo prieš garantijos pabaigą? <b style="color:var(--accent)">Sužinokite apie Premium</b></div>
+    <div class="pb-text" style="color:var(--text)">Norite priminimo prieš grąžinimo terminą ar garantijos pabaigą? <b style="color:var(--accent)">Sužinokite apie Premium</b></div>
     <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
   </div>` : '';
   const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
@@ -1048,6 +1104,10 @@ function renderList(){
     <div class="pb-text" style="color:var(--accent)">Patvirtinkite el. paštą, kad galėtumėte naudoti AI analizę. ${state.authInfo&&state.authInfo.includes('iš naujo')?esc(state.authInfo):'Patikrinkite Spam aplanką.'}</div>
     <button id="resendVerifyBtn" style="background:var(--accent)" ${state.authBusy?'disabled':''}>${state.authBusy?'...':'Siųsti dar kartą'}</button>
   </div>`:'';
+  const offlineBanner = !state.online ? `<div class="plan-banner" style="background:var(--bg2);margin:0 16px 14px">
+    <i class="ti ti-wifi-off" style="color:var(--text2)"></i>
+    <div class="pb-text" style="color:var(--text2)">Nėra interneto ryšio. Galite peržiūrėti šiame įrenginyje esančius įrašus; AI nuskaitymas, Galio saugykla ir priminimų keitimas veiks prisijungus.</div>
+  </div>` : '';
 
   const chips=['Visos',...CATEGORIES].map(c=>`<button class="chip${filterCat===c?' active':''}" data-filter="${esc(c)}">${esc(c)}</button>`).join('');
 
@@ -1084,8 +1144,8 @@ function renderList(){
 
   const emptyHtml=state.loadingItems ? skeletonHtml : items.length===0?`<div class="empty-state">
     <div class="empty-icon"><i class="ti ti-shield-check"></i></div>
-    <h3>Dar nėra garantijų</h3>
-    <p>Pridėkite pirmą daiktą paspausdami + mygtuką apačioje</p>
+    <h3>Pridėkite pirmą pirkinį</h3>
+    <p>Nuskenuokite čekį ar sąskaitą. Galio parodys garantijos pabaigą ir iki kada prekę dar galima grąžinti.</p>
   </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>Pabandykite kitą kategoriją</p></div>`:'';
 
   return`<div>
@@ -1096,6 +1156,7 @@ function renderList(){
     ${statsHtml}
     ${verifyBanner}
     ${downgradeBanner}
+    ${offlineBanner}
     ${planBanner}
     ${notifPromo}
     <div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
@@ -1174,17 +1235,18 @@ function renderPicker(){
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const aiExhausted = !isPremium && aiLeft<=0;
   const docLimitReached = !canAttachNewDoc();
+  const offline = !state.online;
 
   return`<div>
-    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Nauja garantija</h2></div>
+    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Naujas pirkinys</h2></div>
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Nuskaityti dokumentą</h3><p>${docLimitReached?`Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`:aiExhausted?'AI analizės išnaudotos. Toliau įveskite rankiniu būdu.':`Įkelkite čekį – AI užpildys laukus${!isPremium?` (${aiLeft} liko)`:''}.`}</p></div>
+        <div><h3>Nuskaityti čekį</h3><p>${offline?'Reikia interneto. Dabar galite įvesti rankiniu būdu.':docLimitReached?`Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`:aiExhausted?'AI analizės išnaudotos. Toliau įveskite rankiniu būdu.':`AI ištrauks prekes, garantiją ir grąžinimo terminą${!isPremium?` (${aiLeft} liko)`:''}.`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
-        <div><h3>Įvesti rankiniu būdu</h3><p>Patys užpildykite prekės, parduotuvės ir terminų laukus.</p></div>
+        <div><h3>Įvesti rankiniu būdu</h3><p>Patys įrašykite prekę, garantijos pabaigą ir grąžinimo datą.</p></div>
       </button>
     </div>
     ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
@@ -1234,13 +1296,17 @@ function renderAdd(){
       ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt warranty-duration-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
     </div>
   </div>`:'';
-  const currentReturnDays = normalizeReturnDays(f.returnDays, f.shop);
+  const isCustomReturnDate = f.returnDays === null;
+  const currentReturnDays = isCustomReturnDate ? null : normalizeReturnDays(f.returnDays, f.shop);
+  const currentReturnDeadline = formReturnDeadline(f);
+  const canSaveForm = f.name.trim() && f.warrantyEnd && state.uploadPct===null && (!isCustomReturnDate || !!f.returnDeadline);
   const returnDaysSheet=state.showReturnDays?`<div class="warranty-sheet" id="returnDaysSheet">
     <div class="warranty-overlay" id="returnDaysOverlay"></div>
     <div class="warranty-panel">
       <div class="warranty-handle"></div>
       <div class="warranty-title">Grąžinimo terminas</div>
       ${RETURN_DAY_OPTS.map(d=>`<button class="warranty-opt return-days-opt${currentReturnDays===d?' selected':''}" data-days="${d}">${d} d.${currentReturnDays===d?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
+      <button class="warranty-opt return-days-opt${isCustomReturnDate?' selected':''}" data-days="x">Kita data${isCustomReturnDate?`<i class="ti ti-check"></i>`:''}</button>
     </div>
   </div>`:'';
 
@@ -1318,11 +1384,12 @@ function renderAdd(){
         <button type="button" class="form-field tappable" id="returnDaysBtn" style="background:none;border:none;text-align:left;width:100%">
           <label>Grąžinimas</label>
           <div class="form-field-row">
-            <div class="fv">${currentReturnDays} d.</div>
+            <div class="fv">${isCustomReturnDate ? 'Kita data' : `${currentReturnDays} d.`}</div>
             <i class="ti ti-chevron-right form-row-chevron"></i>
           </div>
-          ${f.purchaseDate?`<div style="font-size:13px;color:var(--text2);margin-top:6px;line-height:1.35">Grąžinti iki ${fmtDate(calcReturnDeadline(f.purchaseDate,f.returnDays,f.shop))}</div>`:''}
+          ${currentReturnDeadline?`<div style="font-size:13px;color:var(--text2);margin-top:6px;line-height:1.35">Grąžinti iki ${fmtDate(currentReturnDeadline)}</div>`:''}
         </button>
+        ${isCustomReturnDate?`<div class="form-field"><label>Grąžinti iki</label><input type="date" id="f_returnDeadline" value="${esc(f.returnDeadline||'')}" /></div>${!f.returnDeadline?`<div style="font-size:13px;color:var(--orange);padding:0 2px 10px">Nurodykite grąžinimo pabaigos datą.</div>`:''}`:''}
       </div>
       ${f.warrantyAppliesWarning ? `<div class="plan-banner" style="margin-bottom:16px;background:var(--orange-bg)">
         <i class="ti ti-info-circle" style="color:var(--orange);flex-shrink:0"></i>
@@ -1357,7 +1424,7 @@ function renderAdd(){
     ${returnDaysSheet}
     ${nameReviewModal}
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
-      <button class="save-btn" id="saveBtn" ${f.name.trim()&&f.warrantyEnd&&state.uploadPct===null?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
+      <button class="save-btn" id="saveBtn" ${canSaveForm?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
     </div>
   </div>`;
 }
@@ -1372,7 +1439,7 @@ function renderDetail(){
   if(days===null){sc='var(--bg2)';si='ti-shield';sv='Nenurodyta';}
   else if(days<0){sc='var(--red-bg)';si='ti-shield-x';sv='Garantija baigėsi';}
   else if(days<=30){sc='var(--orange-bg)';si='ti-shield-exclamation';sv=`Liko ${days} d.`;}
-  else{sc='var(--green-bg)';si='ti-shield-check';sv=`Liko ${days} d.`;}
+  else{sc='var(--green-bg)';si='ti-shield-check';sv=`Liko ${warrantyTimeLeftText(days)}`;}
   const textColor=days===null?'var(--text2)':days<0?'var(--red)':days<=30?'var(--orange)':'var(--green)';
   const isPremium = isPremiumUser();
 
@@ -1499,6 +1566,10 @@ function renderSettings(){
       <i class="ti ti-crown"></i>
       <div class="pb-text">Atsinaujinkite į Premium – Galio saugykla, priminimai ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
       <button id="upgradeBtnSettings">Premium</button>
+    </div>` : ''}
+    ${!state.online ? `<div class="plan-banner" style="background:var(--bg2);margin:0 16px 16px">
+      <i class="ti ti-wifi-off" style="color:var(--text2)"></i>
+      <div class="pb-text" style="color:var(--text2)">Nėra interneto ryšio. Saugojimo ir priminimų nustatymus galėsite keisti prisijungę.</div>
     </div>` : ''}
 
     <p class="form-label-section" style="margin:0 16px 8px">Įrašų saugojimas</p>
@@ -2189,16 +2260,29 @@ function attachEvents(){
   on('returnDaysBtn','click',()=>{state.showReturnDays=true;render();});
   on('returnDaysOverlay','click',()=>{state.showReturnDays=false;render();});
   onAll('.return-days-opt','click',e=>{
-    state.form.returnDays = normalizeReturnDays(e.currentTarget.dataset.days, state.form.shop);
+    const v = e.currentTarget.dataset.days;
+    if(v === 'x'){
+      state.form.returnDays = null;
+      if(!state.form.returnDeadline && state.form.purchaseDate) state.form.returnDeadline = calcReturnDeadline(state.form.purchaseDate, 14, state.form.shop);
+    }else{
+      state.form.returnDays = normalizeReturnDays(v, state.form.shop);
+      state.form.returnDeadline = '';
+    }
     state.showReturnDays=false;
     syncSave();
     render();
   });
   on('f_warrantyEnd','change',e=>{state.form.warrantyEnd=e.target.value;});
+  on('f_returnDeadline','change',e=>{state.form.returnDeadline=e.target.value;syncSave();});
 
   ['name','shop','purchaseDate','docType','docNumber','category','notes'].forEach(k=>{
-    on(`f_${k}`,'input',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
-    on(`f_${k}`,'change',e=>{state.form[k]=e.target.value;if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);syncSave();});
+    const updateField=e=>{
+      state.form[k]=e.target.value;
+      if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);
+      syncSave();
+    };
+    on(`f_${k}`,'input',updateField);
+    on(`f_${k}`,'change',updateField);
   });
 
   on('aiNameReviewInput','input',e=>{state.form.name=e.target.value;const b=document.getElementById('aiNameReviewSave');if(b)b.disabled=!state.form.name.trim();syncSave();});
@@ -2224,7 +2308,8 @@ function attachEvents(){
         r.items[idx].warrantyApplies=f.warrantyMonths!==null;
         r.items[idx].warrantyEnd=f.warrantyEnd;
         r.items[idx].price=f.notes.match(/Kaina: (.+)/)?.[1]||r.items[idx].price;
-        r.returnDays=normalizeReturnDays(f.returnDays, r.shop);
+        r.returnDays=formReturnDaysForSave(f);
+        r.returnDeadline=formReturnDeadline(f);
       }
       state.view='multi-select'; state.addMode=null; state.multiEditIdx=null;
       render();
@@ -2256,7 +2341,8 @@ function attachEvents(){
       purchaseDate: item.purchaseDate||'',
       warrantyEnd: item.warrantyEnd||'',
       warrantyMonths: item.warrantyMonths??24,
-      returnDays: effectiveReturnDays(item),
+      returnDays: item.returnDays === null || item.returnDays === 'custom' ? null : effectiveReturnDays(item),
+      returnDeadline: item.returnDeadline||'',
       docType: item.docType||'Kvitas / čekis',
       docNumber: item.docNumber||'',
       notes: item.notes||'',
@@ -2343,7 +2429,8 @@ function attachEvents(){
     state.form.category=item.category||'';
     state.form.shop=r.shop||'';
     state.form.purchaseDate=r.purchaseDate||'';
-    state.form.returnDays=normalizeReturnDays(r.returnDays, r.shop);
+    state.form.returnDays=r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop);
+    state.form.returnDeadline=r.returnDeadline||'';
     state.form.warrantyMonths=item.warrantyApplies===false?null:(item.warrantyMonths||24);
     state.form.warrantyEnd=multiWarrantyEnd(item,r);
     state.form.docType=r.docType||'Kvitas / čekis';
@@ -2599,6 +2686,13 @@ async function saveNotifSettings(skip=false){
 
 async function testNotification(){
   if(state.userDoc?.role!=='admin'){ toast('Tik administratoriui'); return; }
+  if(!state.online){
+    offlineDialog(
+      'Priminimų testui reikia interneto',
+      'Testas siunčia tikrą pranešimą iš serverio, todėl jį galima paleisti tik prisijungus prie interneto.'
+    );
+    return;
+  }
 
   toast('1/4 Ruošiamas testas...');
   let tempId=null;
@@ -2671,6 +2765,7 @@ async function testNotification(){
 
 async function requestPushPermission(){
   try{
+    if(!state.online) return false;
     const perm = await Notification.requestPermission();
     if(perm !== 'granted') return false;
 
@@ -2730,10 +2825,17 @@ async function updateItem(){
   }
   if(!confirmExpiredTerms({
     warrantyEnd: f.warrantyEnd,
-    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
+    returnDeadline: formReturnDeadline(f),
     label: 'Šios prekės'
   })) return;
   const isCloud = state.storageMode==='cloud';
+  if(isCloud && !state.online){
+    offlineDialog(
+      'Įrašui išsaugoti reikia interneto',
+      'Šis įrašas laikomas Galio saugykloje. Pakeitimus galėsime išsaugoti, kai vėl bus interneto ryšys.'
+    );
+    return;
+  }
   if(isCloud && !isPremiumUser()){
     showAppDialog('Reikia Premium', 'Prieš redaguojant Galio saugykloje saugomus įrašus atnaujinkite Premium arba perkelkite įrašus į šį įrenginį.', '');
     return;
@@ -2749,8 +2851,8 @@ async function updateItem(){
     docNumber: f.docNumber.slice(0,100),
     notes: f.notes.slice(0,1000),
     notifyEnabled: f.notifyEnabled!==false,
-    returnDays: normalizeReturnDays(f.returnDays, f.shop),
-    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
+    returnDays: formReturnDaysForSave(f),
+    returnDeadline: formReturnDeadline(f),
     ...(f.docData ? {docUrl:f.docData, docMime:f.docMime, docFileName:f.docFileName} : {}),
   };
 
@@ -2781,10 +2883,17 @@ async function saveItem(){
   }
   if(!confirmExpiredTerms({
     warrantyEnd: f.warrantyEnd,
-    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
+    returnDeadline: formReturnDeadline(f),
     label: 'Šios prekės'
   })) return;
   const isCloud = state.storageMode==='cloud';
+  if(isCloud && !state.online){
+    offlineDialog(
+      'Įrašui išsaugoti reikia interneto',
+      'Dabar nėra interneto ryšio, todėl negalime išsaugoti į Galio saugyklą. Prisijunkite prie interneto arba nustatymuose pasirinkite „Tik šiame įrenginyje“.'
+    );
+    return;
+  }
   if(isCloud && !isPremiumUser()){
     showAppDialog('Reikia Premium', 'Prieš pridėdami naujus įrašus atnaujinkite Premium arba perkelkite esamus įrašus į šį įrenginį.', '');
     return;
@@ -2837,8 +2946,8 @@ async function saveItem(){
     purchaseDate:f.purchaseDate, warrantyEnd:f.warrantyEnd, warrantyMonths:f.warrantyMonths,
     docType:f.docType, docNumber:(f.docNumber||'').slice(0,100), notes:(f.notes||'').slice(0,1000),
     notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
-    returnDays: normalizeReturnDays(f.returnDays, f.shop),
-    returnDeadline: calcReturnDeadline(f.purchaseDate, f.returnDays, f.shop),
+    returnDays: formReturnDaysForSave(f),
+    returnDeadline: formReturnDeadline(f),
     createdAtMs: Date.now(),
   };
 
@@ -2898,8 +3007,8 @@ async function saveItem(){
       warrantyEnd: savedForm.warrantyEnd,
       purchaseDate: savedForm.purchaseDate,
       shop: savedForm.shop,
-      returnDays: normalizeReturnDays(savedForm.returnDays, savedForm.shop),
-      returnDeadline: calcReturnDeadline(savedForm.purchaseDate, savedForm.returnDays, savedForm.shop),
+      returnDays: formReturnDaysForSave(savedForm),
+      returnDeadline: formReturnDeadline(savedForm),
     });
   }else{
     state.view='list'; render();
@@ -2921,28 +3030,35 @@ async function saveMultiItems(){
     showAppDialog('Trūksta garantijos datos', `Prekei „${noWarrantyDate.name||'be pavadinimo'}“ nėra aiškios garantijos pabaigos datos. Atžymėkite šią prekę arba redaguokite ją ir nurodykite garantiją.`);
     return;
   }
-  const returnDeadlineForReceipt = calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop);
+  const returnDeadlineForReceipt = receiptReturnDeadline(r);
   const expiredWarranty = selected.filter(i=>isExpiredDate(multiWarrantyEnd(i,r)));
   const expiredReturn = isExpiredDate(returnDeadlineForReceipt) ? selected : [];
-  if(expiredWarranty.length || expiredReturn.length){
-    const affected = [...new Map([...expiredWarranty, ...expiredReturn].map(i=>[i.name || JSON.stringify(i), i])).values()];
-    const list = affected
+  if(expiredWarranty.length){
+    const list = expiredWarranty
       .slice(0, 6)
-      .map(i=>{
-        const bits = [];
-        if(isExpiredDate(multiWarrantyEnd(i,r))) bits.push(`garantija iki ${fmtDate(multiWarrantyEnd(i,r))}`);
-        if(isExpiredDate(returnDeadlineForReceipt)) bits.push(`grąžinimas iki ${fmtDate(returnDeadlineForReceipt)}`);
-        return `• ${i.name || 'Be pavadinimo'} (${bits.join(', ')})`;
-      })
+      .map(i=>`• ${i.name || 'Be pavadinimo'} (garantija iki ${fmtDate(multiWarrantyEnd(i,r))})`)
       .join('\n');
-    const more = affected.length > 6 ? `\n… ir dar ${affected.length - 6}` : '';
-    const headingParts = [];
-    if(expiredWarranty.length) headingParts.push(expiredWarranty.length === 1 ? '1 prekės garantija pasibaigusi' : `${expiredWarranty.length} prekių garantijos pasibaigusios`);
-    if(expiredReturn.length) headingParts.push('nemokamo grąžinimo laikas pasibaigęs');
-    if(!confirm(`${headingParts.join(', ')}:\n\n${list}${more}\n\nAr tikrai norite išsaugoti šiuos įrašus?`)) return;
+    const more = expiredWarranty.length > 6 ? `\n… ir dar ${expiredWarranty.length - 6}` : '';
+    const heading = expiredWarranty.length === 1 ? '1 prekės garantija pasibaigusi' : `${expiredWarranty.length} prekių garantijos pasibaigusios`;
+    const returnInfo = expiredReturn.length ? `\n\nNemokamo grąžinimo laikas taip pat pasibaigęs (${fmtDate(returnDeadlineForReceipt)}).` : '';
+    if(!confirm(`${heading}:\n\n${list}${more}${returnInfo}\n\nAr tikrai norite išsaugoti šiuos įrašus?`)) return;
+  }else if(expiredReturn.length){
+    showAppDialog(
+      'Grąžinimo laikas pasibaigęs',
+      `Nemokamo grąžinimo terminas baigėsi ${fmtDate(returnDeadlineForReceipt)}. Įrašus išsaugosime, nes garantijos dar galioja.`,
+      '',
+      {hideSupport:true, align:'center'}
+    );
   }
 
   const isCloud = state.storageMode==='cloud';
+  if(isCloud && !state.online){
+    offlineDialog(
+      'Įrašams išsaugoti reikia interneto',
+      'Šie įrašai būtų saugomi Galio saugykloje. Juos galėsime išsaugoti, kai vėl bus interneto ryšys.'
+    );
+    return;
+  }
   if(isCloud && !isPremiumUser()){
     showAppDialog('Reikia Premium', 'Prieš pridėdami naujus įrašus atnaujinkite Premium arba perkelkite esamus įrašus į šį įrenginį.', '');
     return;
@@ -3039,8 +3155,8 @@ async function saveMultiItems(){
         docNumber:(r.docNumber||'').slice(0,100),
         notes:item.price?`Kaina: ${String(item.price).slice(0,50)}`:'',
         docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
-        returnDays: normalizeReturnDays(r.returnDays, r.shop),
-        returnDeadline: calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop),
+        returnDays: r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop),
+        returnDeadline: receiptReturnDeadline(r),
         notifyEnabled: false,
         notifyDays: [],
         notifyReturnDays: [],
@@ -3078,7 +3194,7 @@ async function saveMultiItems(){
   if(savedIds.length>0){
     const reminderBase = selected.find(item=>{
       const warrantyActive = daysLeft(multiWarrantyEnd(item, r)) !== null && daysLeft(multiWarrantyEnd(item, r)) >= 0;
-      const returnDeadline = calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop);
+      const returnDeadline = receiptReturnDeadline(r);
       const returnActive = daysLeft(returnDeadline) !== null && daysLeft(returnDeadline) >= 0;
       return warrantyActive || returnActive;
     });
@@ -3092,8 +3208,8 @@ async function saveMultiItems(){
       warrantyEnd: multiWarrantyEnd(reminderBase, r),
       purchaseDate: r.purchaseDate,
       shop: r.shop,
-      returnDays: normalizeReturnDays(r.returnDays, r.shop),
-      returnDeadline: calcReturnDeadline(r.purchaseDate, r.returnDays, r.shop),
+      returnDays: r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop),
+      returnDeadline: receiptReturnDeadline(r),
     });
   }else{
     state.view='list';
@@ -3294,6 +3410,11 @@ function handleDoc(e){
   const file = input.files?.[0];
   if(input) input.value = '';
   if(!file)return;
+  if(state.addMode==='photo' && !state.online){
+    state.docError='Dokumento nuskaitymui reikia interneto. Įveskite duomenis rankiniu būdu arba bandykite dar kartą prisijungę.';
+    render();
+    return;
+  }
   if(state.analyzing || state.uploadPct!==null){
     toast('Palaukite, ankstesnis failas dar apdorojamas');
     return;
@@ -3392,6 +3513,13 @@ function proceedWithFile(file, isPdf){
 async function checkPolicy(item){
   // Naudoja tą pačią Premium dienos kvotą kaip nuskaitymas
   if(!isPremiumUser()){ toast('Ši funkcija prieinama tik Premium nariams'); return; }
+  if(!state.online){
+    offlineDialog(
+      'AI patikrinimui reikia interneto',
+      'Gamintojo garantijos patikrinimas veikia su AI, todėl jam reikia interneto.'
+    );
+    return;
+  }
 
   const today = new Date().toISOString().slice(0,10);
   const month = today.slice(0,7);
@@ -3447,6 +3575,13 @@ async function checkPolicy(item){
 // ── Settings actions ───────────────────────────────────────────────────────
 async function toggleNotify(){
   if(!state.user)return;
+  if(!state.online){
+    offlineDialog(
+      'Priminimams reikia interneto',
+      'Priminimų nustatymus galėsime pakeisti, kai vėl bus interneto ryšys.'
+    );
+    return;
+  }
   if(state.storageMode!=='cloud'){
     showAppDialog('Priminimai neįjungti', 'Automatiniai priminimai veikia tik su Galio saugykloje esančiais įrašais. Jei įrašai laikomi tik šiame įrenginyje, terminus matysite programėlėje, bet priminimų negausite.', '', {hideSupport:true});
     return;
@@ -3582,6 +3717,13 @@ async function toggleStorageModeOld(){
 async function toggleStorageMode(){
   if(!state.user) return;
   if(state.migratingStorage) return;
+  if(!state.online){
+    offlineDialog(
+      'Saugojimo keitimui reikia interneto',
+      'Įrašų perkėlimui tarp įrenginio ir Galio saugyklos reikia interneto. Prisijunkite prie interneto ir bandykite dar kartą.'
+    );
+    return;
+  }
   state.storageError = '';
 
   const isPremium = isPremiumUser();
@@ -3813,6 +3955,11 @@ async function confirmDeleteAccount(){
 // or simply misused. Premium gets a generous but hard cap instead.
 async function analyzeDoc(b64,mime, runId=state.analysisRunId){
   const stillCurrent = () => runId === state.analysisRunId;
+  if(!state.online){
+    state.docError='Dokumento nuskaitymui reikia interneto. Įveskite duomenis rankiniu būdu arba bandykite dar kartą prisijungę.';
+    render();
+    return;
+  }
   const isPremium = isPremiumUser();
   const usesLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
 
