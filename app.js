@@ -1488,12 +1488,12 @@ function renderDetail(){
   </div>` : '';
 
   const policySection = isPremium ? `<div class="detail-section">
-    ${state.policyChecking ? `<div class="analyzing-row" style="justify-content:center"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI tikrina garantijos politiką...</span></div>`
+    ${state.policyChecking ? `<div class="analyzing-row" style="justify-content:center"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI tikrina papildomas sąlygas...</span></div>`
       : state.policyResult && state.policyResultFor===item.id ? `<div class="plan-banner" style="background:var(--accent-bg);align-items:flex-start">
           <i class="ti ti-info-circle" style="color:var(--accent);margin-top:2px;flex-shrink:0"></i>
-          <div class="pb-text" style="color:var(--text);font-size:14px;line-height:1.5"><b style="color:var(--accent)">AI pasiūlymas (patikrinkite patys):</b><br/>${esc(state.policyResult.replace(/\*\*/g,'').replace(/\*/g,''))}</div>
+          <div class="pb-text" style="color:var(--text);font-size:14px;line-height:1.5"><b style="color:var(--accent)">Papildoma informacija:</b><br/>${esc(state.policyResult.replace(/\*\*/g,'').replace(/\*/g,''))}</div>
         </div>`
-      : `<button class="qr-link-btn" id="checkPolicyBtn"><i class="ti ti-sparkles"></i>Patikrinti gamintojo garantiją su AI</button>`}
+      : `<button class="qr-link-btn" id="checkPolicyBtn"><i class="ti ti-sparkles"></i>Patikrinti papildomas sąlygas</button>`}
   </div>` : '';
 
   return`<div>
@@ -3554,8 +3554,13 @@ async function checkPolicy(item){
       body: JSON.stringify({
         model:'claude-sonnet-4-6', max_tokens:300, use_search:true,
         messages:[{role:'user', content:[{type:'text', text:
-          `Kiek laiko gamintojas paprastai suteikia garantiją šiam produktui: "${item.name}"${item.shop?` (pirkta iš ${item.shop})`:''}? `+
-          `Atsakyk lietuviškai, TRUMPAI (2-3 sakiniai). Nurodyk tipinį terminą ir paminėk kad reikia patikrinti gamintojo svetainėje.`
+          `Produktas: "${item.name}"${item.shop?` (pardavėjas: ${item.shop})`:''}.\n\n`+
+          `Atsakyk Lietuvos / ES vartotojo kontekste. Naujos vartojimo prekės iš profesionalaus pardavėjo paprastai turi 24 mėn. teisinę garantiją dėl prekės trūkumų. `+
+          `Gamintojo ar parduotuvės komercinė garantija gali būti tik papildoma ir negali sutrumpinti šios teisės.\n\n`+
+          `Patikrink, ar yra aiški papildoma gamintojo / parduotuvės sąlyga, naudinga vartotojui, pvz. ilgesnė komercinė garantija ar aiškus ribojimas. `+
+          `Nesiremk vien užsienio rinkai skirtu .com puslapiu kaip galutine taisykle Lietuvos vartotojui. `+
+          `Jei randi trumpesnį terminą nei 24 mėn. (pvz. 4 mėn.), aiškiai parašyk, kad jis nepakeičia LT/ES teisinės garantijos. `+
+          `Atsakyk lietuviškai, trumpai, 2-3 sakiniais. Nevadink to pasiūlymu ir nesiūlyk automatiškai trumpinti garantijos.`
         }]}]
       })
     });
@@ -4005,7 +4010,8 @@ GRIEŽTOS TAISYKLĖS (svarbiausia):
 3. Jei dokumente NĖRA pardavėjo pavadinimo/rekvizitų (pvz. nufotografuota tik dalis čekio) – shop lauke grąžink null, neišgalvok parduotuvės pavadinimo.
 4. Jei dokumentas neryškus, apkarpytas, ar dalis teksto neįskaitoma – privalai tai nurodyti quality lauke, nepaisant to stenkis ištraukti ką gali.
 5. Jei čekyje/sąskaitoje YRA KELIOS atskiros prekės (ne paslaugos) – grąžink KIEKVIENĄ atskirai items masyve. Paslaugos (pristatymas, montavimas, garantijos pratęsimas ir pan.) NĖRA prekės – jų neįtrauk į items, bet gali paminėti notes lauke.
-6. Kiekvienai prekei nurodyk, ar jai paprastai taikoma vartotojo garantija pagal ES/LT teisę (warrantyApplies). Drabužiai, avalynė, baldai, elektronika, technika – paprastai TAIP. Greitai gendantys maisto produktai, vienkartinio naudojimo higienos priemonės, paslaugos – paprastai NE.
+6. Kiekvienai prekei nurodyk, ar jai paprastai taikoma vartotojo teisinė garantija dėl prekės trūkumų pagal ES/LT teisę (warrantyApplies). Drabužiai, avalynė, aksesuarai, baldai, elektronika, technika – paprastai TAIP. Paslaugos, greitai gendantys produktai ir prekės, kurios nėra ilgalaikė vartojimo prekė, – paprastai NE.
+7. Nepainiok garantijos su grąžinimu. Higienos, apatiniai, kosmetika ar panašios prekės gali turėti ribotą grąžinimą, bet tai savaime nepanaikina garantijos dėl broko.
 
 Grąžink TIK JSON be markdown, šios struktūros:
 {
@@ -4020,7 +4026,11 @@ Grąžink TIK JSON be markdown, šios struktūros:
     {"name":"tikslus prekės pavadinimas iš dokumento","price":"kaina arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|Buitinė technika|Avalynė / drabužiai|Baldai|Automobiliai|Kita"}
   ]
 }
-warrantyMonths kiekvienai prekei: 6/12/24/36/60 mėn. pagal produkto tipą, jei warrantyApplies=true. Jei warrantyApplies=false, warrantyMonths=null.
+warrantyMonths kiekvienai prekei:
+- jei warrantyApplies=true, įprastai grąžink 24 mėn. kaip ES/LT teisinę garantiją dėl prekės trūkumų;
+- netrumpink garantijos pagal gamintojo ar parduotuvės komercinę garantiją, ypač jei informacija gali būti skirta ne Lietuvos rinkai;
+- jei dokumente aiškiai matomas ilgesnis garantijos terminas, grąžink ilgesnį terminą;
+- jei warrantyApplies=false, warrantyMonths=null.
 returnDays: jei dokumente matosi grąžinimo terminas (pvz. "30 dienų", "return within 30 days"), grąžink tą skaičių. Jei terminas nematomas, grąžink null.
 category kiekvienai prekei: viena iš: Elektronika, Buitinė technika, Avalynė / drabužiai, Baldai, Automobiliai, Kita.
 Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tuščią masyvą [].`}
