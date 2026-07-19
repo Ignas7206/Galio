@@ -347,26 +347,33 @@ function isExpiredDate(dateStr){
   const d = new Date(dateStr + 'T23:59:59');
   return Number.isFinite(d.getTime()) && d < new Date();
 }
-function confirmExpiredWarranty(dateStr, label='Šios prekės'){
-  if(!isExpiredDate(dateStr)) return true;
-  return confirm(`${label} garantija jau pasibaigusi (${fmtDate(dateStr)}).\n\nAr tikrai norite pridėti šį įrašą?`);
-}
-function confirmExpiredTerms({warrantyEnd, returnDeadline, label='Šios prekės'}){
+// Runs onProceed immediately unless the warranty is expired, in which case
+// it asks for confirmation via the app's own dialog first (never the
+// browser's native confirm()). An expired return deadline alone is just
+// informational — it never blocks proceeding.
+function confirmExpiredTerms({warrantyEnd, returnDeadline, label='Šios prekės'}, onProceed){
   if(isExpiredDate(warrantyEnd)){
     const returnInfo = isExpiredDate(returnDeadline)
       ? `\n\nNemokamo grąžinimo laikas taip pat pasibaigęs (${fmtDate(returnDeadline)}).`
       : '';
-    return confirm(`${label} garantija jau pasibaigusi (${fmtDate(warrantyEnd)}).${returnInfo}\n\nAr tikrai norite išsaugoti šį įrašą?`);
+    showConfirmDialog(
+      'Garantija jau pasibaigusi',
+      `${label} garantija jau pasibaigusi (${fmtDate(warrantyEnd)}).${returnInfo}\n\nAr tikrai norite išsaugoti šį įrašą?`,
+      onProceed,
+      {okText:'Išsaugoti', align:'center'}
+    );
+    return;
   }
   if(isExpiredDate(returnDeadline)){
     showAppDialog(
       'Grąžinimo laikas pasibaigęs',
       `Nemokamo grąžinimo terminas baigėsi ${fmtDate(returnDeadline)}. Įrašą išsaugosime, nes garantija dar galioja.`,
       '',
-      {hideSupport:true, align:'center'}
+      {hideSupport:true, align:'center', onOk:onProceed}
     );
+    return;
   }
-  return true;
+  onProceed();
 }
 function multiWarrantyEnd(item, receipt){
   if(item?.warrantyEnd) return item.warrantyEnd;
@@ -458,8 +465,22 @@ function showAppDialog(title, message, supportDraft='', options={}){
     okText: options.okText || '',
     supportText: options.supportText || '',
     supportAction: options.supportAction || '',
+    onOk: options.onOk || null,
   };
   render();
+}
+// Replaces the browser's native confirm() with the app's own bottom-sheet
+// dialog, so every yes/no prompt in the app looks and behaves the same way.
+// onConfirm runs only if the user taps the confirm (okText) button.
+function showConfirmDialog(title, message, onConfirm, options={}){
+  showAppDialog(title, message, '', {
+    hideSupport: false,
+    align: options.align || 'left',
+    okText: options.okText || 'Taip',
+    supportText: options.cancelText || 'Atšaukti',
+    supportAction: 'cancel',
+    onOk: onConfirm,
+  });
 }
 function maybeShowReturnFeatureIntro(existingUserDoc=false){
   const seenKey = 'galio_return_deadline_intro_v2';
@@ -468,7 +489,7 @@ function maybeShowReturnFeatureIntro(existingUserDoc=false){
   localStorage.setItem(seenKey,'1');
   state.appDialog = {
     title: 'Nauja: grąžinimo terminai',
-    message: 'Pirk internetu ramiau. Nuskenuok čekį ar sąskaitą, o Galio parodys konkrečią datą iki kada dar gali grąžinti prekę ir leis pasirinkti priminimą prieš terminą.',
+    message: 'Pirk internetu ramiau. Nuskenuok dokumentą, o Galio parodys konkrečią datą iki kada dar gali grąžinti prekę ir leis pasirinkti priminimą prieš terminą.',
     supportDraft: '',
     hideSupport: true,
   };
@@ -927,8 +948,8 @@ function _doRender(){
 
 // ── Onboarding ─────────────────────────────────────────────────────────────
 const ONBOARD_SLIDES = [
-  { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok čekį', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
-  { icon:'ti-rotate-2', bg:'rgba(59,130,246,.14)', color:'#60a5fa', title:'Nepražiopsok grąžinimo', text:'Pirk internetu ramiau: nuskenuok čekį, o Galio parodys tikslią datą iki kada gali grąžinti prekę ir leis pasirinkti priminimą prieš terminą.' },
+  { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok dokumentą', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
+  { icon:'ti-rotate-2', bg:'rgba(59,130,246,.14)', color:'#60a5fa', title:'Nepražiopsok grąžinimo', text:'Pirk internetu ramiau: nuskenuok dokumentą, o Galio parodys tikslią datą iki kada gali grąžinti prekę ir leis pasirinkti priminimą prieš terminą.' },
   { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'Sąskaita kompiuteryje?', text:'Ne bėda — atidaryk ją ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotrauką.' },
   { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Priminimai terminams', text:'Gauk priminimą prieš grąžinimo terminą arba garantijos pabaigą, kad nereikėtų visko laikyti galvoje.' },
   { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Įrašai gali būti laikomi Galio saugykloje, todėl jie nepririšti prie vieno įrenginio.' },
@@ -1145,7 +1166,7 @@ function renderList(){
   const emptyHtml=state.loadingItems ? skeletonHtml : items.length===0?`<div class="empty-state">
     <div class="empty-icon"><i class="ti ti-shield-check"></i></div>
     <h3>Pridėkite pirmą pirkinį</h3>
-    <p>Nuskenuokite čekį ar sąskaitą. Galio parodys garantijos pabaigą ir iki kada prekę dar galima grąžinti.</p>
+    <p>Nuskenuokite dokumentą. Galio parodys garantijos pabaigą ir iki kada prekę dar galima grąžinti.</p>
   </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>Pabandykite kitą kategoriją</p></div>`:'';
 
   return`<div>
@@ -1238,11 +1259,11 @@ function renderPicker(){
   const offline = !state.online;
 
   return`<div>
-    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Naujas pirkinys</h2></div>
+    <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Nauja garantija</h2></div>
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Nuskaityti čekį</h3><p>${offline?'Reikia interneto. Dabar galite įvesti rankiniu būdu.':docLimitReached?`Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`:aiExhausted?'AI analizės išnaudotos. Toliau įveskite rankiniu būdu.':`AI ištrauks prekes, garantiją ir grąžinimo terminą${!isPremium?` (${aiLeft} liko)`:''}.`}</p></div>
+        <div><h3>Nuskaityti dokumentą</h3><p>${offline?'Reikia interneto. Dabar galite įvesti rankiniu būdu.':docLimitReached?`Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`:aiExhausted?'AI analizės išnaudotos. Toliau įveskite rankiniu būdu.':`AI ištrauks prekes, garantiją ir grąžinimo terminą${!isPremium?` (${aiLeft} liko)`:''}.`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
@@ -1443,6 +1464,28 @@ function renderDetail(){
   const textColor=days===null?'var(--text2)':days<0?'var(--red)':days<=30?'var(--orange)':'var(--green)';
   const isPremium = isPremiumUser();
 
+  const returnDeadline = effectiveReturnDeadline(item);
+  const returnDays = daysLeft(returnDeadline);
+  let rsc,rsi,rsv,rTextColor;
+  if(returnDeadline!==null){
+    if(returnDays<0){ rsc='var(--bg2)'; rsi='ti-rotate-2'; rsv='Baigėsi'; rTextColor='var(--text2)'; }
+    else if(returnDays<=3){ rsc='var(--orange-bg)'; rsi='ti-rotate-2'; rsv=returnDays===0?'Šiandien':`Liko ${returnDays} d.`; rTextColor='var(--orange)'; }
+    else{ rsc='rgba(59,130,246,.14)'; rsi='ti-rotate-2'; rsv=`Liko ${returnDays} d.`; rTextColor='#60a5fa'; }
+  }
+  const statusHtml = returnDeadline!==null ? `<div style="display:flex;gap:10px;margin:16px 16px 0">
+    <div class="detail-status" style="flex:1;margin:0;background:${sc}">
+      <i class="ti ${si}" style="font-size:28px;color:${textColor}"></i>
+      <div><div class="ds-label" style="color:${textColor}">Garantija</div><div class="ds-val" style="color:${textColor};font-size:17px">${days===null?'Nenurodyta':days<0?'Baigėsi':`Liko ${warrantyTimeLeftText(days)}`}</div></div>
+    </div>
+    <div class="detail-status" style="flex:1;margin:0;background:${rsc}">
+      <i class="ti ${rsi}" style="font-size:28px;color:${rTextColor}"></i>
+      <div><div class="ds-label" style="color:${rTextColor}">Grąžinimas</div><div class="ds-val" style="color:${rTextColor};font-size:17px">${rsv}</div></div>
+    </div>
+  </div>` : `<div class="detail-status" style="background:${sc}">
+    <i class="ti ${si}" style="font-size:36px;color:${textColor}"></i>
+    <div><div class="ds-label" style="color:${textColor}">Garantijos statusas</div><div class="ds-val" style="color:${textColor}">${sv}</div></div>
+  </div>`;
+
   let docHtml='';
   if(doc.docUrl&&!canViewDoc(item)){
     docHtml=lockedDocHtml(false);
@@ -1463,7 +1506,7 @@ function renderDetail(){
     {i:'ti-hash',l:'Dok. numeris',v:item.docNumber||'—'},
     {i:'ti-calendar',l:'Pirkimo data',v:fmtDate(item.purchaseDate)},
     {i:'ti-calendar-due',l:'Garantija iki',v:fmtDate(item.warrantyEnd)},
-    ...(daysLeft(effectiveReturnDeadline(item))!==null && daysLeft(effectiveReturnDeadline(item))>=0 ? [{i:'ti-rotate-2',l:`${effectiveReturnDays(item)} d. grąžinimas iki`,v:fmtDate(effectiveReturnDeadline(item))}] : []),
+    ...(effectiveReturnDeadline(item)!==null ? [{i:'ti-rotate-2',l:`${effectiveReturnDays(item)} d. grąžinimas iki`,v:fmtDate(effectiveReturnDeadline(item))}] : []),
   ].map(r=>`<div class="detail-row"><i class="ti ${r.i}"></i><span class="dr-label">${esc(r.l)}</span><span class="dr-val">${esc(r.v)}</span></div>`).join('');
   const warrantyNotifs = Array.isArray(item.notifyDays) ? [...item.notifyDays].sort((a,b)=>a-b) : [];
   const returnNotifs = Array.isArray(item.notifyReturnDays) ? [...item.notifyReturnDays].sort((a,b)=>a-b) : [];
@@ -1502,10 +1545,7 @@ function renderDetail(){
       <h2>${esc(item.name)}</h2>
       <button class="icon-btn" id="editItemBtn" style="color:var(--accent)"><i class="ti ti-pencil" style="font-size:18px"></i></button>
     </div>
-    <div class="detail-status" style="background:${sc}">
-      <i class="ti ${si}" style="font-size:36px;color:${textColor}"></i>
-      <div><div class="ds-label" style="color:${textColor}">Garantijos statusas</div><div class="ds-val" style="color:${textColor}">${sv}</div></div>
-    </div>
+    ${statusHtml}
     ${docHtml}
     <div class="detail-section"><div class="detail-rows">${rows}</div></div>
     ${remindersSection}
@@ -1587,7 +1627,7 @@ function renderSettings(){
       </button>` : ''}
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5;margin:0">
-      ${isCloud?'Jūsų įrašai, čekiai ir nuotraukos laikomi Galio saugykloje ir pasiekiami prisijungus prie Galio kituose įrenginiuose.':isPremium?'Jūsų įrašai, čekiai ir nuotraukos dabar laikomi tik šiame įrenginyje. Perkelkite į Galio saugyklą, jei norite juos pasiekti kituose įrenginiuose.':'Nemokamame plane įrašai, čekiai ir nuotraukos laikomi tik šiame įrenginyje. Galio saugykla įeina į Premium.'}
+      ${isCloud?'Jūsų įrašai, dokumentai ir nuotraukos laikomi Galio saugykloje ir pasiekiami prisijungus prie Galio kituose įrenginiuose.':isPremium?'Jūsų įrašai, dokumentai ir nuotraukos dabar laikomi tik šiame įrenginyje. Perkelkite į Galio saugyklą, jei norite juos pasiekti kituose įrenginiuose.':'Nemokamame plane įrašai, dokumentai ir nuotraukos laikomi tik šiame įrenginyje. Galio saugykla įeina į Premium.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -1886,16 +1926,15 @@ function renderContact(){
   const busy = state.contactBusy;
   const sent = state.contactSent;
   return `<div>
-    <div class="detail-header" style="display:flex;align-items:center;gap:10px;padding:16px 16px 0">
-      <button id="contactBackBtn" style="background:none;border:none;padding:4px;cursor:pointer;color:var(--text1)"><i class="ti ti-arrow-left" style="font-size:20px"></i></button>
-      <span style="font-size:17px;font-weight:600">Susisiekti su pagalba</span>
-    </div>
+    <div class="page-header-sm"><button class="back-btn" id="contactBackBtn"><i class="ti ti-arrow-left"></i></button><h2>Susisiekti su pagalba</h2></div>
     ${sent ? `
     <div style="padding:48px 24px;text-align:center">
       <i class="ti ti-circle-check" style="font-size:48px;color:var(--green)"></i>
       <p style="font-size:16px;font-weight:600;margin:16px 0 8px">Žinutė išsiųsta!</p>
       <p style="font-size:14px;color:var(--text2);margin:0 0 24px">Atsakysime į <strong>${state.user?.email||''}</strong> kuo greičiau.</p>
-      <button class="btn-primary" id="contactBackBtn2" style="width:auto;padding:10px 28px">Grįžti</button>
+      <div style="display:flex;justify-content:center">
+        <button class="save-btn" id="contactBackBtn2" style="width:auto;max-width:260px;padding:16px 32px;margin:0">Grįžti</button>
+      </div>
     </div>
     ` : `
     <div style="padding:16px">
@@ -1910,7 +1949,7 @@ function renderContact(){
         <textarea id="contactMsg" rows="5" placeholder="Aprašykite problemą arba klausimą..." style="width:100%;background:none;border:none;outline:none;font-size:15px;color:var(--text1);resize:none;box-sizing:border-box">${state.contactDraft||''}</textarea>
       </div>
       ${state.contactError ? `<p style="color:var(--red);font-size:15px;margin:0 0 12px">${state.contactError}</p>` : ''}
-      <button id="contactSendBtn" class="btn-primary" style="width:100%" ${busy?'disabled':''}>
+      <button id="contactSendBtn" class="save-btn" style="margin:0" ${busy?'disabled':''}>
         ${busy ? '<span class="spinner" style="width:16px;height:16px;border-width:2px;margin:0 auto"></span>' : '<i class="ti ti-send"></i> Siųsti'}
       </button>
     </div>
@@ -2094,7 +2133,7 @@ function renderAdminStats(){
           const isAdminUser = u.role==='admin';
           const actionLabel = kind==='purchased' ? 'Pirktas' : isPremiumPlan ? 'Nuimti suteiktą' : 'Suteikti Premium';
           const actionDisabled = kind==='purchased';
-          const storageLabel = u.storageMode === 'cloud' ? 'Galio debesyje' : 'Šiame įrenginyje';
+          const storageLabel = u.storageMode === 'cloud' ? 'Galio saugykloje' : 'Šiame įrenginyje';
           const verifiedLabel = u.emailVerified ? 'El. paštas patvirtintas' : 'El. paštas nepatvirtintas';
           return `<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px">
             <div style="display:flex;width:100%;align-items:flex-start;gap:10px">
@@ -2380,9 +2419,8 @@ function attachEvents(){
       .then(()=>toast('Nuoroda slaptažodžiui keisti išsiųsta į el. paštą'))
       .catch(()=>toast('Klaida siunčiant laišką'));
   });
-  on('settingsLogoutBtn2','click',()=>{if(confirm('Atsijungti?'))doLogout();});
+  on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', 'Jūsų duomenys išliks saugūs — galėsite prisijungti vėl bet kada.', doLogout, {okText:'Atsijungti', align:'center'});});
   on('deleteAccountBtn','click',confirmDeleteAccount);
-  on('multiBackBtn','click',()=>{ discardPendingAdd(); state.view='list'; render(); });
   on('multiCancelBtn','click',()=>{ discardPendingAdd(); state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
     if(e.target.closest('.multi-edit-btn') || e.target.closest('.multi-name-input')) return;
@@ -2491,7 +2529,9 @@ function attachEvents(){
   on('appDialogOkBtn','click',()=>{
     if(state.appDialog?.supportAction==='cancelAnalysis') state.pendingAnalysisExit=null;
     if(state.appDialog?.supportAction==='discardAdd') state.pendingUnsavedExit=null;
+    const onOk = state.appDialog?.onOk;
     state.appDialog=null;
+    if(onOk) onOk();
     render();
   });
   on('appDialogSupportBtn','click',()=>{
@@ -2501,6 +2541,11 @@ function attachEvents(){
     }
     if(state.appDialog?.supportAction==='discardAdd'){
       discardAddAndLeave();
+      return;
+    }
+    if(state.appDialog?.supportAction==='cancel'){
+      state.appDialog=null;
+      render();
       return;
     }
     openSupportFromDialog();
@@ -2532,30 +2577,39 @@ function attachEvents(){
     render();
   });
   on('adminRefreshBtn','click',loadAdminStats);
-  onAll('[data-action="togglePremium"]','click', async e=>{
+  onAll('[data-action="togglePremium"]','click', e=>{
     const uid = e.currentTarget.dataset.uid;
     const user = state.adminUsers?.find(u=>u.uid===uid);
     if(!user) return;
     const kind = premiumKind(user);
     if(kind==='purchased'){ toast('Pirktas Premium bus valdomas per mokėjimų sistemą'); return; }
     const newPlan = kind==='manual' ? 'free' : 'premium';
-    if(!confirm(`${newPlan==='premium'?'Suteikti Premium planą':'Nuimti suteiktą Premium'} vartotojui ${user.email}?`)) return;
-    try{
-      await updateDoc(doc(db,'users',uid), {
-        plan: newPlan,
-        planSource: newPlan==='premium'?'manual':'',
-        subscriptionStatus: '',
-        premiumDowngradeRequired: newPlan==='free',
-        premiumRevokedAt: newPlan==='free' ? serverTimestamp() : null,
-      });
-      user.plan = newPlan;
-      user.planSource = newPlan==='premium' ? 'manual' : '';
-      user.subscriptionStatus = '';
-      user.premiumDowngradeRequired = newPlan==='free';
-      toast(newPlan==='premium' ? `✓ ${user.email} dabar Premium` : `✓ ${user.email} grąžintas į nemokamą planą`);
-      render();
-    }catch(err){ toast('Nepavyko — ' + (err.message||'klaida'), 9000); }
+    showConfirmDialog(
+      newPlan==='premium' ? 'Suteikti Premium?' : 'Nuimti Premium?',
+      `${newPlan==='premium'?'Suteikti Premium planą':'Nuimti suteiktą Premium'} vartotojui ${user.email}?`,
+      ()=>applyAdminPremiumToggle(uid, newPlan),
+      {align:'center'}
+    );
   });
+}
+async function applyAdminPremiumToggle(uid, newPlan){
+  const user = state.adminUsers?.find(u=>u.uid===uid);
+  if(!user) return;
+  try{
+    await updateDoc(doc(db,'users',uid), {
+      plan: newPlan,
+      planSource: newPlan==='premium'?'manual':'',
+      subscriptionStatus: '',
+      premiumDowngradeRequired: newPlan==='free',
+      premiumRevokedAt: newPlan==='free' ? serverTimestamp() : null,
+    });
+    user.plan = newPlan;
+    user.planSource = newPlan==='premium' ? 'manual' : '';
+    user.subscriptionStatus = '';
+    user.premiumDowngradeRequired = newPlan==='free';
+    toast(newPlan==='premium' ? `✓ ${user.email} dabar Premium` : `✓ ${user.email} grąžintas į nemokamą planą`);
+    render();
+  }catch(err){ toast('Nepavyko — ' + (err.message||'klaida'), 9000); }
 }
 
 async function sendContactMessage(){
@@ -2604,8 +2658,10 @@ async function sendContactMessage(){
 
 function syncSave(){const b=document.getElementById('saveBtn');if(b)b.disabled=!state.form.name.trim();}
 
-async function deleteItem(id){
-  if(!confirm('Ištrinti šį įrašą?'))return;
+function deleteItem(id){
+  showConfirmDialog('Ištrinti įrašą?', 'Šis įrašas bus visam laikui pašalintas.', ()=>performDeleteItem(id), {okText:'Ištrinti', align:'center'});
+}
+async function performDeleteItem(id){
   const item=state.items.find(i=>i.id===id);
 
   try{
@@ -2816,18 +2872,21 @@ async function chargeAiUsageNow(){
   }
 }
 
-async function updateItem(){
+function updateItem(){
   if(!state.editItemId||!state.form.name.trim()) return;
   const f = state.form;
   if(!f.warrantyEnd){
     showAppDialog('Trūksta garantijos datos', 'Nurodykite, iki kada galioja garantija. Prekės be garantijos datos neišsaugomos, kad sąraše neliktų neaiškių įrašų.');
     return;
   }
-  if(!confirmExpiredTerms({
+  confirmExpiredTerms({
     warrantyEnd: f.warrantyEnd,
     returnDeadline: formReturnDeadline(f),
     label: 'Šios prekės'
-  })) return;
+  }, finishUpdateItem);
+}
+async function finishUpdateItem(){
+  const f = state.form;
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !state.online){
     offlineDialog(
@@ -2874,18 +2933,21 @@ async function updateItem(){
   }
 }
 
-async function saveItem(){
+function saveItem(){
   if(!state.form.name.trim())return;
   const f=state.form;
   if(!f.warrantyEnd){
     showAppDialog('Trūksta garantijos datos', 'Nurodykite, iki kada galioja garantija. Prekės be garantijos datos neišsaugomos, kad sąraše neliktų neaiškių įrašų.');
     return;
   }
-  if(!confirmExpiredTerms({
+  confirmExpiredTerms({
     warrantyEnd: f.warrantyEnd,
     returnDeadline: formReturnDeadline(f),
     label: 'Šios prekės'
-  })) return;
+  }, finishSaveItem);
+}
+async function finishSaveItem(){
+  const f=state.form;
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !state.online){
     offlineDialog(
@@ -3041,15 +3103,29 @@ async function saveMultiItems(){
     const more = expiredWarranty.length > 6 ? `\n… ir dar ${expiredWarranty.length - 6}` : '';
     const heading = expiredWarranty.length === 1 ? '1 prekės garantija pasibaigusi' : `${expiredWarranty.length} prekių garantijos pasibaigusios`;
     const returnInfo = expiredReturn.length ? `\n\nNemokamo grąžinimo laikas taip pat pasibaigęs (${fmtDate(returnDeadlineForReceipt)}).` : '';
-    if(!confirm(`${heading}:\n\n${list}${more}${returnInfo}\n\nAr tikrai norite išsaugoti šiuos įrašus?`)) return;
+    showConfirmDialog(
+      heading,
+      `${list}${more}${returnInfo}\n\nAr tikrai norite išsaugoti šiuos įrašus?`,
+      finishSaveMultiItems,
+      {okText:'Išsaugoti', align:'center'}
+    );
+    return;
   }else if(expiredReturn.length){
     showAppDialog(
       'Grąžinimo laikas pasibaigęs',
       `Nemokamo grąžinimo terminas baigėsi ${fmtDate(returnDeadlineForReceipt)}. Įrašus išsaugosime, nes garantijos dar galioja.`,
       '',
-      {hideSupport:true, align:'center'}
+      {hideSupport:true, align:'center', onOk: finishSaveMultiItems}
     );
+    return;
   }
+  finishSaveMultiItems();
+}
+async function finishSaveMultiItems(){
+  const r = state.multiItemReceipt;
+  if(!r || state.multiSaving) return;
+  let selected = r.items.filter(i=>i.selected);
+  if(selected.length===0) return;
 
   const isCloud = state.storageMode==='cloud';
   if(isCloud && !state.online){
@@ -3251,7 +3327,7 @@ function renderQrScanner(){
     <video id="qrVideo" autoplay playsinline muted></video>
     <div class="qr-scanner-overlay" id="qrOverlayBox"><div class="qr-scan-line" id="qrScanLine"></div></div>
     <div class="qr-scanner-status" id="qrStatus"><i class="ti ti-circle-check"></i><span>QR kodas aptiktas!</span></div>
-    <div class="qr-scanner-hint" id="qrHint">Nukreipkite kamerą į QR kodą ant čekio</div>
+    <div class="qr-scanner-hint" id="qrHint">Nukreipkite kamerą į QR kodą ant dokumento</div>
   </div>`;
 }
 
@@ -3599,126 +3675,6 @@ async function toggleNotify(){
   }
 }
 
-async function toggleStorageModeOld(){
-  if(!state.user)return;
-  const isPremium = isPremiumUser();
-  const wantsCloud = state.storageMode !== 'cloud';
-
-  if(wantsCloud && !isPremium){
-    toast('Galio saugykla prieinama tik Premium nariams');
-    return;
-  }
-
-  const confirmMsg = wantsCloud
-    ? `Perkelti įrašus į Galio saugyklą?\n\nJie bus susieti su jūsų paskyra ir pasiekiami iš bet kurio įrenginio.`
-    : `Perjungti į įrenginio saugyklą?\n\nJūsų ${state.items.length} įrašai bus perkelti į šį telefoną ir pašalinti iš paskyros. Kituose įrenginiuose jų nebebus — ir jei telefonas bus prarastas ar sugadintas, duomenys dingsta kartu su juo.`;
-  if(!confirm(confirmMsg)) return;
-
-  // Antras patvirtinimas local atveju
-  if(!wantsCloud){
-    if(!confirm('Patvirtinkite: pašalinti iš paskyros ir saugoti tik šiame telefone.')) return;
-  }
-
-  const itemsToMigrate = state.items.slice();
-  toast('Perkeliama...');
-  state.migratingStorage = true;
-
-  try{
-    if(wantsCloud){
-      // IMPORTANT ORDERING: Firestore security rules only allow creating
-      // warranty documents when the user's profile already has
-      // storageMode == 'cloud' (requiresCloudPlan() check) — this stops a
-      // Free/local account from writing to the cloud subcollection by
-      // mistake or tampering. That means we must flip storageMode (and set
-      // the FINAL itemCount we expect to end up with) on the profile FIRST,
-      // in one atomic update matching rule variant D, before creating any
-      // warranty docs — otherwise every create in the loop below would be
-      // rejected by requiresCloudPlan().
-      await updateDoc(doc(db,'users',state.user.uid), {
-        itemCount: itemsToMigrate.length,
-        storageMode: 'cloud',
-        premiumDowngradeRequired: false,
-      });
-
-      // Stop the items listener during migration so the live onSnapshot
-      // triggered by the storageMode flip above doesn't race with us
-      // rewriting state.items mid-loop — we'll re-attach it once done.
-      if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
-
-      for(const item of itemsToMigrate){
-        const payload = {
-          name:item.name, category:item.category, shop:item.shop||'',
-          purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
-          docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
-          notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
-          createdAtMs:item.createdAtMs||Date.now(), createdAt:serverTimestamp(),
-        };
-        const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), payload);
-        if(item.docUrl && item.docMime){
-          try{
-            const ext = item.docMime==='application/pdf'?'pdf':(item.docMime.split('/')[1]||'jpg');
-            const path = `users/${state.user.uid}/documents/${docRef.id}.${ext}`;
-            const b64 = item.docMime==='application/pdf' ? item.docUrl : item.docUrl.split(',')[1];
-            const blob = base64ToBlob(b64, item.docMime);
-            await uploadBytes(ref(storage,path), blob, {contentType:item.docMime});
-            const url = await getDownloadURL(ref(storage,path));
-            await updateDoc(docRef, { docUrl:url, docMime:item.docMime, docFileName:item.docFileName, docStoragePath:path });
-          }catch(e){ console.warn('Migration upload failed for item:', item.id, e); }
-        }
-      }
-      await localClear(state.user.uid);
-      attachItemsListener(state.user.uid);
-    }else{
-      // cloud -> local: download each cloud item's doc (if any) as base64
-      // and store in IndexedDB, then delete the cloud copies.
-      // Stop the live Firestore listener first — otherwise each deleteDoc
-      // in the loop below triggers onSnapshot mid-migration, briefly
-      // showing a half-migrated list in the UI.
-      if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
-
-      for(const item of itemsToMigrate){
-        let localDocUrl = null;
-        if(item.docUrl){
-          try{
-            const resp = await fetch(item.docUrl);
-            const blob = await resp.blob();
-            localDocUrl = await new Promise((res,rej)=>{
-              const r = new FileReader();
-              r.onload = ()=>res(r.result);
-              r.onerror = rej;
-              r.readAsDataURL(blob);
-            });
-          }catch(e){ console.warn('Migration download failed for item:', item.id, e); }
-        }
-        const localItem = {
-          id: genLocalId(), name:item.name, category:item.category, shop:item.shop||'',
-          purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
-          docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
-          notifyEnabled:true, createdAtMs:item.createdAtMs||Date.now(),
-          docUrl: localDocUrl, docMime: localDocUrl?item.docMime:null, docFileName: localDocUrl?item.docFileName:null,
-        };
-        await localPut(state.user.uid, localItem);
-        if(item.docStoragePath){
-          try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){}
-        }
-        try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',item.id)); }catch(e){}
-      }
-      await updateDoc(doc(db,'users',state.user.uid), {
-        itemCount: 0,
-        storageMode: 'local',
-        premiumDowngradeRequired: false,
-      });
-      attachItemsListener(state.user.uid);
-    }
-    toast('Įrašai perkelti ✓');
-  }catch(e){
-    console.warn('Storage mode migration error:', e);
-    toast('Perkėlimo klaida. Patikrinkite ar visi įrašai perkelti.');
-  }finally{
-    state.migratingStorage = false;
-  }
-}
-
 async function toggleStorageMode(){
   if(!state.user) return;
   if(state.migratingStorage) return;
@@ -3746,10 +3702,25 @@ async function toggleStorageMode(){
   const confirmMsg = wantsCloud
     ? `Perkelti įrašus į Galio saugyklą?\n\nTaip galės veikti automatiniai priminimai, o įrašus pasieksite prisijungę prie Galio.`
     : `Palikti įrašus tik šiame telefone?\n\nJūsų ${state.items.length} įrašai nebebus matomi kituose įrenginiuose, o automatiniai priminimai neveiks.`;
-  if(!confirm(confirmMsg)) return;
-
-  if(!wantsCloud && !confirm('Patvirtinkite: įrašus laikyti tik šiame telefone.')) return;
-
+  showConfirmDialog(
+    wantsCloud ? 'Perkelti į Galio saugyklą?' : 'Laikyti tik įrenginyje?',
+    confirmMsg,
+    ()=>{
+      if(wantsCloud){
+        runStorageMigration(wantsCloud);
+      }else{
+        showConfirmDialog(
+          'Patvirtinkite',
+          'Įrašai bus pašalinti iš jūsų Galio paskyros ir liks tik šiame telefone.',
+          ()=>runStorageMigration(wantsCloud),
+          {okText:'Patvirtinti', align:'center'}
+        );
+      }
+    },
+    {okText: wantsCloud ? 'Perkelti' : 'Laikyti tik įrenginyje', align:'center'}
+  );
+}
+async function runStorageMigration(wantsCloud){
   const itemsToMigrate = state.items.slice();
   const hasDocumentsToMove = itemsToMigrate.some(item => !!(item.docUrl && item.docMime));
   let migrationStep = wantsCloud ? 'Galio saugyklos įjungimas' : 'perkėlimas į telefoną';
@@ -3906,10 +3877,22 @@ async function toggleStorageMode(){
   }
 }
 
-async function confirmDeleteAccount(){
-  if(!confirm('Ar tikrai norite ištrinti paskyrą? Visi jūsų duomenys (garantijos, nuotraukos) bus negrįžtamai ištrinti.'))return;
-  if(!confirm('Šis veiksmas negrįžtamas. Tikrai tęsti?'))return;
-
+function confirmDeleteAccount(){
+  showConfirmDialog(
+    'Ištrinti paskyrą?',
+    'Visi jūsų duomenys (garantijos, nuotraukos) bus negrįžtamai ištrinti.',
+    ()=>{
+      showConfirmDialog(
+        'Šis veiksmas negrįžtamas',
+        'Tikrai tęsti paskyros trynimą?',
+        performDeleteAccount,
+        {okText:'Ištrinti negrįžtamai', align:'center'}
+      );
+    },
+    {okText:'Tęsti', align:'center'}
+  );
+}
+async function performDeleteAccount(){
   const uid = state.user.uid;
   const items = state.items.slice();
   const wasCloud = state.storageMode === 'cloud';
@@ -4021,7 +4004,7 @@ Grąžink TIK JSON be markdown, šios struktūros:
   "docNumber": "dokumento/kvito numeris arba null",
   "docType": "Kvitas / čekis|Sąskaita-faktūra (SF)|Banko išrašas|Kita",
   "quality": "good|blurry|partial|unclear",
-  "qualityNote": "trumpas paaiškinimas jei quality nėra 'good', pvz. 'Trūksta apatinės čekio dalies' arba null",
+  "qualityNote": "trumpas paaiškinimas jei quality nėra 'good', pvz. 'Trūksta apatinės dokumento dalies' arba null",
   "items": [
     {"name":"tikslus prekės pavadinimas iš dokumento","price":"kaina arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|Buitinė technika|Avalynė / drabužiai|Baldai|Automobiliai|Kita"}
   ]
@@ -4087,8 +4070,8 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
       })).length;
       if(duplicateCount){
         showAppDialog(
-          'Čekis jau išsaugotas',
-          `Šio čekio prekės jau yra garantijų sąraše. Norėdami pakeisti informaciją, redaguokite esamus įrašus.`,
+          'Dokumentas jau išsaugotas',
+          `Šio dokumento prekės jau yra garantijų sąraše. Norėdami pakeisti informaciją, redaguokite esamus įrašus.`,
           '',
           {hideSupport:true}
         );
