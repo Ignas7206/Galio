@@ -89,7 +89,7 @@ function applyTheme(){
 }
 applyTheme();
 
-function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,returnDeadline:'',docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
+function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,returnDeadline:'',docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,itemPhotoData:null,itemPhotoMime:null,itemPhotoFileName:null,itemPhotoStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
 
 // Admin and active Premium users get Premium rights.
 function isPremiumUser(){ return state.userDoc?.plan==='premium' || state.userDoc?.role==='admin'; }
@@ -136,7 +136,7 @@ function hasUnsavedAddWork(){
   if(state.view!=='add' || !state.addMode || state.editItemId || state.multiEditIdx!=null) return false;
   const f = state.form || {};
   const empty = emptyForm();
-  const fields = ['name','category','shop','purchaseDate','warrantyEnd','returnDeadline','docType','docNumber','notes','docData'];
+  const fields = ['name','category','shop','purchaseDate','warrantyEnd','returnDeadline','docType','docNumber','notes','docData','itemPhotoData'];
   return fields.some(k => (f[k] || '') !== (empty[k] || ''))
     || f.warrantyMonths !== empty.warrantyMonths
     || f.returnDays !== empty.returnDays
@@ -402,6 +402,23 @@ function effectiveDoc(item){
     docFileName: docItem.docFileName,
     docStoragePath: docItem.docStoragePath,
   } : { docUrl:null, docMime:null, docFileName:null, docStoragePath:null };
+}
+function effectiveItemPhoto(item){
+  return item?.itemPhotoUrl ? {
+    itemPhotoUrl: item.itemPhotoUrl,
+    itemPhotoMime: item.itemPhotoMime || 'image/jpeg',
+    itemPhotoFileName: item.itemPhotoFileName || null,
+    itemPhotoStoragePath: item.itemPhotoStoragePath || null,
+  } : { itemPhotoUrl:null, itemPhotoMime:null, itemPhotoFileName:null, itemPhotoStoragePath:null };
+}
+function cardThumbHtml(item){
+  const photo = effectiveItemPhoto(item);
+  if(photo.itemPhotoUrl) return `<img class="card-thumb" src="${esc(photo.itemPhotoUrl)}" alt="" loading="lazy" />`;
+  const doc = effectiveDoc(item);
+  if(doc.docUrl && !canViewDoc(item)) return lockedDocHtml(true);
+  if(doc.docMime==='application/pdf') return `<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
+  if(doc.docUrl && canViewDoc(item)) return `<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`;
+  return `<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
 }
 function docIdentity(item){
   const doc = effectiveDoc(item);
@@ -1134,18 +1151,9 @@ function renderList(){
 
   const cardsHtml=filtered.map(item=>{
     const days=daysLeft(item.warrantyEnd);
-    const doc = effectiveDoc(item);
     const returnDeadline = effectiveReturnDeadline(item);
     const returnLine = returnLineHtml(returnDeadline);
-    let thumb;
-    if(doc.docUrl && !canViewDoc(item))
-      thumb=lockedDocHtml(true);
-    else if(doc.docMime==='application/pdf')
-      thumb=`<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
-    else if(doc.docUrl && canViewDoc(item))
-      thumb=`<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`;
-    else
-      thumb=`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
+    const thumb = cardThumbHtml(item);
     const urgentClass = days!==null && days<0 ? ' urgent-exp' : days!==null && days<=30 ? ' urgent-warn' : '';
     return`<div class="swipe-wrap" data-swipe-id="${esc(item.id)}">
       <div class="swipe-delete-bg"><i class="ti ti-trash"></i></div>
@@ -1227,8 +1235,7 @@ function renderSearch(){
   });
   const cardsHtml=results.map(item=>{
     const days=daysLeft(item.warrantyEnd);
-    const doc=effectiveDoc(item);
-    const thumb=doc.docUrl&&doc.docMime!=='application/pdf'&&canViewDoc(item)?`<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`:doc.docUrl?lockedDocHtml(true):`<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
+    const thumb=cardThumbHtml(item);
     return`<button class="card" data-id="${esc(item.id)}">
       ${thumb}
       <div class="card-body">
@@ -1302,6 +1309,21 @@ function renderAdd(){
       <small>JPG, PNG, PDF · max 10MB / 5MB PDF</small>
     </label>`;
   }
+  const itemPhotoHtml = f.itemPhotoData ? `
+    <div class="item-photo-preview">
+      <img id="itemPhotoThumb" src="${esc(f.itemPhotoData)}" alt="" />
+      <div class="item-photo-actions">
+        <button type="button" class="photo-action-btn" id="changeItemPhoto"><i class="ti ti-photo-edit"></i>Keisti</button>
+        <button type="button" class="photo-action-btn danger" id="removeItemPhoto"><i class="ti ti-trash"></i>Pašalinti</button>
+      </div>
+    </div>` : `
+    <label class="item-photo-empty" for="itemPhotoInput">
+      <i class="ti ti-shirt"></i>
+      <span>
+        <strong>Pridėti daikto nuotrauką</strong>
+        <small>Ji bus rodoma pagrindiniame sąraše vietoje dokumento.</small>
+      </span>
+    </label>`;
 
   const multiItemBanner = state.aiMultiItems.length>0 ? `<div class="plan-banner" style="background:var(--accent-bg);margin-bottom:14px">
     <i class="ti ti-list-details" style="color:var(--accent)"></i>
@@ -1388,6 +1410,12 @@ function renderAdd(){
         </div>
       </div>
 
+      <p class="form-label-section">Daikto nuotrauka</p>
+      <div class="item-photo-area">
+        ${itemPhotoHtml}
+        <input type="file" id="itemPhotoInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" style="display:none" />
+      </div>
+
       <p class="form-label-section">Datos</p>
       <div class="form-section">
         <div class="form-field">
@@ -1456,6 +1484,7 @@ function renderDetail(){
   if(!item){state.view='list';render();return '';}
   const days=daysLeft(item.warrantyEnd);
   const doc=effectiveDoc(item);
+  const itemPhoto=effectiveItemPhoto(item);
   let sc,si,sv;
   if(days===null){sc='var(--bg2)';si='ti-shield';sv='Nenurodyta';}
   else if(days<0){sc='var(--red-bg)';si='ti-shield-x';sv='Garantija baigėsi';}
@@ -1488,12 +1517,15 @@ function renderDetail(){
 
   let docHtml='';
   if(doc.docUrl&&!canViewDoc(item)){
-    docHtml=lockedDocHtml(false);
+    docHtml=`<div class="detail-section"><div class="media-label">Dokumentas</div>${lockedDocHtml(false)}</div>`;
   }else if(doc.docUrl&&doc.docMime==='application/pdf'){
-    docHtml=`<div class="detail-section"><a class="doc-preview-pdf" href="${esc(doc.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(doc.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
+    docHtml=`<div class="detail-section"><div class="media-label">Dokumentas</div><a class="doc-preview-pdf" href="${esc(doc.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(doc.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
   }else if(doc.docUrl){
-    docHtml=`<div class="detail-section"><img src="${esc(doc.docUrl)}" id="docImg" style="width:100%;border-radius:var(--radius);max-height:200px;object-fit:cover;cursor:pointer;display:block" /></div>`;
+    docHtml=`<div class="detail-section"><div class="media-label">Dokumentas</div><img src="${esc(doc.docUrl)}" id="docImg" class="detail-media-img" /></div>`;
   }
+  const itemPhotoHtml = itemPhoto.itemPhotoUrl
+    ? `<div class="detail-section"><div class="media-label">Daikto nuotrauka</div><img src="${esc(itemPhoto.itemPhotoUrl)}" id="itemPhotoImg" class="detail-media-img item-photo-main" /></div>`
+    : '';
 
   const itemPrice = extractPriceFromNotes(item.notes);
   const visibleNotes = notesWithoutPrice(item.notes);
@@ -1513,9 +1545,13 @@ function renderDetail(){
   const hasActiveWarrantyDeadline = daysLeft(item.warrantyEnd) !== null && daysLeft(item.warrantyEnd) >= 0;
   const hasActiveReturnDeadline = daysLeft(effectiveReturnDeadline(item)) !== null && daysLeft(effectiveReturnDeadline(item)) >= 0;
   const hasReminderTarget = hasActiveWarrantyDeadline || hasActiveReturnDeadline;
-  const remindersOn = item.notifyEnabled !== false && (warrantyNotifs.length || returnNotifs.length || item.notifyRepeatDays);
+  const globalNotifyOff = state.userDoc?.notifyEnabled === false;
+  const itemHasNotifDays = warrantyNotifs.length || returnNotifs.length || item.notifyRepeatDays;
+  const remindersOn = !globalNotifyOff && item.notifyEnabled !== false && itemHasNotifDays;
   const reminderText = !hasReminderTarget
     ? 'Aktyvių terminų nėra'
+    : globalNotifyOff && item.notifyEnabled !== false && itemHasNotifDays
+    ? 'Priminimai išjungti visiems įrašams — įjunkite Nustatymuose'
     : remindersOn
     ? [
         warrantyNotifs.length ? `Garantija: ${warrantyNotifs.map(d=>d===1?'1 d.':d===7?'1 sav.':d===30?'1 mėn.':d+' d.').join(', ')}` : '',
@@ -1546,6 +1582,7 @@ function renderDetail(){
       <button class="icon-btn" id="editItemBtn" style="color:var(--accent)"><i class="ti ti-pencil" style="font-size:18px"></i></button>
     </div>
     ${statusHtml}
+    ${itemPhotoHtml}
     ${docHtml}
     <div class="detail-section"><div class="detail-rows">${rows}</div></div>
     ${remindersSection}
@@ -1767,8 +1804,6 @@ function showNotifModal(itemId, itemData){
     returnActive,
     warrantyExpired,
     returnExpired,
-    repeatEnabled: false,
-    repeatInterval: 7,
     item,
   };
   state.view='list';
@@ -2328,10 +2363,15 @@ function attachEvents(){
   on('aiNameReviewSave','click',()=>{if(!state.form.name.trim())return;state.aiNameReview=false;render();});
 
   on('docInput','change',handleDoc);
+  on('itemPhotoInput','change',handleItemPhoto);
   on('qrScanBtn','click',startQrScanner);
   on('removeDoc','click',()=>{state.form.docData=null;state.form.docMime=null;state.form.docFileName=null;state.docError='';render();});
+  on('changeItemPhoto','click',()=>document.getElementById('itemPhotoInput')?.click());
+  on('removeItemPhoto','click',()=>{state.form.itemPhotoData=null;state.form.itemPhotoMime=null;state.form.itemPhotoFileName=null;state.form.itemPhotoStoragePath=null;render();});
   on('docThumb','click',()=>{if(state.form.docData)state.lightbox=state.form.docData;render();});
+  on('itemPhotoThumb','click',()=>{if(state.form.itemPhotoData)state.lightbox=state.form.itemPhotoData;render();});
   on('docImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);const doc=effectiveDoc(it);if(doc.docUrl&&canViewDoc(it))state.lightbox=doc.docUrl;render();});
+  on('itemPhotoImg','click',()=>{const it=state.items.find(i=>i.id===state.selected);const photo=effectiveItemPhoto(it);if(photo.itemPhotoUrl)state.lightbox=photo.itemPhotoUrl;render();});
   on('upgradeBtnDoc','click',()=>{state._premiumReturnView='add';state.view='premium';render();});
 
   on('saveBtn','click',()=>{
@@ -2389,6 +2429,10 @@ function attachEvents(){
       docMime: editableDoc.docMime||null,
       docFileName: editableDoc.docFileName||null,
       docStoragePath: editableDoc.docStoragePath||null,
+      itemPhotoData: item.itemPhotoUrl||null,
+      itemPhotoMime: item.itemPhotoMime||null,
+      itemPhotoFileName: item.itemPhotoFileName||null,
+      itemPhotoStoragePath: item.itemPhotoStoragePath||null,
       notifyEnabled: item.notifyEnabled!==false,
       warrantyAppliesWarning: false,
       qualityWarning: null,
@@ -2419,7 +2463,7 @@ function attachEvents(){
       .then(()=>toast('Nuoroda slaptažodžiui keisti išsiųsta į el. paštą'))
       .catch(()=>toast('Klaida siunčiant laišką'));
   });
-  on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', 'Jūsų duomenys išliks saugūs — galėsite prisijungti vėl bet kada.', doLogout, {okText:'Atsijungti', align:'center'});});
+  on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   on('deleteAccountBtn','click',confirmDeleteAccount);
   on('multiCancelBtn','click',()=>{ discardPendingAdd(); state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
@@ -2674,6 +2718,9 @@ async function performDeleteItem(id){
           try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){console.warn('Storage delete failed:',e);}
         }
       }
+      if(item?.itemPhotoStoragePath){
+        try{ await deleteObject(ref(storage,item.itemPhotoStoragePath)); }catch(e){console.warn('Item photo delete failed:',e);}
+      }
       // Cloud mode re-syncs via onSnapshot automatically.
     }else{
       await localDelete(state.user.uid, id);
@@ -2709,11 +2756,14 @@ async function saveNotifSettings(skip=false){
     notifyRepeatDays: null,
   };
 
+  let pushBlockedReason = null;
   try{
     if(enabled){
-      const perm = await requestPushPermission();
-      if(perm){
+      const pushResult = await requestPushPermission();
+      if(pushResult.ok){
         notifData.fcmTokenUpdated = true;
+      }else{
+        pushBlockedReason = pushResult.reason;
       }
     }
 
@@ -2730,7 +2780,21 @@ async function saveNotifSettings(skip=false){
         }
       }
     }
-    toast(enabled ? 'Priminimai išsaugoti ✓' : 'Priminimai išjungti');
+
+    if(enabled && pushBlockedReason){
+      // The chosen days/dates ARE saved — only the push delivery itself
+      // isn't set up — so this must not read like a plain success toast.
+      const reasonText = pushBlockedReason==='denied'
+        ? 'Pranešimai šiam įrenginiui užblokuoti. Įjunkite juos telefono/naršyklės nustatymuose, kad priminimai pasiektų.'
+        : pushBlockedReason==='unsupported'
+        ? 'Šis naršyklė ar įrenginys nepalaiko pranešimų. Terminus matysite programėlėje, bet priminimo negausite.'
+        : pushBlockedReason==='offline'
+        ? 'Nėra interneto ryšio, todėl pranešimai kol kas neįjungti. Prisijungę iš naujo atidarykite priminimus.'
+        : 'Nepavyko įjungti pranešimų šiame įrenginyje. Laikai išsaugoti, bet priminimo galite negauti.';
+      showAppDialog('Laikai išsaugoti, bet pranešimai neįjungti', reasonText, '', {hideSupport:true, align:'center'});
+    }else{
+      toast(enabled ? 'Priminimai išsaugoti ✓' : 'Priminimai išjungti');
+    }
   }catch(e){
     console.warn('Notif save error:', e);
     toast('Nepavyko išsaugoti priminimų');
@@ -2754,9 +2818,14 @@ async function testNotification(){
   let tempId=null;
   try{
     // 1. Gauti push leidimą + FCM token
-    const ok = await requestPushPermission();
-    if(!ok){
-      showAppDialog('Nepavyko','Nepavyko gauti leidimo. Įjunkite pranešimus naršyklės nustatymuose šiai svetainei.','',{hideSupport:true});
+    const pushResult = await requestPushPermission();
+    if(!pushResult.ok){
+      const reasonText = pushResult.reason==='denied'
+        ? 'Pranešimai užblokuoti šiam įrenginiui. Įjunkite juos naršyklės/telefono nustatymuose šiai svetainei.'
+        : pushResult.reason==='unsupported'
+        ? 'Šis naršyklė ar įrenginys nepalaiko push pranešimų.'
+        : 'Nepavyko gauti leidimo. Įjunkite pranešimus naršyklės nustatymuose šiai svetainei.';
+      showAppDialog('Nepavyko',reasonText,'',{hideSupport:true});
       return;
     }
 
@@ -2819,11 +2888,19 @@ async function testNotification(){
   }
 }
 
+// Returns {ok:true} on success, or {ok:false, reason} so callers can tell the
+// user WHY push wasn't set up instead of silently claiming success — reason
+// is one of: 'offline' | 'unsupported' | 'denied' | 'no-token' | 'error'.
 async function requestPushPermission(){
   try{
-    if(!state.online) return false;
+    if(!state.online) return {ok:false, reason:'offline'};
+    if(typeof Notification === 'undefined') return {ok:false, reason:'unsupported'};
+    // Browsers never re-prompt once denied — calling requestPermission()
+    // again just silently resolves to 'denied' with no dialog at all, which
+    // is indistinguishable from a first-time refusal unless we check first.
+    if(Notification.permission === 'denied') return {ok:false, reason:'denied'};
     const perm = await Notification.requestPermission();
-    if(perm !== 'granted') return false;
+    if(perm !== 'granted') return {ok:false, reason:'denied'};
 
     const { getMessaging, getToken } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js');
     const { firebaseApp, VAPID_KEY } = await import('./firebase-config.js');
@@ -2832,13 +2909,13 @@ async function requestPushPermission(){
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: await navigator.serviceWorker.ready,
     });
-    if(!token) return false;
+    if(!token) return {ok:false, reason:'no-token'};
 
     await updateDoc(doc(db,'users',state.user.uid), { fcmToken: token, notifyEnabled: true });
-    return true;
+    return {ok:true};
   }catch(e){
     console.warn('Push permission error:', e);
-    return false;
+    return {ok:false, reason:'error'};
   }
 }
 
@@ -2888,6 +2965,7 @@ function updateItem(){
 async function finishUpdateItem(){
   const f = state.form;
   const isCloud = state.storageMode==='cloud';
+  const existing = state.items.find(i=>i.id===state.editItemId);
   if(isCloud && !state.online){
     offlineDialog(
       'Įrašui išsaugoti reikia interneto',
@@ -2913,13 +2991,34 @@ async function finishUpdateItem(){
     returnDays: formReturnDaysForSave(f),
     returnDeadline: formReturnDeadline(f),
     ...(f.docData ? {docUrl:f.docData, docMime:f.docMime, docFileName:f.docFileName} : {}),
+    itemPhotoUrl: null,
+    itemPhotoMime: null,
+    itemPhotoFileName: null,
+    itemPhotoStoragePath: null,
   };
 
   try{
+    if(f.itemPhotoData && f.itemPhotoMime){
+      if(isCloud && isDataUrl(f.itemPhotoData)){
+        const path = `users/${state.user.uid}/item-photos/${state.editItemId}.jpg`;
+        const url = await uploadDataUrlToStorage(path, f.itemPhotoData, f.itemPhotoMime);
+        payload.itemPhotoUrl = url;
+        payload.itemPhotoMime = f.itemPhotoMime;
+        payload.itemPhotoFileName = f.itemPhotoFileName;
+        payload.itemPhotoStoragePath = path;
+      }else{
+        payload.itemPhotoUrl = f.itemPhotoData;
+        payload.itemPhotoMime = f.itemPhotoMime;
+        payload.itemPhotoFileName = f.itemPhotoFileName;
+        payload.itemPhotoStoragePath = f.itemPhotoStoragePath || null;
+      }
+    }
     if(isCloud){
       await updateDoc(doc(db,'users',state.user.uid,'warranties',state.editItemId), payload);
+      if(existing?.itemPhotoStoragePath && (!payload.itemPhotoStoragePath || payload.itemPhotoStoragePath!==existing.itemPhotoStoragePath)){
+        try{ await deleteObject(ref(storage, existing.itemPhotoStoragePath)); }catch(e){ console.warn('Old item photo delete failed:', e); }
+      }
     }else{
-      const existing = state.items.find(i=>i.id===state.editItemId);
       const updated = {...existing, ...payload};
       await localPut(state.user.uid, updated);
       const idx = state.items.findIndex(i=>i.id===state.editItemId);
@@ -3008,6 +3107,7 @@ async function finishSaveItem(){
     purchaseDate:f.purchaseDate, warrantyEnd:f.warrantyEnd, warrantyMonths:f.warrantyMonths,
     docType:f.docType, docNumber:(f.docNumber||'').slice(0,100), notes:(f.notes||'').slice(0,1000),
     notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+    itemPhotoUrl:null, itemPhotoMime:null, itemPhotoFileName:null, itemPhotoStoragePath:null,
     returnDays: formReturnDaysForSave(f),
     returnDeadline: formReturnDeadline(f),
     createdAtMs: Date.now(),
@@ -3037,6 +3137,16 @@ async function finishSaveItem(){
           toast('Dokumentas neišsaugotas (klaida įkeliant failą)');
         }
       }
+      if(f.itemPhotoData && f.itemPhotoMime){
+        try{
+          const path = `users/${state.user.uid}/item-photos/${docRef.id}.jpg`;
+          const url = await uploadDataUrlToStorage(path, f.itemPhotoData, f.itemPhotoMime);
+          await updateDoc(docRef, { itemPhotoUrl:url, itemPhotoMime:f.itemPhotoMime, itemPhotoFileName:f.itemPhotoFileName, itemPhotoStoragePath:path });
+        }catch(e){
+          console.warn('Item photo upload failed:',e);
+          toast('Daikto nuotraukos nepavyko įkelti');
+        }
+      }
     }else{
       // Local mode: everything (including the document image/pdf as base64)
       // stays in IndexedDB on this device only. Nothing touches Firestore
@@ -3047,6 +3157,9 @@ async function finishSaveItem(){
         docUrl: f.docData || null,
         docMime: f.docMime || null,
         docFileName: f.docFileName || null,
+        itemPhotoUrl: f.itemPhotoData || null,
+        itemPhotoMime: f.itemPhotoMime || null,
+        itemPhotoFileName: f.itemPhotoFileName || null,
       };
       await localPut(state.user.uid, localItem);
       state.items.unshift(localItem);
@@ -3231,6 +3344,7 @@ async function finishSaveMultiItems(){
         docNumber:(r.docNumber||'').slice(0,100),
         notes:item.price?`Kaina: ${String(item.price).slice(0,50)}`:'',
         docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+        itemPhotoUrl:null, itemPhotoMime:null, itemPhotoFileName:null, itemPhotoStoragePath:null,
         returnDays: r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop),
         returnDeadline: receiptReturnDeadline(r),
         notifyEnabled: false,
@@ -3297,6 +3411,15 @@ function base64ToBlob(b64,mime){
   const s=atob(b64),a=new Uint8Array(s.length);
   for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);
   return new Blob([a],{type:mime});
+}
+function isDataUrl(value){
+  return typeof value === 'string' && value.startsWith('data:');
+}
+async function uploadDataUrlToStorage(path, dataUrl, mime){
+  const b64 = isDataUrl(dataUrl) ? dataUrl.split(',')[1] : dataUrl;
+  const blob = base64ToBlob(b64, mime);
+  await uploadBytes(ref(storage,path), blob, {contentType:mime});
+  return getDownloadURL(ref(storage,path));
 }
 async function docBlobFromItem(item){
   if(!item?.docUrl || !item?.docMime) return null;
@@ -3479,6 +3602,57 @@ async function looksLikeHeic(file){
     }
   }catch(e){ /* fall through */ }
   return false;
+}
+
+function handleItemPhoto(e){
+  const input = e.target;
+  const file = input.files?.[0];
+  if(input) input.value = '';
+  if(!file) return;
+  if(state.analyzing || state.uploadPct!==null){
+    toast('Palaukite, ankstesnis failas dar apdorojamas');
+    return;
+  }
+  if(!ALLOWED_IMG.includes(file.type)){
+    showAppDialog('Netinkamas formatas', 'Daikto nuotraukai naudokite JPG, PNG, WebP arba HEIC formatą.', '', {hideSupport:true, align:'center'});
+    return;
+  }
+  const MAX_ORIGINAL_ITEM_PHOTO = 20*1024*1024;
+  if(file.size > MAX_ORIGINAL_ITEM_PHOTO){
+    showAppDialog('Nuotrauka per didelė', `Pasirinkta nuotrauka per didelė (${fmtSize(file.size)}). Pabandykite kitą nuotrauką.`, '', {hideSupport:true, align:'center'});
+    return;
+  }
+
+  (async()=>{
+    if(await looksLikeHeic(file)){
+      showAppDialog('HEIC nepalaikomas', 'Šioje naršyklėje HEIC nuotraukos nepalaikomos. Telefono kameros nustatymuose pasirinkite JPEG formatą arba įkelkite kitą nuotrauką.', '', {hideSupport:true, align:'center'});
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async ev=>{
+      try{
+        const dataUrl = ev.target.result;
+        await new Promise((res,rej)=>{ const t=new Image(); t.onload=res; t.onerror=rej; t.src=dataUrl; });
+        const compressed = await compressImage(dataUrl, 1200, 0.78);
+        const compB64 = compressed.split(',')[1];
+        const compressedBytes = Math.ceil(compB64.length * 0.75);
+        if(compressedBytes > MAX_IMG){
+          showAppDialog('Nuotrauka per didelė', `Nuotrauka per didelė net po suspaudimo (${fmtSize(compressedBytes)}). Pabandykite kitą nuotrauką.`, '', {hideSupport:true, align:'center'});
+          return;
+        }
+        state.form.itemPhotoData = compressed;
+        state.form.itemPhotoMime = 'image/jpeg';
+        state.form.itemPhotoFileName = file.name.replace(/\.[^.]+$/,'.jpg');
+        state.form.itemPhotoStoragePath = null;
+        render();
+      }catch(err){
+        console.warn('Item photo processing failed:', err);
+        showAppDialog('Nuotraukos nepavyko apdoroti', 'Pabandykite kitą nuotrauką arba pakeiskite kameros formatą į JPEG.', '', {hideSupport:true, align:'center'});
+      }
+    };
+    reader.onerror = ()=>showAppDialog('Nuotraukos nepavyko nuskaityti', 'Pabandykite pasirinkti nuotrauką dar kartą.', '', {hideSupport:true, align:'center'});
+    reader.readAsDataURL(file);
+  })();
 }
 
 function handleDoc(e){
@@ -3722,7 +3896,7 @@ async function toggleStorageMode(){
 }
 async function runStorageMigration(wantsCloud){
   const itemsToMigrate = state.items.slice();
-  const hasDocumentsToMove = itemsToMigrate.some(item => !!(item.docUrl && item.docMime));
+  const hasDocumentsToMove = itemsToMigrate.some(item => !!(item.docUrl && item.docMime) || !!(item.itemPhotoUrl && item.itemPhotoMime));
   let migrationStep = wantsCloud ? 'Galio saugyklos įjungimas' : 'perkėlimas į telefoną';
   let docMoveFailures = 0;
   let retainedRemoteDocs = 0;
@@ -3753,6 +3927,7 @@ async function runStorageMigration(wantsCloud){
           purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
           docType:item.docType, docNumber:item.docNumber||'', notes:item.notes||'',
           notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
+          itemPhotoUrl:null, itemPhotoMime:null, itemPhotoFileName:null, itemPhotoStoragePath:null,
           createdAtMs:item.createdAtMs||Date.now(), createdAt:serverTimestamp(),
         };
         const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'), payload);
@@ -3774,6 +3949,30 @@ async function runStorageMigration(wantsCloud){
           }
           migrationStep = 'įrašų kūrimas Galio saugykloje';
         }
+        if(item.itemPhotoUrl && item.itemPhotoMime){
+          migrationStep = 'nuotraukų ir dokumentų perkėlimas';
+          try{
+            const path = `users/${state.user.uid}/item-photos/${docRef.id}.jpg`;
+            let url;
+            if(isDataUrl(item.itemPhotoUrl)){
+              url = await uploadDataUrlToStorage(path, item.itemPhotoUrl, item.itemPhotoMime);
+            }else{
+              const resp = await fetch(item.itemPhotoUrl);
+              if(!resp.ok) throw new Error('item-photo-download-failed');
+              const blob = await resp.blob();
+              await uploadBytes(ref(storage,path), blob, {contentType:item.itemPhotoMime || blob.type || 'image/jpeg'});
+              url = await getDownloadURL(ref(storage,path));
+            }
+            await updateDoc(docRef, { itemPhotoUrl:url, itemPhotoMime:item.itemPhotoMime||'image/jpeg', itemPhotoFileName:item.itemPhotoFileName||null, itemPhotoStoragePath:path });
+            if(item.itemPhotoStoragePath && item.itemPhotoStoragePath !== path){
+              try{ await deleteObject(ref(storage,item.itemPhotoStoragePath)); }catch(e){}
+            }
+          }catch(e){
+            docMoveFailures++;
+            console.warn('Migration item photo upload failed for item:', item.id, e);
+          }
+          migrationStep = 'įrašų kūrimas Galio saugykloje';
+        }
       }
       migrationStep = 'vietinių įrašų užbaigimas';
       await localClear(state.user.uid);
@@ -3787,6 +3986,10 @@ async function runStorageMigration(wantsCloud){
         let localDocMime = null;
         let localDocFileName = null;
         let localDocStoragePath = null;
+        let localItemPhotoUrl = null;
+        let localItemPhotoMime = null;
+        let localItemPhotoFileName = null;
+        let localItemPhotoStoragePath = null;
         if(item.docUrl){
           migrationStep = 'nuotraukų ir dokumentų perkėlimas';
           try{
@@ -3812,6 +4015,31 @@ async function runStorageMigration(wantsCloud){
           }
           migrationStep = 'įrašų perkėlimas į telefoną';
         }
+        if(item.itemPhotoUrl){
+          migrationStep = 'nuotraukų ir dokumentų perkėlimas';
+          try{
+            const resp = await fetch(item.itemPhotoUrl);
+            if(!resp.ok) throw new Error('item-photo-download-failed');
+            const blob = await resp.blob();
+            localItemPhotoUrl = await new Promise((res,rej)=>{
+              const r = new FileReader();
+              r.onload = ()=>res(r.result);
+              r.onerror = rej;
+              r.readAsDataURL(blob);
+            });
+            localItemPhotoMime = item.itemPhotoMime || blob.type || 'image/jpeg';
+            localItemPhotoFileName = item.itemPhotoFileName || null;
+          }catch(e){
+            docMoveFailures++;
+            retainedRemoteDocs++;
+            localItemPhotoUrl = item.itemPhotoUrl;
+            localItemPhotoMime = item.itemPhotoMime || null;
+            localItemPhotoFileName = item.itemPhotoFileName || null;
+            localItemPhotoStoragePath = item.itemPhotoStoragePath || null;
+            console.warn('Migration item photo download failed for item:', item.id, e);
+          }
+          migrationStep = 'įrašų perkėlimas į telefoną';
+        }
         const localItem = {
           id: genLocalId(), name:item.name, category:item.category, shop:item.shop||'',
           purchaseDate:item.purchaseDate, warrantyEnd:item.warrantyEnd, warrantyMonths:item.warrantyMonths,
@@ -3821,10 +4049,17 @@ async function runStorageMigration(wantsCloud){
           docMime: localDocUrl ? localDocMime : null,
           docFileName: localDocUrl ? localDocFileName : null,
           docStoragePath: localDocStoragePath,
+          itemPhotoUrl: localItemPhotoUrl,
+          itemPhotoMime: localItemPhotoUrl ? localItemPhotoMime : null,
+          itemPhotoFileName: localItemPhotoUrl ? localItemPhotoFileName : null,
+          itemPhotoStoragePath: localItemPhotoStoragePath,
         };
         await localPut(state.user.uid, localItem);
         if(item.docStoragePath && localDocUrl && !localDocStoragePath){
           try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){}
+        }
+        if(item.itemPhotoStoragePath && localItemPhotoUrl && !localItemPhotoStoragePath){
+          try{ await deleteObject(ref(storage,item.itemPhotoStoragePath)); }catch(e){}
         }
         try{ await deleteDoc(doc(db,'users',state.user.uid,'warranties',item.id)); }catch(e){}
       }
@@ -3909,6 +4144,9 @@ async function performDeleteAccount(){
       catch(e){ cleanupFailed = true; }
       if(item.docStoragePath){
         try{ await deleteObject(ref(storage,item.docStoragePath)); }catch(e){ /* non-fatal */ }
+      }
+      if(item.itemPhotoStoragePath){
+        try{ await deleteObject(ref(storage,item.itemPhotoStoragePath)); }catch(e){ /* non-fatal */ }
       }
     }
   }

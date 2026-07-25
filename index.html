@@ -239,6 +239,18 @@
     .doc-preview-pdf .pdf-hint { font-size: 13px; color: var(--red); margin-top: 2px; opacity: 0.7; }
     .doc-remove-btn { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 8px; padding: 10px; background: none; border: none; font-size: 14px; color: var(--red); }
     .doc-error { font-size: 13px; color: var(--red); padding: 6px 4px; }
+    .item-photo-area { margin-bottom: 20px; }
+    .item-photo-empty { background: var(--bg2); border: 1.5px dashed var(--border2); border-radius: var(--radius); padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; }
+    .item-photo-empty i { width: 42px; height: 42px; border-radius: var(--radius-sm); background: var(--accent-bg); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+    .item-photo-empty span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .item-photo-empty strong { color: var(--text); font-size: 15px; }
+    .item-photo-empty small { color: var(--text2); font-size: 13px; line-height: 1.35; }
+    .item-photo-preview { background: var(--bg2); border-radius: var(--radius); overflow: hidden; }
+    .item-photo-preview img { width: 100%; max-height: 220px; object-fit: cover; display: block; cursor: pointer; }
+    .item-photo-actions { display: grid; grid-template-columns: 1fr 1fr; border-top: 0.5px solid var(--border); }
+    .photo-action-btn { background: none; border: none; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 7px; color: var(--accent); font-size: 14px; font-weight: 600; }
+    .photo-action-btn + .photo-action-btn { border-left: 0.5px solid var(--border); }
+    .photo-action-btn.danger { color: var(--red); }
     .analyzing-row { display: flex; align-items: center; gap: 10px; padding: 10px 4px; }
     .upload-progress-row { display:flex; align-items:center; gap:10px; padding:10px 4px; }
     .upload-progress-bar { flex:1; height:4px; background:var(--bg3); border-radius:2px; overflow:hidden; }
@@ -255,6 +267,9 @@
     .detail-status .ds-label { font-size: 13px; font-weight: 600; opacity: 0.7; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
     .detail-status .ds-val { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
     .detail-section { margin: 0 16px 16px; }
+    .media-label { font-size: 13px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px 2px; }
+    .detail-media-img { width: 100%; border-radius: var(--radius); max-height: 220px; object-fit: cover; cursor: pointer; display: block; background: var(--bg2); }
+    .detail-media-img.item-photo-main { max-height: 260px; }
     .detail-rows { background: var(--bg2); border-radius: var(--radius); overflow: hidden; }
     .detail-row { display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border-bottom: 0.5px solid var(--border); }
     .detail-row:last-child { border-bottom: none; }
@@ -417,12 +432,12 @@
   </nav>
 </div>
 
-<script type="module" src="firebase-config.js?v=20260710-2145"></script>
-<script type="module" src="app.js?v=20260710-2145"></script>
+<script type="module" src="firebase-config.js?v=20260725-2200"></script>
+<script type="module" src="app.js?v=20260725-2200"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20260710-0045').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20260725-2200').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
