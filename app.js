@@ -1525,7 +1525,15 @@ function renderDetail(){
   }
   const itemPhotoHtml = itemPhoto.itemPhotoUrl
     ? `<div class="detail-section"><div class="media-label">Daikto nuotrauka</div><img src="${esc(itemPhoto.itemPhotoUrl)}" id="itemPhotoImg" class="detail-media-img item-photo-main" /></div>`
-    : '';
+    : `<div class="detail-section">
+        <button type="button" class="item-photo-empty" id="detailAddPhotoBtn" style="width:100%;border:1.5px dashed var(--border2);text-align:left">
+          <i class="ti ti-shirt"></i>
+          <span>
+            <strong>Pridėti daikto nuotrauką</strong>
+            <small>Ji bus rodoma pagrindiniame sąraše vietoje dokumento.</small>
+          </span>
+        </button>
+      </div>`;
 
   const itemPrice = extractPriceFromNotes(item.notes);
   const visibleNotes = notesWithoutPrice(item.notes);
@@ -2441,6 +2449,10 @@ function attachEvents(){
     state.addMode = 'manual';
     state.view = 'add';
     render();
+  });
+  on('detailAddPhotoBtn','click',()=>{
+    document.getElementById('editItemBtn')?.click();
+    document.getElementById('itemPhotoInput')?.click();
   });
   on('deleteBtn2','click',()=>deleteItem(state.selected));
   on('checkPolicyBtn','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it)checkPolicy(it);});
