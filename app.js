@@ -1514,10 +1514,17 @@ function renderAdd(){
         </div>
       </div>
 
+      <p class="form-label-section">Kaina</p>
+      <div class="form-section">
+        <div class="form-field">
+          <input type="text" id="f_price" inputmode="decimal" placeholder="pvz. 39,99" value="${esc(extractPriceFromNotes(f.notes).replace(/\s*€\s*$/,''))}" />
+        </div>
+      </div>
+
       <p class="form-label-section">Pastabos</p>
       <div class="form-section">
         <div class="form-field">
-          <textarea id="f_notes" rows="3" placeholder="Papildoma informacija...">${esc(f.notes)}</textarea>
+          <textarea id="f_notes" rows="3" placeholder="Papildoma informacija...">${esc(notesWithoutPrice(f.notes))}</textarea>
         </div>
       </div>
 
@@ -2666,7 +2673,17 @@ function attachEvents(){
   on('f_warrantyEnd','change',e=>{state.form.warrantyEnd=e.target.value;});
   on('f_returnDeadline','change',e=>{state.form.returnDeadline=e.target.value;syncSave();});
 
-  ['name','shop','purchaseDate','docType','docNumber','category','notes'].forEach(k=>{
+  // Price has no field of its own in the database: it lives in notes as a "Kaina: X" line.
+  // The form edits them separately and joins them back here.
+  const syncPriceNotes=()=>{
+    const price=(document.getElementById('f_price')?.value||'').trim().slice(0,50);
+    const notes=(document.getElementById('f_notes')?.value||'').trim();
+    state.form.notes=[notes, price?`Kaina: ${price}`:''].filter(Boolean).join('\n');
+    syncSave();
+  };
+  on('f_price','input',syncPriceNotes);
+  on('f_notes','input',syncPriceNotes);
+  ['name','shop','purchaseDate','docType','docNumber','category'].forEach(k=>{
     const updateField=e=>{
       state.form[k]=e.target.value;
       if(k==='purchaseDate'&&state.form.warrantyMonths)state.form.warrantyEnd=addMonths(e.target.value,state.form.warrantyMonths);
