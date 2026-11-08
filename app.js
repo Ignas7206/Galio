@@ -4486,6 +4486,30 @@ async function performDeleteAccount(){
 // Premium isn't truly "unlimited" — that would mean unbounded exposure on
 // our own Anthropic billing if a Premium account is compromised, scripted,
 // or simply misused. Premium gets a generous but hard cap instead.
+// Identical lines on one receipt (same product, warranty and category) become one record
+// "Name × 2" with the summed price — same receipt, same dates, so separate records add nothing.
+function mergeSameItems(items){
+  const groups = new Map();
+  for(const it of items){
+    const key = [String(it.name).trim().toLowerCase(), it.warrantyMonths ?? '', it.category || ''].join('|');
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+  const out = [];
+  for(const list of groups.values()){
+    if(list.length === 1){ out.push(list[0]); continue; }
+    const nums = list.map(it => parseFloat(String(it.price ?? '').replace(',', '.')));
+    const usesComma = list.some(it => String(it.price ?? '').includes(','));
+    let price = list[0].price;
+    if(nums.every(n => Number.isFinite(n))){
+      const total = nums.reduce((a, n) => a + n, 0).toFixed(2);
+      price = usesComma ? total.replace('.', ',') : total;
+    }
+    out.push({ ...list[0], name: `${String(list[0].name).trim()} × ${list.length}`, price });
+  }
+  return out;
+}
+
 async function analyzeDoc(b64,mime, runId=state.analysisRunId){
   const stillCurrent = () => runId === state.analysisRunId;
   if(!state.online){
@@ -4585,7 +4609,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
       state.form.qualityWarning = `${qualityLabels[p.quality]||'Dokumento kokybė nepakankama'}${p.qualityNote?': '+p.qualityNote:''}`;
     }
 
-    const items = Array.isArray(p.items) ? p.items.filter(it=>it && typeof it.name==='string' && it.name.trim()) : [];
+    const items = mergeSameItems(Array.isArray(p.items) ? p.items.filter(it=>it && typeof it.name==='string' && it.name.trim()) : []);
 
     if(items.length===0){
       // Nothing usable was recognized — don't silently fabricate a name.
