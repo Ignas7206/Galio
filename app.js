@@ -1230,7 +1230,8 @@ function renderList(){
 
   const skeletonHtml = `<div class="skeleton-card"><div class="skeleton-box skel-thumb"></div><div class="skel-lines"><div class="skeleton-box skel-line" style="width:60%"></div><div class="skeleton-box skel-line" style="width:40%"></div></div></div>`.repeat(3);
 
-  const emptyHtml=state.loadingItems ? skeletonHtml : items.length===0?`<div class="empty-state">
+  // Placeholders only while nothing is on screen yet; never stacked on top of real entries.
+  const emptyHtml=(state.loadingItems && items.length===0) ? skeletonHtml : items.length===0?`<div class="empty-state">
     <div class="empty-icon"><i class="ti ti-shield-check"></i></div>
     <h3>Pridėkite pirmą pirkinį</h3>
     <p>Nuskenuokite dokumentą. Galio parodys garantijos pabaigą ir iki kada prekę dar galima grąžinti.</p>
