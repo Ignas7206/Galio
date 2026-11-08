@@ -697,6 +697,8 @@ async function ensureUserDoc(user){
       storageMode:'local', aiUsesRemaining: AI_FREE_USES,
       emailVerified: user.emailVerified || false,
       createdAt: serverTimestamp(),
+      // Proof of consent: sign-up (checkbox) and Google sign-in both require accepting the Terms.
+      termsAcceptedAt: serverTimestamp(), termsVersion: TERMS_VERSION,
     };
     window.__galioBootStep = 'naujos paskyros kūrimas (setDoc)';
     await setDoc(ref_, initial);
@@ -4770,6 +4772,7 @@ function mergeSameItems(items){
   return out;
 }
 
+const TERMS_VERSION = '2026-11-08';
 async function analyzeDoc(b64,mime, runId=state.analysisRunId){
   const stillCurrent = () => runId === state.analysisRunId;
   if(!state.online){
@@ -4817,6 +4820,7 @@ async function analyzeDoc(b64,mime, runId=state.analysisRunId){
         {type:'text',text:`Tai pirkimo dokumentas (čekis, sąskaita-faktūra ar banko išrašas). Atidžiai išanalizuok TIK tai, kas faktiškai matoma dokumente.
 
 GRIEŽTOS TAISYKLĖS (svarbiausia):
+0. Pirmiausia nuspręsk, ar nuotraukoje apskritai yra pirkimo dokumentas (čekis, sąskaita, užsakymo patvirtinimas, banko išrašas, garantinis talonas). Jei ne (pvz. žmonės, nuogumas, gyvūnai, peizažas, asmenukė, bet kuri kita nuotrauka) – isPurchaseDocument=false, items=[], visi kiti laukai null, nieko neaprašinėk.
 1. NIEKADA negalvok/nespėliok informacijos, kurios nematai dokumente. Jei laukas neaiškus ar nematomas – grąžink null, NE spėjimą.
 2. Pavadinimą imk TIK iš dokumento teksto (prekės eilutės), niekada negalvok pavadinimo iš konteksto ar nuojautos.
 3. Jei dokumente NĖRA pardavėjo pavadinimo/rekvizitų (pvz. nufotografuota tik dalis čekio) – shop lauke grąžink null, neišgalvok parduotuvės pavadinimo.
@@ -4827,6 +4831,7 @@ GRIEŽTOS TAISYKLĖS (svarbiausia):
 
 Grąžink TIK JSON be markdown, šios struktūros:
 {
+  "isPurchaseDocument": true,
   "shop": "parduotuvės/pardavėjo pavadinimas arba null jei nematomas dokumente",
   "purchaseDate": "YYYY-MM-DD arba null",
   "returnDays": "grąžinimo terminas dienomis, pvz. 14 arba 30, arba null jei dokumente nematomas",
@@ -4862,6 +4867,15 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     const data=await res.json();
     if(!stillCurrent()) return;
     const p=JSON.parse((data.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim());
+
+    // Not a purchase document (a selfie, a random or inappropriate photo): drop the image so it
+    // is never attached to the entry or uploaded to Galio storage.
+    if(p.isPurchaseDocument===false){
+      state.form.docData=null; state.form.docMime=null; state.form.docFileName=null;
+      state.form.qualityWarning=null;
+      state.docError='Nuotraukoje neatpažintas pirkimo dokumentas (čekis ar sąskaita), todėl ji neprisegta. Nufotografuokite čekį arba įveskite duomenis rankiniu būdu.';
+      return;
+    }
 
     // Quality warning — surfaced to the user, not silently swallowed.
     if(p.quality && p.quality!=='good'){
