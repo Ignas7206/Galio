@@ -2212,6 +2212,10 @@ function renderMultiSelect(){
       <div style="background:var(--card);border-radius:var(--radius);margin:12px 16px;overflow:hidden">
         ${rows}
       </div>
+      <div style="display:flex;gap:12px;align-items:flex-start;margin:4px 16px 0;padding:12px 14px;border-radius:var(--radius);background:var(--bg2)">
+        <i class="ti ti-camera" style="font-size:20px;color:var(--accent);flex-shrink:0;margin-top:1px"></i>
+        <div style="font-size:13px;color:var(--text2);line-height:1.4">Išsaugoję atidarykite daiktą ir paspauskite <b style="color:var(--text)">„Pridėti daikto nuotrauką“</b> – ji bus rodoma sąraše, kad daiktą atpažintumėte iš karto.</div>
+      </div>
     </div>
     <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:10px;align-items:center">
       <button id="multiCancelBtn" style="background:none;border:1px solid var(--border2);color:var(--text3);font-size:14px;padding:10px 16px;border-radius:12px;cursor:pointer;flex-shrink:0">Atšaukti</button>
