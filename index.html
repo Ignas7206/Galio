@@ -224,6 +224,9 @@
     .warranty-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.4); }
     .warranty-panel { position: relative; z-index: 1; background: var(--bg2); border-radius: 20px 20px 0 0; padding-bottom: calc(16px + var(--safe-bottom)); animation: slideUp 0.25s ease; max-height: 70vh; overflow-y: auto; }
     @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .warranty-sheet.center-sheet { justify-content: center; align-items: center; padding: calc(var(--safe-top) + 16px) 16px calc(var(--safe-bottom) + 16px); }
+    .center-sheet .warranty-panel { width: 100%; max-width: 420px; max-height: 100%; overflow-y: auto; border-radius: 20px; padding-bottom: 12px; animation: popIn 0.18s ease; }
+    @keyframes popIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
     .warranty-handle { width: 36px; height: 4px; background: var(--bg4); border-radius: 2px; margin: 12px auto 16px; }
     .warranty-title { font-size: 15px; font-weight: 600; text-align: center; margin-bottom: 12px; color: var(--text2); }
     .warranty-opt { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: none; border: none; border-top: 0.5px solid var(--border); width: 100%; font-size: 16px; color: var(--text); text-align: left; }
@@ -449,12 +452,12 @@
     document.body.innerHTML = '<div style="font-family:sans-serif;padding:32px;text-align:center"><p style="font-size:16px;font-weight:600">Galio nepasikrovė</p><p style="font-size:12px;color:#888;word-break:break-word">' + (window.__galioErrors.join('<br>') || 'app.js nepaleistas') + '</p><button onclick="__galioResetCache()" style="margin-top:16px;padding:12px 24px;border:none;border-radius:12px;background:#2f6bff;color:#fff;font-size:15px">Išvalyti talpyklą ir perkrauti</button></div>';
   }, 20000);
 </script>
-<script type="module" src="firebase-config.js?v=20261109-0200"></script>
-<script type="module" src="app.js?v=20261109-0200"></script>
+<script type="module" src="firebase-config.js?v=20261109-0230"></script>
+<script type="module" src="app.js?v=20261109-0230"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20261109-0200').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20261109-0230').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;

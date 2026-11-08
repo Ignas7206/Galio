@@ -944,6 +944,8 @@ window.addEventListener('popstate', () => {
   if(requestUnsavedAddExit('list')) return;
   if(state.view==='multi-select'){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view==='add'&&state.addMode){ discardPendingAdd(); state.view='list'; render(); return; }
+  if(state.view==='contact' || state.view==='admin-stats'){ state.view='settings'; render(); return; }
+  if(state.view==='premium'){ state.view=state._premiumReturnView||'list'; render(); return; }
   if(state.view!=='list'){ state.view='list'; render(); return; }
   // Already at the list screen with nothing else open — let the OS handle
   // it from here (this will actually exit/background the app, same as a
@@ -1777,9 +1779,9 @@ function renderSettings(){
   const keepLabel = (EXPIRED_KEEP_OPTIONS.find(o=>o[0]===keepM)||[])[1] || '';
   const themeOpts = [['auto','Auto','device-mobile'],['light','Šviesi','sun'],['dark','Tamsi','moon']];
   const themeLabel = (themeOpts.find(o=>o[0]===state.theme)||themeOpts[0])[1];
-  const aiVal = isPremium
-    ? `${state.userDoc?.aiMonthKey===new Date().toISOString().slice(0,7)?(state.userDoc?.aiMonthCount||0):0}/${PREMIUM_MONTHLY_LIMIT} šį mėn.`
-    : `liko ${aiLeft}/${AI_FREE_USES}`;
+  const aiMonthUsed = state.userDoc?.aiMonthKey===new Date().toISOString().slice(0,7)?(state.userDoc?.aiMonthCount||0):0;
+  const aiDayUsed = state.userDoc?.aiDayKey===new Date().toISOString().slice(0,10)?(state.userDoc?.aiDayCount||0):0;
+  const aiVal = isPremium ? `liko ${Math.max(0,PREMIUM_MONTHLY_LIMIT-aiMonthUsed)}` : `liko ${aiLeft}`;
   const rowBtn = 'width:100%;background:none;border:none;text-align:left;color:inherit';
   const chev = '<i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px"></i>';
   const appVersion = esc((document.querySelector('script[src*="app.js"]')?.src.split('v=')[1])||'?');
@@ -1817,10 +1819,10 @@ function renderSettings(){
         <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i><span class="settings-row-label">Įrašų saugojimas</span>
         <span class="settings-row-val">${isCloud?'Galio saugykla':'Įrenginyje'}</span>${chev}
       </button>
-      <div class="settings-row">
-        <i class="ti ti-sparkles row-icon"></i><span class="settings-row-label">AI analizės</span>
-        <span class="settings-row-val">${aiVal}</span>
-      </div>
+      <button class="settings-row tappable" id="settingsAiBtn" style="${rowBtn}">
+        <i class="ti ti-sparkles row-icon"></i><span class="settings-row-label">AI analizių limitai</span>
+        <span class="settings-row-val">${aiVal}</span>${chev}
+      </button>
       <div class="settings-row" style="${!isCloud?'opacity:0.65':''}">
         <i class="ti ti-bell row-icon"></i>
         <div class="settings-row-label">Priminimai${!isCloud?'<small>Tik su Galio saugykla</small>':''}</div>
@@ -1847,13 +1849,14 @@ function renderSettings(){
         <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Teisinė informacija</span>${chev}
       </button>
     </div>
-    <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 12px">Galio versija ${appVersion}</p>
-    ${renderSettingsSheet({isPremium, isCloud, canChangePassword, accountEmail, providerLabel, uidShort, keepM, themeOpts, appVersion})}
+    <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 12px">Galio ${APP_VERSION_NAME}${isAdmin?` · ${appVersion}`:''}</p>
+    ${renderSettingsSheet({isPremium, isCloud, canChangePassword, accountEmail, providerLabel, uidShort, keepM, themeOpts, appVersion, aiLeft, aiMonthUsed, aiDayUsed})}
   </div>`;
 }
 
 // Bottom sheets opened from the settings rows. Anything marked data-close shuts the
 // sheet before its own action runs (see attach code).
+const APP_VERSION_NAME = '1.4';
 function renderSettingsSheet(o){
   const k = state.settingsSheet;
   if(!k) return '';
@@ -1884,16 +1887,30 @@ function renderSettingsSheet(o){
   }else if(k==='theme'){
     title = 'Išvaizda';
     body = o.themeOpts.map(([t,l,ic]) => opt(`data-theme="${t}"`, `<span style="display:flex;align-items:center;gap:12px"><i class="ti ti-${ic}" style="color:var(--text2)"></i>${l}</span>`, state.theme===t, 'theme-row')).join('');
+  }else if(k==='ai'){
+    title = 'AI analizių limitai';
+    const meter = (label, used, limit) => `<div style="margin:0 20px 14px">
+      <div style="display:flex;justify-content:space-between;font-size:15px;margin-bottom:6px"><span>${label}</span><span style="color:var(--text2)"><b style="color:var(--text)">${used}</b> iš ${limit}</span></div>
+      <div style="height:8px;border-radius:4px;background:var(--bg3);overflow:hidden"><div style="height:100%;width:${Math.min(100, used*100/Math.max(1,limit))}%;background:var(--accent);border-radius:4px"></div></div>
+    </div>`;
+    body = o.isPremium
+      ? meter('Šiandien panaudota', o.aiDayUsed, PREMIUM_DAILY_LIMIT) + meter('Šį mėnesį panaudota', o.aiMonthUsed, PREMIUM_MONTHLY_LIMIT)
+        + note('Dienos limitas atsinaujina kas parą, mėnesio – mėnesio pradžioje.')
+      : meter('Panaudota nemokamų', AI_FREE_USES - o.aiLeft, AI_FREE_USES)
+        + note(`AI nuskaito čekį ir pats užpildo prekę, garantiją ir grąžinimo terminą. Nemokamai – ${AI_FREE_USES} kartai. Su Premium – iki ${PREMIUM_MONTHLY_LIMIT} per mėnesį.`)
+        + `<div style="padding:0 20px 8px"><button class="save-btn" data-close id="upgradeBtnSettings" style="margin:0">Premium</button></div>`;
   }else if(k==='legal'){
     title = 'Teisinė informacija';
     body = `<a class="warranty-opt" data-close href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none">Privatumo politika<i class="ti ti-external-link" style="color:var(--text3)"></i></a>`
       + `<a class="warranty-opt" data-close href="terms.html" target="_blank" rel="noopener" style="text-decoration:none">Naudojimo sąlygos<i class="ti ti-external-link" style="color:var(--text3)"></i></a>`;
   }
-  return `<div class="warranty-sheet" id="settingsSheet">
+  return `<div class="warranty-sheet center-sheet" id="settingsSheet">
     <div class="warranty-overlay" id="settingsSheetOverlay"></div>
     <div class="warranty-panel">
-      <div class="warranty-handle"></div>
-      <div class="warranty-title">${title}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 12px 10px 20px">
+        <div style="font-size:17px;font-weight:700;color:var(--text)">${title}</div>
+        <button class="back-btn" data-close id="settingsSheetClose" aria-label="Uždaryti"><i class="ti ti-x"></i></button>
+      </div>
       ${body}
     </div>
   </div>`;
@@ -2364,12 +2381,141 @@ function renderMultiSelect(){
 }
 
 
+// ── Admin statistics ──────────────────────────────────────────────────────
+const ADMIN_DAY = 86400000;
+function adminAgo(t){
+  if(!t) return 'niekada';
+  const d = (Date.now()-t)/ADMIN_DAY;
+  if(d < 1/24) return 'ką tik';
+  if(d < 1) return `prieš ${Math.floor(d*24)} val.`;
+  if(d < 45) return `prieš ${Math.floor(d)} d.`;
+  return new Date(t).toLocaleDateString('lt-LT');
+}
+const adminPct = (a,b) => b ? Math.round(a*100/b) : 0;
+const adminDayKey = t => { const d=new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+
+// Every number on the admin screen comes from here. Admin accounts are left out so our
+// own testing does not inflate the figures.
+function adminSlices(all, rangeDays){
+  const now = Date.now();
+  const users = all.filter(u => u.role !== 'admin');
+  const n = users.length;
+  const within = (t, days) => t && now - t <= days*ADMIN_DAY;
+  const kind = u => premiumKind(u);
+  const paying = users.filter(u => kind(u)==='purchased');
+  const monthKey = new Date().toISOString().slice(0,7);
+
+  // sign-ups per day for the chosen range
+  const days = [];
+  for(let i = rangeDays-1; i >= 0; i--){ const t = now - i*ADMIN_DAY; days.push({key: adminDayKey(t), t, n: 0}); }
+  const byKey = new Map(days.map(d => [d.key, d]));
+  users.forEach(u => { const d = u.createdMs && byKey.get(adminDayKey(u.createdMs)); if(d) d.n++; });
+
+  // weekly cohorts (Monday start), newest first
+  const monday = t => { const d = new Date(t); d.setHours(0,0,0,0); d.setDate(d.getDate() - ((d.getDay()+6)%7)); return d.getTime(); };
+  const thisMonday = monday(now);
+  const cohorts = [];
+  for(let w = 0; w < 6; w++){
+    const from = thisMonday - w*7*ADMIN_DAY, to = from + 7*ADMIN_DAY;
+    const c = users.filter(u => u.createdMs >= from && u.createdMs < to);
+    cohorts.push({ from, n: c.length,
+      withItems: c.filter(u => u.itemCount > 0).length,
+      active7: c.filter(u => within(u.lastActiveMs, 7)).length,
+      premium: c.filter(u => kind(u) !== 'free').length });
+  }
+
+  const items = users.map(u => u.itemCount||0);
+  const withItems = items.filter(x => x > 0).sort((a,b)=>a-b);
+  return {
+    n,
+    active1: users.filter(u => within(u.lastActiveMs, 1)).length,
+    active7: users.filter(u => within(u.lastActiveMs, 7)).length,
+    active30: users.filter(u => within(u.lastActiveMs, 30)).length,
+    newRange: users.filter(u => within(u.createdMs, rangeDays)).length,
+    paying: paying.length,
+    payingMonthly: paying.filter(u => u.playProductId==='galio_premium_monthly').length,
+    payingYearly: paying.filter(u => u.playProductId==='galio_premium_yearly').length,
+    premiumAll: users.filter(u => kind(u) !== 'free').length,
+    promo: users.filter(u => kind(u)==='promo').length,
+    manual: users.filter(u => kind(u)==='manual').length,
+    lapsed: users.filter(u => u.plan!=='premium' && u.premiumDowngradeRequired).length,
+    days, cohorts,
+    buckets: [
+      ['Šiandien (24 val.)', users.filter(u => within(u.lastActiveMs, 1)).length],
+      ['Per 2–7 d.', users.filter(u => u.lastActiveMs && !within(u.lastActiveMs, 1) && within(u.lastActiveMs, 7)).length],
+      ['Per 8–30 d.', users.filter(u => u.lastActiveMs && !within(u.lastActiveMs, 7) && within(u.lastActiveMs, 30)).length],
+      ['Seniau nei 30 d.', users.filter(u => u.lastActiveMs && !within(u.lastActiveMs, 30)).length],
+      ['Nežinoma', users.filter(u => !u.lastActiveMs).length],
+    ],
+    funnel: [
+      ['Užsiregistravo', n],
+      ['Patvirtino el. paštą', users.filter(u => u.emailVerified).length],
+      ['Pridėjo bent 1 įrašą', withItems.length],
+      ['Turi 5+ įrašų', users.filter(u => u.itemCount >= 5).length],
+      ['Turi Premium', users.filter(u => kind(u) !== 'free').length],
+      ['Moka', paying.length],
+    ],
+    splits: [
+      ['Prisijungia per Google', users.filter(u => (u.providers||[]).includes('google.com')).length],
+      ['Saugo Galio saugykloje', users.filter(u => u.storageMode==='cloud').length],
+      ['Įjungti push pranešimai', users.filter(u => u.hasPush).length],
+      ['Išnaudojo nemokamas AI', users.filter(u => kind(u)==='free' && u.aiUsesRemaining===0).length],
+      ['Nė karto nenaudojo AI', users.filter(u => kind(u)==='free' && u.aiUsesRemaining===AI_FREE_USES).length],
+      ['Įjungtas senų įrašų trynimas', users.filter(u => u.keepExpiredMonths > 0).length],
+    ],
+    totalItems: items.reduce((a,b)=>a+b, 0),
+    medianItems: withItems.length ? withItems[Math.floor(withItems.length/2)] : 0,
+    maxItems: withItems.length ? withItems[withItems.length-1] : 0,
+    aiPremiumMonth: users.filter(u => u.aiMonthKey===monthKey).reduce((a,u)=>a+(u.aiMonthCount||0), 0),
+  };
+}
+
+function adminTile(n, label, sub='', color=''){
+  return `<div class="stat-tile" style="text-align:left;padding:12px 14px">
+    <div class="n"${color?` style="color:${color}"`:''}>${n}</div>
+    <div class="l">${label}</div>
+    ${sub?`<div style="font-size:12px;color:var(--text3);margin-top:2px">${sub}</div>`:''}
+  </div>`;
+}
+// Horizontal bars, one hue: the label and number are text, the bar only shows the size.
+function adminBars(rows, total){
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  return rows.map(([label, v]) => `<div style="padding:9px 14px">
+    <div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;margin-bottom:5px">
+      <span style="color:var(--text)">${label}</span>
+      <span style="color:var(--text2);font-variant-numeric:tabular-nums;white-space:nowrap"><b style="color:var(--text)">${v}</b>${total?` · ${adminPct(v,total)}%`:''}</span>
+    </div>
+    <div style="height:8px;border-radius:4px;background:var(--bg3);overflow:hidden">
+      <div style="height:100%;width:${Math.max(v?2:0, v*100/max)}%;background:var(--accent);border-radius:4px"></div>
+    </div>
+  </div>`).join('');
+}
+// Sign-ups per day as columns; tapping a column shows its date and count.
+function adminColumns(days){
+  const max = Math.max(1, ...days.map(d => d.n));
+  const fmt = t => new Date(t).toLocaleDateString('lt-LT', {month:'2-digit', day:'2-digit'});
+  const gap = days.length > 45 ? 1 : 2;
+  return `<div style="padding:14px 14px 10px">
+    <div style="display:flex;align-items:flex-end;gap:${gap}px;height:120px;border-bottom:1px solid var(--border)">
+      ${days.map(d => `<button class="admin-col" data-tip="${fmt(d.t)}: ${d.n} registr." title="${fmt(d.t)}: ${d.n}" style="flex:1;min-width:0;height:100%;padding:0;border:none;background:none;display:flex;align-items:flex-end;cursor:pointer">
+        <span style="display:block;width:100%;height:${d.n ? Math.max(4, d.n*100/max) : 0}%;background:var(--accent);border-radius:3px 3px 0 0"></span>
+      </button>`).join('')}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:6px">
+      <span>${fmt(days[0].t)}</span><span>daugiausia per dieną: ${max}</span><span>${fmt(days[days.length-1].t)}</span>
+    </div>
+  </div>`;
+}
+
 function renderAdminStats(){
   const s = state.adminStats;
   const users = state.adminUsers || [];
+  const range = state.adminRange || 30;
   const adminSearch = (state.adminSearch || '').trim().toLowerCase();
   const adminPlanFilter = state.adminPlanFilter || 'all';
-  const adminSort = state.adminSort || 'email';
+  const adminSort = state.adminSort || 'active';
+  const now = Date.now();
+  const byEmail = (a,b) => String(a.email||'').localeCompare(String(b.email||''), 'lt');
   const filteredUsers = users
     .filter(u => {
       const kind = premiumKind(u);
@@ -2377,147 +2523,152 @@ function renderAdminStats(){
       const matchesSearch = !adminSearch || haystack.includes(adminSearch);
       const matchesFilter =
         adminPlanFilter === 'all' ||
-        (adminPlanFilter === 'premium' && kind !== 'free') ||
+        (adminPlanFilter === 'active7' && u.lastActiveMs && now-u.lastActiveMs <= 7*ADMIN_DAY) ||
+        (adminPlanFilter === 'inactive30' && (!u.lastActiveMs || now-u.lastActiveMs > 30*ADMIN_DAY)) ||
+        (adminPlanFilter === 'new7' && u.createdMs && now-u.createdMs <= 7*ADMIN_DAY) ||
+        (adminPlanFilter === 'premium' && kind !== 'free' && kind !== 'admin') ||
         (adminPlanFilter === 'purchased' && kind === 'purchased') ||
         (adminPlanFilter === 'manual' && (kind === 'manual' || kind === 'promo')) ||
         (adminPlanFilter === 'free' && kind === 'free') ||
+        (adminPlanFilter === 'noitems' && !u.itemCount) ||
         (adminPlanFilter === 'admin' && kind === 'admin') ||
         (adminPlanFilter === 'cloud' && u.storageMode === 'cloud');
       return matchesSearch && matchesFilter;
     })
     .sort((a,b) => {
-      if(adminSort === 'items') return (b.itemCount||0) - (a.itemCount||0) || String(a.email||'').localeCompare(String(b.email||''), 'lt');
-      if(adminSort === 'plan') return premiumKind(a).localeCompare(premiumKind(b), 'lt') || String(a.email||'').localeCompare(String(b.email||''), 'lt');
-      if(adminSort === 'storage') return String(a.storageMode||'').localeCompare(String(b.storageMode||''), 'lt') || String(a.email||'').localeCompare(String(b.email||''), 'lt');
-      if(adminSort === 'verified') return Number(!!b.emailVerified) - Number(!!a.emailVerified) || String(a.email||'').localeCompare(String(b.email||''), 'lt');
-      return String(a.email||'').localeCompare(String(b.email||''), 'lt');
+      if(adminSort === 'active') return (b.lastActiveMs||0) - (a.lastActiveMs||0) || byEmail(a,b);
+      if(adminSort === 'new') return (b.createdMs||0) - (a.createdMs||0) || byEmail(a,b);
+      if(adminSort === 'items') return (b.itemCount||0) - (a.itemCount||0) || byEmail(a,b);
+      if(adminSort === 'plan') return premiumKind(a).localeCompare(premiumKind(b), 'lt') || byEmail(a,b);
+      return byEmail(a,b);
     });
   const filterOptions = [
-    ['all','Visi'],
-    ['premium','Premium'],
-    ['purchased','Pirkti'],
-    ['manual','Suteikti'],
-    ['free','Nemokami'],
-    ['admin','Admin'],
-    ['cloud','Debesyje'],
+    ['all','Visi'], ['active7','Aktyvūs 7 d.'], ['new7','Nauji 7 d.'], ['inactive30','Neaktyvūs 30+ d.'],
+    ['purchased','Moka'], ['premium','Premium'], ['manual','Suteikti'], ['free','Nemokami'],
+    ['noitems','Be įrašų'], ['cloud','Debesyje'], ['admin','Admin'],
   ];
   const sortOptions = [
-    ['email','El. paštas'],
-    ['items','Įrašų kiekis'],
-    ['plan','Planas'],
-    ['storage','Saugojimas'],
-    ['verified','Patvirtinti'],
+    ['active','Paskutinis aktyvumas'], ['new','Naujausi'], ['items','Įrašų kiekis'], ['plan','Planas'], ['email','El. paštas'],
   ];
-  return `<div>
-    <div class="page-header-sm">
+  const head = `<div class="page-header-sm">
       <button class="back-btn" id="adminBackBtn"><i class="ti ti-arrow-left"></i></button>
       <h2>Admin valdymas</h2>
-      <div style="width:36px"></div>
-    </div>
-    ${!s ? `<div class="empty-state"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:16px">Kraunama...</p></div>` : `
-    <div class="stats-row" style="padding:16px">
-      <div class="stat-tile"><div class="n">${s.totalUsers}</div><div class="l">Vartotojų</div></div>
-      <div class="stat-tile"><div class="n" style="color:var(--gold)">${s.premiumUsers}</div><div class="l">Premium</div></div>
-      <div class="stat-tile"><div class="n" style="color:var(--accent)">${s.purchasedPremiumUsers||0}</div><div class="l">Pirktų</div></div>
-    </div>
-    ${renderAdminPromo()}
-    <div class="detail-section" style="margin:0 16px 16px">
-      <div class="detail-rows">
-        <div class="detail-row"><i class="ti ti-receipt"></i><span class="dr-label">Viso garantijų įrašų</span><span class="dr-val">${s.totalItems}</span></div>
-        <div class="detail-row"><i class="ti ti-mail-check"></i><span class="dr-label">Patvirtintų el. paštų</span><span class="dr-val">${s.verifiedUsers}/${s.totalUsers}</span></div>
-        <div class="detail-row"><i class="ti ti-calendar-plus"></i><span class="dr-label">Naujų per 7 d.</span><span class="dr-val">${s.newLast7Days}</span></div>
-      </div>
+      <button class="back-btn" id="adminRefreshBtn" title="Atnaujinti"><i class="ti ti-refresh"></i></button>
+    </div>`;
+  if(!s) return `<div>${head}<div class="empty-state"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:16px">Kraunama...</p></div></div>`;
+  const x = adminSlices(users, range);
+  const section = (t, sub='') => `<p class="form-label-section" style="margin:4px 16px 8px">${t}${sub?` <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text3)">· ${sub}</span>`:''}</p>`;
+  const fmtDate = t => t ? new Date(t).toLocaleDateString('lt-LT') : '—';
+
+  return `<div>
+    ${head}
+    <div style="font-size:12px;color:var(--text3);margin:10px 16px 0">Be administratorių paskyrų · atnaujinta ${new Date(s.generatedAt).toLocaleTimeString('lt-LT',{hour:'2-digit',minute:'2-digit'})}</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 16px 16px">
+      ${adminTile(x.n, 'Vartotojų', `+${x.newRange} per ${range} d.`)}
+      ${adminTile(x.active7, 'Aktyvūs per 7 d.', `${adminPct(x.active7,x.n)}% visų`, 'var(--accent)')}
+      ${adminTile(x.active1, 'Aktyvūs šiandien', `per 30 d.: ${x.active30}`)}
+      ${adminTile(x.paying, 'Moka', `${x.payingMonthly} mėn. · ${x.payingYearly} metų · ${adminPct(x.paying,x.n)}%`, 'var(--gold)')}
+      ${adminTile(x.premiumAll, 'Premium iš viso', `kodu ${x.promo} · suteikta ${x.manual}`)}
+      ${adminTile(x.totalItems, 'Įrašų', `mediana ${x.medianItems} · daugiausia ${x.maxItems}`)}
     </div>
 
-    <p class="form-label-section" style="margin:0 16px 8px">Įrankiai</p>
+    ${section('Registracijos', 'palieskite stulpelį')}
+    <div style="display:flex;gap:8px;margin:0 16px 8px">
+      ${[7,30,90].map(d => `<button class="chip${range===d?' active':''}" data-admin-range="${d}">${d} d.</button>`).join('')}
+    </div>
+    <div class="form-section" style="margin:0 16px 16px">${adminColumns(x.days)}</div>
+
+    ${section('Kada paskutinį kartą naudojo')}
+    <div class="form-section" style="margin:0 16px 16px;padding:4px 0">${adminBars(x.buckets, x.n)}</div>
+
+    ${section('Kelias iki mokėjimo', '% nuo visų')}
+    <div class="form-section" style="margin:0 16px 16px;padding:4px 0">${adminBars(x.funnel, x.n)}</div>
+
+    ${section('Savaitinės grupės', 'pagal registracijos savaitę')}
+    <div class="form-section" style="margin:0 16px 16px;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums">
+        <thead><tr style="color:var(--text3);text-align:right">
+          <th style="text-align:left;padding:10px 14px 6px;font-weight:600">Savaitė nuo</th><th style="padding:10px 6px 6px;font-weight:600">Nauji</th><th style="padding:10px 6px 6px;font-weight:600">Su įrašais</th><th style="padding:10px 6px 6px;font-weight:600">Aktyvūs 7 d.</th><th style="padding:10px 14px 6px 6px;font-weight:600">Premium</th>
+        </tr></thead>
+        <tbody>${x.cohorts.map(c => `<tr style="border-top:0.5px solid var(--border);text-align:right">
+          <td style="text-align:left;padding:9px 14px">${new Date(c.from).toLocaleDateString('lt-LT',{month:'2-digit',day:'2-digit'})}</td>
+          <td style="padding:9px 6px;font-weight:600">${c.n}</td>
+          <td style="padding:9px 6px">${c.n?`${adminPct(c.withItems,c.n)}%`:'—'}</td>
+          <td style="padding:9px 6px">${c.n?`${adminPct(c.active7,c.n)}%`:'—'}</td>
+          <td style="padding:9px 14px 9px 6px">${c.n?`${adminPct(c.premium,c.n)}%`:'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+
+    ${section('Įpročiai')}
+    <div class="form-section" style="margin:0 16px 8px;padding:4px 0">${adminBars(x.splits, x.n)}</div>
+    <div style="font-size:12px;color:var(--text3);margin:0 20px 16px;line-height:1.4">Premium AI analizių šį mėnesį: ${x.aiPremiumMonth}. Premium kodų: ${s.promo?.used||0} panaudota iš ${s.promo?.total||0}${s.promo?.revoked?`, atšaukta ${s.promo.revoked}`:''}. Premium nepratęsė: ${x.lapsed}.</div>
+
+    ${renderAdminPromo()}
+
+    ${section('Įrankiai')}
     <div class="form-section" style="margin:0 16px 16px;padding:0">
       <button class="settings-row tappable" id="adminTestNotifBtn" style="width:100%;background:none;border:none;text-align:left">
         <i class="ti ti-bell-ringing row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Testuoti garantijos priminimą<small>Sukuria laikiną įrašą (terminas rytoj) ir patikrina visą grandinę</small></span>
       </button>
     </div>
 
-    <p class="form-label-section" style="margin:0 16px 8px">Vartotojai</p>
+    ${section('Vartotojai')}
     <div class="form-section" style="margin:0 16px 12px;padding:12px">
-      <div style="display:flex;align-items:center;gap:10px;background:var(--bg2);border-radius:12px;padding:10px 12px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:10px 12px;margin-bottom:10px">
         <i class="ti ti-search" style="font-size:18px;color:var(--text3);flex-shrink:0"></i>
         <input id="adminUserSearch" value="${esc(state.adminSearch||'')}" placeholder="Ieškoti pagal el. paštą, UID, planą" style="width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;min-width:0" />
       </div>
       <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:10px">
         ${filterOptions.map(([value,label])=>`<button class="chip${adminPlanFilter===value?' active':''}" data-admin-filter="${value}" style="flex-shrink:0">${label}</button>`).join('')}
       </div>
-      <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center">
-        <select id="adminSortSelect" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;padding:10px 12px;outline:none">
-          ${sortOptions.map(([value,label])=>`<option value="${value}" ${adminSort===value?'selected':''}>Rikiuoti: ${label}</option>`).join('')}
-        </select>
-        <button id="adminRefreshBtn" class="chip" style="font-size:15px;padding:9px 12px;white-space:nowrap"><i class="ti ti-refresh" style="font-size:16px"></i> Atnaujinti</button>
-      </div>
-      <div style="font-size:13px;color:var(--text3);margin-top:10px">${filteredUsers.length} iš ${users.length} vartotojų</div>
+      <select id="adminSortSelect" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;padding:10px 12px;outline:none">
+        ${sortOptions.map(([value,label])=>`<option value="${value}" ${adminSort===value?'selected':''}>Rikiuoti: ${label}</option>`).join('')}
+      </select>
+      <div style="font-size:13px;color:var(--text3);margin-top:10px">${filteredUsers.length} iš ${users.length} paskyrų</div>
     </div>
     <div class="form-section" style="margin:0 16px 16px;padding:0">
       ${filteredUsers.length===0 ? `<div style="padding:18px;text-align:center;color:var(--text3);font-size:14px">Nieko nerasta</div>` :
         filteredUsers.map(u => {
           const kind = premiumKind(u);
-          const planLabel = kind==='purchased' ? 'Premium · pirktas' : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
-          const planColor = kind==='purchased' ? 'var(--gold)' : kind==='promo' ? 'var(--accent)' : kind==='manual' ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
+          const planLabel = kind==='purchased' ? `Moka · ${u.playProductId==='galio_premium_yearly'?'metinis':'mėnesinis'}` : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
+          const planColor = kind==='purchased' ? 'var(--gold)' : (kind==='promo' || kind==='manual') ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
           const isPremiumPlan = kind==='purchased' || kind==='manual' || kind==='promo';
           const isAdminUser = u.role==='admin';
-          const actionLabel = kind==='purchased' ? 'Pirktas' : isPremiumPlan ? 'Nuimti suteiktą' : 'Suteikti Premium';
+          const actionLabel = kind==='purchased' ? 'Moka' : isPremiumPlan ? 'Nuimti' : 'Suteikti Premium';
           const actionDisabled = kind==='purchased';
-          const storageLabel = u.storageMode === 'cloud' ? 'Galio saugykloje' : 'Šiame įrenginyje';
-          const verifiedLabel = u.emailVerified ? 'El. paštas patvirtintas' : 'El. paštas nepatvirtintas';
+          const how = (u.providers||[]).includes('google.com') ? 'Google' : 'el. paštas';
+          const aiInfo = kind==='free' && u.aiUsesRemaining!==null ? ` · AI liko ${u.aiUsesRemaining}/${AI_FREE_USES}` : '';
           return `<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px">
             <div style="display:flex;width:100%;align-items:flex-start;gap:10px">
               <div style="flex:1;min-width:0">
                 <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
-                <div style="font-size:14px;color:${planColor};margin-top:4px;font-weight:600">${planLabel}${isAdminUser?' · Administratorius':''}</div>
-                <div style="font-size:13px;color:var(--text3);margin-top:4px;line-height:1.35">${storageLabel} · ${u.itemCount||0} įrašų · ${verifiedLabel} · ID ${esc((u.uid||'').slice(0,8))}</div>
+                <div style="font-size:14px;color:${planColor};margin-top:3px;font-weight:600">${planLabel}${isAdminUser && kind!=='admin'?' · Administratorius':''}${u.premiumExpiresMs&&isPremiumPlan?` <span style="color:var(--text3);font-weight:400">iki ${fmtDate(u.premiumExpiresMs)}</span>`:''}</div>
+                <div style="font-size:13px;color:var(--text2);margin-top:4px">Aktyvus ${adminAgo(u.lastActiveMs)} · registr. ${fmtDate(u.createdMs)}</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:3px;line-height:1.35">${u.itemCount||0} įrašų · ${u.storageMode==='cloud'?'saugykloje':'įrenginyje'} · ${how}${u.emailVerified?'':' · nepatvirtintas'}${u.hasPush?' · push':''}${aiInfo} · ID ${esc((u.uid||'').slice(0,8))}</div>
               </div>
-              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${esc(u.uid)}" data-action="togglePremium" ${actionDisabled?'disabled':''} style="font-size:14px;padding:6px 10px;flex-shrink:0;${actionDisabled?'opacity:.55':''}">${actionLabel}</button>` : ''}
+              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${esc(u.uid)}" data-action="togglePremium" ${actionDisabled?'disabled':''} style="font-size:13px;padding:6px 10px;flex-shrink:0;${actionDisabled?'opacity:.55':''}">${actionLabel}</button>` : ''}
             </div>
           </div>`;
         }).join('')
       }
     </div>
-    `}
   </div>`;
 }
 
+// One server call: Firebase Auth sign-in times + plan/usage fields + entry counts.
 async function loadAdminStats(){
   state.adminStats = null;
   state.adminUsers = [];
   render();
   try{
-    const snap = await getDocs(collection(db,'users'));
-    let totalUsers=0, premiumUsers=0, purchasedPremiumUsers=0, activeUsers=0, totalItems=0, verifiedUsers=0, newLast7Days=0;
-    const weekAgoMs = Date.now() - 7*86400000;
-    const usersList = [];
-
-    // Skaičiuojam tikrą warranties kiekį iš subkolekcijos kiekvienam vartotojui
-    await Promise.all(snap.docs.map(async d=>{
-      const u = d.data();
-      totalUsers++;
-      if(u.plan==='premium') premiumUsers++;
-      if(premiumKind(u)==='purchased') purchasedPremiumUsers++;
-      if(u.emailVerified) verifiedUsers++;
-      if(u.createdAt?.toMillis && u.createdAt.toMillis() > weekAgoMs) newLast7Days++;
-
-      // Tikras įrašų skaičius iš warranties subkolekcijos
-      let realCount = 0;
-      try{
-        const wSnap = await getDocs(collection(db,'users',d.id,'warranties'));
-        realCount = wSnap.size;
-      }catch(e){ realCount = u.itemCount||0; } // fallback į cached jei nepavyksta
-
-      if(realCount > 0) activeUsers++;
-      totalItems += realCount;
-      usersList.push({ uid: d.id, email: u.email||'—', plan: u.plan||'free', planSource: u.planSource||'', subscriptionStatus: u.subscriptionStatus||'', storageMode: u.storageMode||'local', premiumDowngradeRequired: !!u.premiumDowngradeRequired, role: u.role||'', itemCount: realCount, emailVerified: !!u.emailVerified, createdAtMs: u.createdAt?.toMillis ? u.createdAt.toMillis() : 0 });
-    }));
-
-    usersList.sort((a,b)=>a.email.localeCompare(b.email));
-    state.adminStats = { totalUsers, premiumUsers, purchasedPremiumUsers, activeUsers, totalItems, verifiedUsers, newLast7Days };
-    state.adminUsers = usersList;
+    const {ok, data} = await callFunction('adminStats', {}, 90000);
+    if(!ok) throw new Error(data?.error || 'klaida');
+    state.adminUsers = data.users || [];
+    state.adminStats = { generatedAt: data.generatedAt || Date.now(), promo: data.promo || null };
   }catch(e){
-    toast('Nepavyko įkelti statistikos');
+    toast(`Nepavyko įkelti statistikos (${e?.message||'klaida'})`);
     state.view='settings';
   }
   render();
@@ -2545,7 +2696,7 @@ async function callFunction(name, payload, timeoutMs=25000){
     try{ data = await r.json(); }catch(e){}
     return {ok:r.ok, data};
   }catch(e){
-    if(e?.name==='AbortError') return {ok:false, data:{error:'Serveris neatsakė per 25 s. Patikrinkite ryšį ir bandykite dar kartą.'}};
+    if(e?.name==='AbortError') return {ok:false, data:{error:`Serveris neatsakė per ${Math.round(timeoutMs/1000)} s. Patikrinkite ryšį ir bandykite dar kartą.`}};
     throw e;
   }finally{
     clearTimeout(timer);
@@ -2562,7 +2713,7 @@ async function loadPromoCodes(){
     console.warn('promo codes load failed', e);
     state.promoCodes = [];
   }
-  if(state.view==='admin') render();
+  if(state.view==='admin-stats') render();
 }
 
 function renderAdminPromo(){
@@ -2925,7 +3076,7 @@ function attachEvents(){
   });
   on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   [['settingsAccountBtn','account'],['settingsStorageBtn','storage'],['settingsExpiredBtn','expired'],
-   ['settingsThemeBtn','theme'],['settingsLegalBtn','legal']].forEach(([id,k])=>on(id,'click',()=>{state.settingsSheet=k;render();}));
+   ['settingsThemeBtn','theme'],['settingsLegalBtn','legal'],['settingsAiBtn','ai']].forEach(([id,k])=>on(id,'click',()=>{state.settingsSheet=k;render();}));
   on('settingsSheetOverlay','click',()=>{state.settingsSheet=null;render();});
   const ss=document.getElementById('settingsSheet');
   if(ss){
@@ -3113,10 +3264,12 @@ function attachEvents(){
     render();
   });
   on('adminSortSelect','change',e=>{
-    state.adminSort = e.currentTarget.value || 'email';
+    state.adminSort = e.currentTarget.value || 'active';
     render();
   });
   on('adminRefreshBtn','click',loadAdminStats);
+  onAll('[data-admin-range]','click',e=>{ state.adminRange = parseInt(e.currentTarget.dataset.adminRange,10)||30; render(); });
+  onAll('.admin-col','click',e=>toast(e.currentTarget.dataset.tip));
   onAll('[data-action="togglePremium"]','click', e=>{
     const uid = e.currentTarget.dataset.uid;
     const user = state.adminUsers?.find(u=>u.uid===uid);
