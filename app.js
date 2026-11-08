@@ -1167,6 +1167,7 @@ function attachAuthEvents(){
 
 // ── List ───────────────────────────────────────────────────────────────────
 function renderList(){
+  setTimeout(maybeAutoCleanup, 0);
   const{items,filterCat,sortBy,userDoc}=state;
   const expired =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d<0;}).length;
   const expiring=items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0&&d<=30;}).length;
@@ -1176,6 +1177,9 @@ function renderList(){
   const filtered=items
     .filter(i=>filterCat==='Visos'||i.category===filterCat)
     .sort((a,b)=>{
+      // Expired warranties always go to the end, whatever the chosen order.
+      const ea=(daysLeft(a.warrantyEnd)??0)<0, eb=(daysLeft(b.warrantyEnd)??0)<0;
+      if(ea!==eb) return ea?1:-1;
       if(sortBy==='name')return a.name.localeCompare(b.name,'lt');
       if(sortBy==='expiring'){const da=daysLeft(a.warrantyEnd)??99999,db=daysLeft(b.warrantyEnd)??99999;return da-db;}
       return (b.createdAtMs||0)-(a.createdAtMs||0);
@@ -1777,6 +1781,17 @@ function renderSettings(){
         <span class="dr-val">${aiLeft}/${AI_FREE_USES}</span>
       </div>`}
     </div>
+
+    <p class="form-label-section" style="margin:0 16px 8px">Pasibaigę įrašai</p>
+    <div class="form-section" style="margin:0 16px 8px;padding:12px 14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <span style="font-size:15px">Saugoti pasibaigus garantijai</span>
+        <select id="keepExpiredSelect" style="padding:8px 10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px">
+          ${EXPIRED_KEEP_OPTIONS.map(([m,l])=>`<option value="${m}" ${keepExpiredMonths()===m?'selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--text3);margin:0 20px 20px;line-height:1.4">Seni įrašai ištrinami automatiškai atidarius programėlę, kai pasibaigė ir garantija, ir grąžinimo terminas.</p>
 
     <p class="form-label-section" style="margin:0 16px 8px">Išvaizda</p>
     <div class="form-section" style="margin:0 16px 20px;padding:14px 16px">
@@ -2830,6 +2845,7 @@ function attachEvents(){
       .catch(()=>toast('Klaida siunčiant laišką'));
   });
   on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
+  on('keepExpiredSelect','change',e=>changeKeepExpired(parseInt(e.target.value,10)||0));
   on('settingsLogoutRow','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   on('deleteAccountBtn','click',confirmDeleteAccount);
   on('multiCancelBtn','click',()=>{ discardPendingAdd(); state.view='list'; render(); });
@@ -3097,7 +3113,8 @@ function syncSave(){const b=document.getElementById('saveBtn');if(b)b.disabled=!
 function deleteItem(id){
   showConfirmDialog('Ištrinti įrašą?', 'Šis įrašas bus visam laikui pašalintas.', ()=>performDeleteItem(id), {okText:'Ištrinti', align:'center'});
 }
-async function performDeleteItem(id){
+async function performDeleteItem(id, opts={}){
+  const silent = !!opts.silent;
   const item=state.items.find(i=>i.id===id);
 
   try{
@@ -3118,9 +3135,62 @@ async function performDeleteItem(id){
       await localDelete(state.user.uid, id);
       state.items = state.items.filter(i=>i.id!==id);
     }
+    if(silent) return true;
     toast('Ištrinta ✓');
-  }catch(e){ toast('Nepavyko ištrinti. '+(e.message||'')); }
+  }catch(e){
+    if(silent){ console.warn('Auto-cleanup delete failed:', e); return false; }
+    toast('Nepavyko ištrinti. '+(e.message||''));
+  }
   state.view='list';render();
+}
+
+// ── Automatic cleanup of long-expired entries (user setting, per device) ─────
+const EXPIRED_KEEP_OPTIONS = [[0,'Visada'],[3,'3 mėn.'],[6,'6 mėn.'],[12,'1 metus']];
+function keepExpiredKey(){ return 'galio_keep_expired_' + (state.user?.uid||''); }
+function keepExpiredMonths(){
+  try{ return parseInt(localStorage.getItem(keepExpiredKey())||'0',10) || 0; }catch(e){ return 0; }
+}
+// Entries whose warranty ended more than `months` ago and whose return deadline has also passed.
+function itemsPastRetention(months){
+  if(!months) return [];
+  const cutoff = addMonths(today(), -months);
+  return state.items.filter(i=>{
+    if(!i.warrantyEnd || i.warrantyEnd >= cutoff) return false;
+    const ret = effectiveReturnDeadline(i);
+    return !ret || ret < today();
+  });
+}
+let _cleanupRunning = false;
+async function runExpiredCleanup(months){
+  if(_cleanupRunning || !state.user || state.loadingItems) return;
+  const old = itemsPastRetention(months);
+  if(!old.length) return;
+  _cleanupRunning = true;
+  let n = 0;
+  for(const it of old){ if(await performDeleteItem(it.id, {silent:true})) n++; }
+  _cleanupRunning = false;
+  if(n){ toast(`Ištrinta senų įrašų: ${n}`); render(); }
+}
+let _cleanupDoneThisSession = false;
+function maybeAutoCleanup(){
+  if(_cleanupDoneThisSession || state.loadingItems || !state.user) return;
+  const months = keepExpiredMonths();
+  _cleanupDoneThisSession = true;
+  if(months) runExpiredCleanup(months);
+}
+function changeKeepExpired(months){
+  const label = (EXPIRED_KEEP_OPTIONS.find(o=>o[0]===months)||[])[1] || '';
+  const toDelete = itemsPastRetention(months);
+  const apply = ()=>{
+    try{ localStorage.setItem(keepExpiredKey(), String(months)); }catch(e){}
+    render();
+    if(months) runExpiredCleanup(months);
+  };
+  if(toDelete.length){
+    showConfirmDialog('Ištrinti senus įrašus?',
+      `Įrašų, kurių garantija baigėsi seniau nei prieš ${label}: ${toDelete.length}. Jie bus ištrinti visam laikui kartu su dokumentais.`,
+      apply, {okText:'Ištrinti', align:'center'});
+  }else apply();
 }
 
 async function saveNotifSettings(skip=false){
