@@ -3986,8 +3986,9 @@ async function openPhotoEditor(dataUrl, onDone){
   wrap.querySelector('#peCancel').onclick = close;
   wrap.querySelector('#peRotate').onclick = ()=>cropper.rotate(90);
   wrap.querySelector('#peSave').onclick = ()=>{
-    const canvas = cropper.getCroppedCanvas({ width: 900, height: 900, imageSmoothingQuality: 'high' });
-    const out = canvas ? canvas.toDataURL('image/jpeg', 0.82) : dataUrl;
+    // 800 px square at JPEG 0.75 ≈ 60–120 KB: sharp enough for list and detail, light on storage.
+    const canvas = cropper.getCroppedCanvas({ width: 800, height: 800, imageSmoothingQuality: 'high' });
+    const out = canvas ? canvas.toDataURL('image/jpeg', 0.75) : dataUrl;
     close();
     onDone(out);
   };
