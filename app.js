@@ -24,7 +24,9 @@ const RETURN_DAY_OPTS = [7,14,30,45,60,90];
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
 const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos; compression brings this down before upload
 const MAX_PDF       = 5*1024*1024;
-const AI_FREE_USES  = 3; // lifetime AI document-analysis uses before Premium is required
+// Must equal the value Firestore rules require on user creation (users/{id} create: aiUsesRemaining == 5),
+// otherwise sign-up is rejected with "Missing or insufficient permissions".
+const AI_FREE_USES  = 5; // lifetime AI document-analysis uses before Premium is required
 const FREE_DOC_LIMIT = 3; // non-Premium users can view/attach up to 3 document photos/files
 // Premium is capped, not unlimited. Sized so a user at the cap still costs less than the
 // ~€1.40/month we keep from €1.99 (after VAT and Google's 15%). The worker enforces the same caps.
