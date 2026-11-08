@@ -695,9 +695,11 @@ async function ensureUserDoc(user){
         attachItemsListener(state.user.uid);
       }
       render();
+      autoMoveToCloud();
     }
   });
   restorePlayPurchases();
+  setTimeout(autoMoveToCloud, 1500);
 }
 
 // ── Items listener abstraction ──────────────────────────────────────────
@@ -4169,7 +4171,7 @@ async function toggleStorageMode(){
         showConfirmDialog(
           'Patvirtinkite',
           'Įrašai bus pašalinti iš jūsų Galio paskyros ir liks tik šiame telefone.',
-          ()=>runStorageMigration(wantsCloud),
+          ()=>{ rememberKeepLocal(); runStorageMigration(wantsCloud); },
           {okText:'Patvirtinti', align:'center'}
         );
       }
@@ -4177,6 +4179,24 @@ async function toggleStorageMode(){
     {okText: wantsCloud ? 'Perkelti' : 'Laikyti tik įrenginyje', align:'center'}
   );
 }
+// Premium means Galio cloud storage: move a Premium user's on-device records there
+// automatically (no question). If a Premium user explicitly chose "keep on this device",
+// respect that choice on this device.
+function keepLocalKey(){ return 'galio_keep_local_' + (state.user?.uid||''); }
+function rememberKeepLocal(){ try{ localStorage.setItem(keepLocalKey(), '1'); }catch(e){} }
+let _autoCloudPending = false;
+function autoMoveToCloud(){
+  if(!state.user || state.migratingStorage || !state.online) return;
+  if(!isPremiumUser() || state.storageMode !== 'local') return;
+  try{ if(localStorage.getItem(keepLocalKey())) return; }catch(e){}
+  // Never migrate before the on-device list has loaded, or records could be left behind.
+  if(state.loadingItems){
+    if(!_autoCloudPending){ _autoCloudPending = true; setTimeout(()=>{ _autoCloudPending = false; autoMoveToCloud(); }, 1000); }
+    return;
+  }
+  runStorageMigration(true);
+}
+
 async function runStorageMigration(wantsCloud){
   const itemsToMigrate = state.items.slice();
   const hasDocumentsToMove = itemsToMigrate.some(item => !!(item.docUrl && item.docMime) || !!(item.itemPhotoUrl && item.itemPhotoMime));
