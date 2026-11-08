@@ -1820,6 +1820,7 @@ function renderSettings(){
         <i class="ti ti-trash row-icon"></i><span class="settings-row-label">Ištrinti paskyrą</span>
       </button>
     </div>
+    <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 24px">Galio versija ${esc((document.querySelector('script[src*="app.js"]')?.src.split('v=')[1])||'?')}</p>
 
   </div>`;
 }
