@@ -3147,7 +3147,11 @@ async function performDeleteItem(id, opts={}){
 // ── Automatic cleanup of long-expired entries (user setting, per device) ─────
 const EXPIRED_KEEP_OPTIONS = [[0,'Visada'],[3,'3 mėn.'],[6,'6 mėn.'],[12,'1 metus']];
 function keepExpiredKey(){ return 'galio_keep_expired_' + (state.user?.uid||''); }
+// Stored on the account (users/{uid}.keepExpiredMonths) so every device uses the same
+// choice; an older per-device choice is used until the account has one.
 function keepExpiredMonths(){
+  const v = state.userDoc?.keepExpiredMonths;
+  if(Number.isFinite(v)) return v;
   try{ return parseInt(localStorage.getItem(keepExpiredKey())||'0',10) || 0; }catch(e){ return 0; }
 }
 // Entries whose warranty ended more than `months` ago and whose return deadline has also passed.
@@ -3181,9 +3185,12 @@ function maybeAutoCleanup(){
 function changeKeepExpired(months){
   const label = (EXPIRED_KEEP_OPTIONS.find(o=>o[0]===months)||[])[1] || '';
   const toDelete = itemsPastRetention(months);
-  const apply = ()=>{
+  const apply = async ()=>{
     try{ localStorage.setItem(keepExpiredKey(), String(months)); }catch(e){}
+    if(state.userDoc) state.userDoc.keepExpiredMonths = months;
     render();
+    try{ await updateDoc(doc(db,'users',state.user.uid), { keepExpiredMonths: months }); }
+    catch(e){ toast(`Nepavyko išsaugoti nustatymo (${e?.code||e?.message||'klaida'})`); }
     if(months) runExpiredCleanup(months);
   };
   if(toDelete.length){

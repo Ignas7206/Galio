@@ -51,6 +51,9 @@ service cloud.firestore {
                        && (request.resource.data.aiMonthCount == 1
                            || request.resource.data.aiMonthCount == resource.data.aiMonthCount + 1))
                       ||
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['keepExpiredMonths'])
+                       && request.resource.data.keepExpiredMonths in [0, 3, 6, 12])
+                      ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailVerified'])
                        && request.resource.data.emailVerified is bool)
                       ||
