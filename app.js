@@ -1750,6 +1750,9 @@ function renderSettings(){
     </div>
 
     <div class="form-section" style="margin:0 16px 20px">
+      <button class="settings-row tappable" id="settingsLogoutRow" style="width:100%;background:none;border:none;text-align:left;color:inherit">
+        <i class="ti ti-logout row-icon"></i><span class="settings-row-label">Atsijungti</span>
+      </button>
       <button class="settings-row tappable danger" id="deleteAccountBtn" style="width:100%;background:none;border:none;text-align:left">
         <i class="ti ti-trash row-icon"></i><span class="settings-row-label">Ištrinti paskyrą</span>
       </button>
@@ -1933,8 +1936,8 @@ function renderPremium(){
       text:'Priminimai prieš garantijos pabaigą ir grąžinimo terminą — net kai programėlė uždaryta.' },
     { icon:'ti-cloud', color:'#3b9eff', title:'Galio saugykla',
       text:'Įrašai nepririšti prie vieno įrenginio ir gali veikti automatiniai priminimai.' },
-    { icon:'ti-sparkles', color:'#f5a623', title:`${PREMIUM_MONTHLY_LIMIT} AI analizių per mėnesį`,
-      text:`Skenuokite kvitus be rūpesčių — iki ${PREMIUM_MONTHLY_LIMIT} analizių per mėnesį ir ${PREMIUM_SEARCH_MONTHLY_LIMIT} gamintojo garantijos patikrinimų (nemokamai tik ${AI_FREE_USES} analizės visam laikui).` },
+    { icon:'ti-sparkles', color:'#f5a623', title:`${PREMIUM_MONTHLY_LIMIT} čekių atpažinimų per mėnesį`,
+      text:`Nufotografuokite čekį – Galio pats užpildys prekes ir terminus. Iki ${PREMIUM_MONTHLY_LIMIT} atpažinimų ir ${PREMIUM_SEARCH_MONTHLY_LIMIT} gamintojo garantijos patikrinimų per mėnesį (nemokamai – ${AI_FREE_USES}).` },
     { icon:'ti-device-mobile', color:'#34c759', title:'Prieiga iš visų įrenginių',
       text:'Prarastas ar pakeistas įrenginys — jūsų garantijos nedingsta kartu su juo.' },
   ];
@@ -1963,7 +1966,7 @@ function renderPremium(){
           </div>
         </div>`).join('')}
     </div>
-    <div style="padding:16px;position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 30%)">
+    <div style="padding:8px 16px 32px">
       ${renderPremiumBuy()}
     </div>
   </div>`;
@@ -2716,6 +2719,7 @@ function attachEvents(){
       .catch(()=>toast('Klaida siunčiant laišką'));
   });
   on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
+  on('settingsLogoutRow','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   on('deleteAccountBtn','click',confirmDeleteAccount);
   on('multiCancelBtn','click',()=>{ discardPendingAdd(); state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
