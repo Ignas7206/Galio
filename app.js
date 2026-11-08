@@ -543,6 +543,7 @@ function friendlyAuthError(code){
 // 1. Boot watchdog — jei per 10s nepasikrovė, rodo "Bandyti iš naujo"
 // Paleidžiamas tik po DOMContentLoaded, kad Firebase spėtų inicializuotis
 let _bootWatchdog = null;
+window.__galioAppStarted = true;
 document.addEventListener('DOMContentLoaded', ()=>{
   _bootWatchdog = setTimeout(()=>{
     if(!state.booted){
@@ -553,6 +554,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
           <p style="font-size:16px;font-weight:600;color:var(--text1)">Nepavyko prisijungti</p>
           <p style="font-size:14px;color:var(--text2)">Patikrinkite interneto ryšį ir bandykite iš naujo</p>
           <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 28px;font-size:15px;font-weight:600;cursor:pointer">Bandyti iš naujo</button>
+          <button onclick="window.__galioResetCache && window.__galioResetCache()" style="background:none;border:none;color:var(--accent);font-size:14px;cursor:pointer">Išvalyti talpyklą ir perkrauti</button>
+          <p style="font-size:11px;color:var(--text3);word-break:break-word;max-width:320px">${(window.__galioErrors||[]).slice(-3).map(esc).join('<br>') || 'Prisijungimo patikra neatsakė per 10 s'}</p>
         </div>`;
     }
   }, 10000);
