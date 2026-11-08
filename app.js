@@ -1789,7 +1789,7 @@ function suggestNotifDays(warrantyMonths, hasReturn){
   return days;
 }
 
-function showNotifModal(itemId, itemData){
+function showNotifModal(itemId, itemData, savedNote=''){
   if(!itemId){ state.view='list'; render(); return; }
   const firstItemId = Array.isArray(itemId) ? itemId[0] : itemId;
   const item = itemData || state.items.find(i=>i.id===firstItemId);
@@ -1823,6 +1823,7 @@ function showNotifModal(itemId, itemData){
   const defaults = savedWarrantyDays || state._lastNotifDays || suggested;
 
   state.notifModal = {
+    savedNote,
     itemId: firstItemId,
     itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
     enabled: true,
@@ -1884,6 +1885,7 @@ function renderNotifModal(){
   return `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-end">
     <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 34px;max-height:85vh;overflow-y:auto">
       <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
+      ${state.notifModal?.savedNote?`<div style="text-align:center;font-size:13px;font-weight:600;color:var(--green);margin:0 0 6px"><i class="ti ti-circle-check"></i> ${esc(state.notifModal.savedNote)}</div>`:''}
       <h3 style="font-size:19px;font-weight:750;margin:0 0 18px;text-align:center">Kada priminti?</h3>
       ${m.hasWarranty ? sectionHtml({kind:'warranty', title:'Garantija', active:m.warrantyActive, expired:m.warrantyExpired, days:warrantyDays}) : ''}
       ${m.hasReturn ? sectionHtml({kind:'return', title:'Grąžinimas', active:m.returnActive, expired:m.returnExpired, days:returnDays}) : ''}
@@ -3449,7 +3451,7 @@ async function finishSaveItem(){
       state._lastSavedId = localItem.id;
     }
 
-    toast('Išsaugota ✓');
+    state._savedOk = true;
   }catch(e){
     toast('Nepavyko išsaugoti. '+(e.message||''));
   }
@@ -3459,6 +3461,7 @@ async function finishSaveItem(){
   state.form=emptyForm();state.docError='';state.addMode=null;
 
   // Rodyti priminimų modalą tik jei yra ką priminti (garantija arba grąžinimas)
+  const savedOk = state._savedOk; state._savedOk = false;
   if(state._lastSavedId && (savedForm.warrantyEnd || savedForm.purchaseDate)){
     showNotifModal(state._lastSavedId, {
       warrantyMonths: savedForm.warrantyMonths,
@@ -3467,8 +3470,9 @@ async function finishSaveItem(){
       shop: savedForm.shop,
       returnDays: formReturnDaysForSave(savedForm),
       returnDeadline: formReturnDeadline(savedForm),
-    });
+    }, savedOk ? 'Įrašas išsaugotas' : '');
   }else{
+    if(savedOk) toast('Išsaugota ✓');
     state.view='list'; render();
   }
   state._lastSavedId = null;
@@ -3663,7 +3667,7 @@ async function finishSaveMultiItems(){
   state.pendingAiCharge=false;
   if(isCloud) state.loadingItems = true;
   if(failed>0) toast(`${ltSavedProducts(saved).replace(' ✓','')}, nepavyko ${failed}`);
-  else toast(ltSavedProducts(saved));
+  const savedNote = failed>0 ? '' : ltSavedProducts(saved).replace(' ✓','');
   if(savedIds.length>0){
     const reminderBase = selected.find(item=>{
       const warrantyActive = daysLeft(multiWarrantyEnd(item, r)) !== null && daysLeft(multiWarrantyEnd(item, r)) >= 0;
@@ -3672,6 +3676,7 @@ async function finishSaveMultiItems(){
       return warrantyActive || returnActive;
     });
     if(!reminderBase){
+      if(savedNote) toast(ltSavedProducts(saved));
       state.view='list';
       render();
       return;
@@ -3683,7 +3688,7 @@ async function finishSaveMultiItems(){
       shop: r.shop,
       returnDays: r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop),
       returnDeadline: receiptReturnDeadline(r),
-    });
+    }, savedNote);
   }else{
     state.view='list';
     render();
