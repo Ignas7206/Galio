@@ -947,6 +947,21 @@ window.addEventListener('popstate', () => {
 });
 
 // Nav handler — vienkartinis, iš index.html
+// A new app version is ready: reload only when nothing is in progress, otherwise wait
+// until the user is back on a main screen (checked on every render).
+let _reloadPending = false;
+function appIsIdle(){
+  return !state.addMode && !state.analyzing && !state.multiReview && !state.editItemId
+    && !state.notifModal && !state.appDialog && !document.getElementById('photoEditor')
+    && document.visibilityState === 'visible'
+    && ['list','settings','search'].includes(state.view);
+}
+window.__galioSafeReload = () => {
+  if(appIsIdle()) location.reload();
+  else _reloadPending = true;
+};
+setInterval(()=>{ if(_reloadPending && appIsIdle()) location.reload(); }, 3000);
+
 window._appNav = (tab) => {
   if(state.analyzing && state.view==='add'){
     requestAnalysisExit(tab);
