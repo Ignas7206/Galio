@@ -2005,7 +2005,9 @@ async function loadPlayProducts(){
 function renderPremiumBuy(){
   if(isPremiumUser() && state.userDoc?.planSource==='promo'){
     const exp = state.userDoc?.premiumExpiresAt?.toDate?.();
-    return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Premium iki ${exp?exp.toLocaleDateString('lt-LT'):'—'}</button>
+    if(!exp) return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Premium neribotai</button>
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Premium suteiktas kodu ir nesibaigia.</p>`;
+    return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Premium iki ${exp.toLocaleDateString('lt-LT')}</button>
       <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Premium suteiktas kodu. Turite dar vieną kodą? Jis pratęs laiką.</p>${renderPromoRedeem()}`;
   }
   if(isPremiumUser()){
@@ -2370,7 +2372,8 @@ async function loadAdminStats(){
 
 // ── One-time Premium codes (admin creates, a friend/tester redeems once) ──────
 const FUNCTIONS_BASE = 'https://europe-west1-garantijos-4f397.cloudfunctions.net';
-const PROMO_MONTH_OPTIONS = [1,3,6,12];
+const PROMO_MONTH_OPTIONS = [1,3,6,12,0]; // 0 = unlimited
+const promoMonthsLabel = m => m===0 ? 'Neribotai' : `${m} mėn.`;
 
 async function callFunction(name, payload){
   const idToken = await state.user.getIdToken();
@@ -2406,7 +2409,7 @@ function renderAdminPromo(){
     <div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.4">Vienkartinis kodas suteikia nemokamą Premium pasirinktam laikui. Panaudoti gali tik vienas žmogus.</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <select id="promoMonths" style="padding:10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text)">
-        ${PROMO_MONTH_OPTIONS.map(m=>`<option value="${m}" ${m===3?'selected':''}>${m} mėn.</option>`).join('')}
+        ${PROMO_MONTH_OPTIONS.map(m=>`<option value="${m}" ${m===3?'selected':''}>${promoMonthsLabel(m)}</option>`).join('')}
       </select>
       <input id="promoNote" maxlength="80" placeholder="Kam (neprivaloma)" style="flex:1;min-width:120px;padding:10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text)">
       <button id="promoCreateBtn" class="save-btn" style="width:auto;margin:0;padding:10px 16px" ${state.promoBusy?'disabled':''}>${state.promoBusy?'...':'Sukurti'}</button>
@@ -2418,7 +2421,7 @@ function renderAdminPromo(){
     ${codes.length?`<div style="margin-top:12px;border-top:0.5px solid var(--border)">
       ${codes.map(c=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:0.5px solid var(--border);font-size:13px">
         <div><div style="font-family:monospace;font-weight:600">${esc(c.code)}</div>
-          <div style="color:var(--text3)">${c.months} mėn.${c.note?` · ${esc(c.note)}`:''} · ${fmt(c.createdAt)}</div></div>
+          <div style="color:var(--text3)">${promoMonthsLabel(c.months)}${c.note?` · ${esc(c.note)}`:''} · ${fmt(c.createdAt)}</div></div>
         <div style="text-align:right;color:${c.usedBy?'var(--text3)':'var(--green)'}">${c.usedBy?`Panaudotas<br>${esc(c.usedByEmail||'')} ${fmt(c.usedAt)}`:'Laisvas'}</div>
       </div>`).join('')}
     </div>`:''}
@@ -2427,7 +2430,7 @@ function renderAdminPromo(){
 
 async function createPromoCode(){
   if(state.promoBusy) return;
-  const months = parseInt(document.getElementById('promoMonths')?.value||'3',10);
+  const months = parseInt(document.getElementById('promoMonths')?.value??'3',10);
   const note = document.getElementById('promoNote')?.value||'';
   state.promoBusy = true; render();
   try{
@@ -2447,8 +2450,8 @@ async function redeemPromoCode(){
   try{
     const {ok, data} = await callFunction('redeemPromoCode', {code});
     if(ok && data.ok){
-      const until = new Date(data.expiresAt).toLocaleDateString('lt-LT');
-      showAppDialog('Premium įjungtas ✓', `Kodas panaudotas. Premium galioja iki ${until}.`, '', {hideSupport:true});
+      const msg = data.expiresAt ? `Kodas panaudotas. Premium galioja iki ${new Date(data.expiresAt).toLocaleDateString('lt-LT')}.` : 'Kodas panaudotas. Premium galioja neribotai.';
+      showAppDialog('Premium įjungtas ✓', msg, '', {hideSupport:true});
     }else{
       toast(data.error||'Nepavyko panaudoti kodo', 6000);
     }
