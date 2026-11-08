@@ -4547,7 +4547,7 @@ Grąžink TIK JSON be markdown, šios struktūros:
   "quality": "good|blurry|partial|unclear",
   "qualityNote": "trumpas paaiškinimas jei quality nėra 'good', pvz. 'Trūksta apatinės dokumento dalies' arba null",
   "items": [
-    {"name":"tikslus prekės pavadinimas iš dokumento","price":"kaina arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|Buitinė technika|Avalynė / drabužiai|Baldai|Automobiliai|Kita"}
+    {"name":"tikslus prekės pavadinimas iš dokumento","price":"galutinė už šią prekę sumokėta kaina po jai taikytų nuolaidų (pvz. 39,50 su nuolaida -3,95 → 35,55) arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|Buitinė technika|Avalynė / drabužiai|Baldai|Automobiliai|Kita"}
   ]
 }
 warrantyMonths kiekvienai prekei:
@@ -4555,6 +4555,7 @@ warrantyMonths kiekvienai prekei:
 - netrumpink garantijos pagal gamintojo ar parduotuvės komercinę garantiją, ypač jei informacija gali būti skirta ne Lietuvos rinkai;
 - jei dokumente aiškiai matomas ilgesnis garantijos terminas, grąžink ilgesnį terminą;
 - jei warrantyApplies=false, warrantyMonths=null.
+price: jei po prekės eilute yra nuolaida (pvz. „Nuolaida -3,95“, „-30%“), atimk ją iš tos prekės kainos. Bendros čekio nuolaidos neskirstyk.
 returnDays: jei dokumente matosi grąžinimo terminas (pvz. "30 dienų", "return within 30 days"), grąžink tą skaičių. Jei terminas nematomas, grąžink null.
 category kiekvienai prekei: viena iš: Elektronika, Buitinė technika, Avalynė / drabužiai, Baldai, Automobiliai, Kita.
 Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tuščią masyvą [].`}
