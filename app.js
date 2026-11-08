@@ -944,6 +944,7 @@ window.addEventListener('popstate', () => {
   if(requestUnsavedAddExit('list')) return;
   if(state.view==='multi-select'){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view==='add'&&state.addMode){ discardPendingAdd(); state.view='list'; render(); return; }
+  if(state.view==='admin-stats' && state.adminUserSheet){ state.adminUserSheet=null; history.pushState({view:'admin-stats'},'',location.href); render(); return; }
   if(state.view==='admin-promo'){ state.view='admin-stats'; render(); return; }
   if(state.view==='contact' || state.view==='admin-stats'){ state.view='settings'; render(); return; }
   if(state.view==='premium'){ state.view=state._premiumReturnView||'list'; render(); return; }
@@ -1017,6 +1018,7 @@ function _doRender(){
 
   nav.style.display='flex';
   if(state.view!=='settings') state.settingsSheet=null;
+  if(state.view!=='admin-stats') state.adminUserSheet=null;
   let html='';
   let viewKey = state.view;
   if(state.view==='list')          html=renderList();
@@ -2641,11 +2643,9 @@ function renderAdminStats(){
           const planColor = kind==='purchased' ? 'var(--gold)' : (kind==='promo' || kind==='manual') ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
           const isPremiumPlan = kind==='purchased' || kind==='manual' || kind==='promo';
           const isAdminUser = u.role==='admin';
-          const actionLabel = kind==='purchased' ? 'Moka' : isPremiumPlan ? 'Nuimti' : 'Suteikti Premium';
-          const actionDisabled = kind==='purchased';
           const how = (u.providers||[]).includes('google.com') ? 'Google' : 'el. paštas';
           const aiInfo = kind==='free' && u.aiUsesRemaining!==null ? ` · AI liko ${u.aiUsesRemaining}/${AI_FREE_USES}` : '';
-          return `<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px">
+          return `<div class="settings-row tappable admin-user" data-uid="${esc(u.uid)}" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px;cursor:pointer">
             <div style="display:flex;width:100%;align-items:flex-start;gap:10px">
               <div style="flex:1;min-width:0">
                 <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
@@ -2653,11 +2653,50 @@ function renderAdminStats(){
                 <div style="font-size:13px;color:var(--text2);margin-top:4px">Aktyvus ${adminAgo(u.lastActiveMs)} · registr. ${fmtDate(u.createdMs)}</div>
                 <div style="font-size:12px;color:var(--text3);margin-top:3px;line-height:1.35">${u.itemCount||0} įrašų · ${u.storageMode==='cloud'?'saugykloje':'įrenginyje'} · ${how}${u.emailVerified?'':' · nepatvirtintas'}${u.hasPush?' · push':''}${aiInfo} · ID ${esc((u.uid||'').slice(0,8))}</div>
               </div>
-              ${!isAdminUser ? `<button class="chip${isPremiumPlan?' active':''}" data-uid="${esc(u.uid)}" data-action="togglePremium" ${actionDisabled?'disabled':''} style="font-size:13px;padding:6px 10px;flex-shrink:0;${actionDisabled?'opacity:.55':''}">${actionLabel}</button>` : ''}
+              <i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px;margin-top:2px"></i>
             </div>
           </div>`;
         }).join('')
       }
+    </div>
+    ${renderAdminUserSheet()}
+  </div>`;
+}
+
+function renderAdminUserSheet(){
+  const u = (state.adminUsers||[]).find(x => x.uid === state.adminUserSheet);
+  if(!u) return '';
+  const kind = premiumKind(u);
+  const fmtDT = t => t ? new Date(t).toLocaleString('lt-LT', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+  const plan = kind==='purchased' ? `Moka · ${u.playProductId==='galio_premium_yearly'?'metinis':'mėnesinis'}` : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Administratorius' : 'Nemokamas';
+  const rows = [
+    ['Planas', plan + (u.premiumExpiresMs && kind!=='free' && kind!=='admin' ? ` (iki ${new Date(u.premiumExpiresMs).toLocaleDateString('lt-LT')})` : '')],
+    ['Paskutinį kartą aktyvus', `${adminAgo(u.lastActiveMs)}`],
+    ['Paskutinis prisijungimas', fmtDT(u.lastSignInMs)],
+    ['Užsiregistravo', fmtDT(u.createdMs)],
+    ['Įrašų', String(u.itemCount||0)],
+    ['Saugojimas', u.storageMode==='cloud' ? 'Galio saugykla' : 'Įrenginyje'],
+    ['Prisijungimo būdas', (u.providers||[]).includes('google.com') ? 'Google' : 'El. paštas'],
+    ['El. paštas patvirtintas', u.emailVerified ? 'Taip' : 'Ne'],
+    ['Push pranešimai', u.hasPush ? 'Įjungti' : 'Ne'],
+    ['AI', kind==='free' ? (u.aiUsesRemaining===null ? '—' : `liko ${u.aiUsesRemaining}/${AI_FREE_USES}`) : `šį mėn. ${u.aiMonthKey===new Date().toISOString().slice(0,7)?u.aiMonthCount:0}`],
+    ['ID', u.uid],
+  ];
+  const action = kind==='admin' || u.role==='admin' ? ''
+    : kind==='purchased' ? `<p style="font-size:13px;color:var(--text3);margin:4px 20px 8px">Mokamą Premium valdo Google Play.</p>`
+    : `<div style="padding:8px 20px 4px"><button class="save-btn" data-uid="${esc(u.uid)}" data-action="togglePremium" style="margin:0;${kind==='free'?'':'background:none;border:1px solid var(--red);color:var(--red)'}">${kind==='free' ? 'Suteikti Premium' : 'Nuimti Premium'}</button></div>`;
+  return `<div class="warranty-sheet center-sheet" id="adminUserSheet">
+    <div class="warranty-overlay" id="adminUserOverlay"></div>
+    <div class="warranty-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 12px 8px 20px">
+        <div style="font-size:16px;font-weight:700;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
+        <button class="back-btn" id="adminUserClose" aria-label="Uždaryti"><i class="ti ti-x"></i></button>
+      </div>
+      <div style="padding:0 20px 6px">
+        ${rows.map(([l,v]) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:0.5px solid var(--border);font-size:14px">
+          <span style="color:var(--text2);flex-shrink:0">${l}</span><span style="color:var(--text);text-align:right;word-break:break-all">${esc(v)}</span></div>`).join('')}
+      </div>
+      ${action}
     </div>
   </div>`;
 }
@@ -2751,12 +2790,19 @@ function renderAdminPromo(){
       <button id="promoCopyBtn" style="background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer">Kopijuoti</button>
     </div>`:''}
     ${codes.length?`<div style="margin-top:12px;border-top:0.5px solid var(--border)">
-      ${codes.map(c=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:0.5px solid var(--border);font-size:13px">
-        <div><div style="font-family:monospace;font-weight:600">${esc(c.code)}</div>
-          <div style="color:var(--text3)">${promoMonthsLabel(c.months)}${c.note?` · ${esc(c.note)}`:''} · ${fmt(c.createdAt)}</div></div>
-        <div style="text-align:right;color:${c.revokedAt?'var(--red)':c.usedBy?'var(--text3)':'var(--green)'}">${c.revokedAt?`Deaktyvuotas ${fmt(c.revokedAt)}${c.usedByEmail?`<br>${esc(c.usedByEmail)}`:''}`:c.usedBy?`Panaudotas<br>${esc(c.usedByEmail||'')} ${fmt(c.usedAt)}`:'Laisvas'}
-          ${c.revokedAt?'':`<br><button class="promo-revoke" data-code="${esc(c.code)}" style="margin-top:6px;background:none;border:0.5px solid var(--red);color:var(--red);border-radius:8px;padding:4px 10px;font-size:13px;font-weight:600;cursor:pointer">Deaktyvuoti</button>`}</div>
-      </div>`).join('')}
+      ${codes.map(c=>{
+        const st = c.revokedAt ? ['Deaktyvuotas','var(--red)','var(--red-bg, rgba(255,69,58,.12))']
+          : c.usedBy ? ['Panaudotas','var(--text2)','var(--bg3)'] : ['Laisvas','var(--green)','var(--green-bg)'];
+        return `<div style="padding:11px 0;border-bottom:0.5px solid var(--border)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <button class="promo-copy" data-code="${esc(c.code)}" title="Kopijuoti" style="background:none;border:none;padding:0;color:var(--text);font-family:monospace;font-size:15px;font-weight:700;white-space:nowrap;cursor:pointer">${esc(c.code)}</button>
+            <span style="font-size:12px;font-weight:600;color:${st[1]};background:${st[2]};padding:3px 9px;border-radius:10px;white-space:nowrap">${st[0]}</span>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${promoMonthsLabel(c.months)} · sukurtas ${fmt(c.createdAt)}${c.note?` · ${esc(c.note)}`:''}</div>
+          ${c.usedBy||c.usedByEmail?`<div style="font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.usedByEmail||'')} · ${fmt(c.usedAt)}</div>`:''}
+          ${c.revokedAt?'':`<div style="text-align:right;margin-top:2px"><button class="promo-revoke" data-code="${esc(c.code)}" style="background:none;border:none;padding:4px 0;color:var(--red);font-size:13px;font-weight:600;cursor:pointer">Deaktyvuoti</button></div>`}
+        </div>`;
+      }).join('')}
     </div>`:''}
   </div>`;
 }
@@ -3288,8 +3334,16 @@ function attachEvents(){
   on('adminRefreshBtn','click',loadAdminStats);
   onAll('[data-admin-range]','click',e=>{ state.adminRange = parseInt(e.currentTarget.dataset.adminRange,10)||30; render(); });
   onAll('.admin-col','click',e=>toast(e.currentTarget.dataset.tip));
+  onAll('.admin-user','click',e=>{ state.adminUserSheet = e.currentTarget.dataset.uid; render(); });
+  on('adminUserOverlay','click',()=>{ state.adminUserSheet=null; render(); });
+  on('adminUserClose','click',()=>{ state.adminUserSheet=null; render(); });
+  onAll('.promo-copy','click',e=>{
+    const c = e.currentTarget.dataset.code;
+    (navigator.clipboard?.writeText(c)||Promise.reject()).then(()=>toast('Nukopijuota')).catch(()=>toast(c, 8000));
+  });
   onAll('[data-action="togglePremium"]','click', e=>{
     const uid = e.currentTarget.dataset.uid;
+    state.adminUserSheet = null;
     const user = state.adminUsers?.find(u=>u.uid===uid);
     if(!user) return;
     const kind = premiumKind(user);
