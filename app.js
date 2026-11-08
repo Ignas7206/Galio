@@ -823,6 +823,8 @@ async function doGoogleLogin(){
   state.authError='';state.authInfo='';state.authBusy=true;render();
   try{
     const provider = new GoogleAuthProvider();
+    // Always show the account chooser, so switching Google accounts after logout works.
+    provider.setCustomParameters({ prompt: 'select_account' });
     await signInWithPopup(auth, provider);
   }catch(e){
     if(e.code!=='auth/popup-closed-by-user' && e.code!=='auth/cancelled-popup-request'){
