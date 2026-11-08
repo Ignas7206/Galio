@@ -1403,7 +1403,7 @@ function renderPicker(){
   const docLimitReached = !canAttachNewDoc();
   const offline = !state.online;
 
-  return`<div>
+  return`<div class="picker-page">
     <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Nauja garantija</h2></div>
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
