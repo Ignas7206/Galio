@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy,
-  setDoc, getDoc, getDocs, getDocsFromServer, serverTimestamp, increment
+  setDoc, getDoc, getDocFromCache, getDocs, getDocsFromServer, serverTimestamp, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   ref, uploadBytes, getDownloadURL, deleteObject
@@ -601,7 +601,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
           <p style="font-size:11px;color:var(--text3);word-break:break-word;max-width:320px">Užstrigo: ${esc(window.__galioBootStep||'?')}${(window.__galioErrors||[]).length ? '<br>'+(window.__galioErrors||[]).slice(-3).map(esc).join('<br>') : ''}</p>
         </div>`;
     }
-  }, 12000);
+  }, 20000);
 });
 
 // 2. Analyzing watchdog — jei AI analizė užtrunka >35s, automatiškai atšaukia
@@ -683,12 +683,28 @@ function startEmailVerifyPoll(user){
 }
 function stopEmailVerifyPoll(){ if(verifyPollTimer){clearInterval(verifyPollTimer);verifyPollTimer=null;} }
 
+// A slow connection can keep getDoc waiting for a long time. After 5 s use the copy
+// saved on this device (the live listener below brings fresh data once online).
+// No saved copy (first sign-in on this device) -> keep waiting for the server.
+async function getDocFast(ref_){
+  const server = getDoc(ref_);
+  const timer = new Promise(r => setTimeout(() => r('slow'), 5000));
+  const first = await Promise.race([server, timer]).catch(e => e);
+  if(first !== 'slow' && !(first instanceof Error)) return first;
+  window.__galioBootStep = 'paskyros duomenys (lėtas ryšys)';
+  try{
+    const cached = await getDocFromCache(ref_);
+    if(cached.exists()){ server.catch(()=>{}); return cached; }
+  }catch(e){}
+  return server;
+}
+
 async function ensureUserDoc(user){
   state.storageError = '';
   state.appDialog = null;
   const ref_ = doc(db,'users',user.uid);
   window.__galioBootStep = 'paskyros duomenys (getDoc)';
-  const snap = await getDoc(ref_);
+  const snap = await getDocFast(ref_);
   window.__galioBootStep = 'paskyros duomenys gauti';
   const existingUserDoc = snap.exists();
   if(!snap.exists()){
