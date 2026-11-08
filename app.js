@@ -633,7 +633,7 @@ function startViewWatchdog(view){
       state.view='settings';
       render();
     }
-  }, 15000);
+  }, 95000);
 }
 function clearViewWatchdog(){ if(_viewWatchdog){ clearTimeout(_viewWatchdog); _viewWatchdog=null; } }
 onAuthStateChanged(auth, async (user)=>{
@@ -944,6 +944,7 @@ window.addEventListener('popstate', () => {
   if(requestUnsavedAddExit('list')) return;
   if(state.view==='multi-select'){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view==='add'&&state.addMode){ discardPendingAdd(); state.view='list'; render(); return; }
+  if(state.view==='admin-promo'){ state.view='admin-stats'; render(); return; }
   if(state.view==='contact' || state.view==='admin-stats'){ state.view='settings'; render(); return; }
   if(state.view==='premium'){ state.view=state._premiumReturnView||'list'; render(); return; }
   if(state.view!=='list'){ state.view='list'; render(); return; }
@@ -1028,6 +1029,7 @@ function _doRender(){
   else if(state.view==='premium')  html=renderPremium();
   else if(state.view==='multi-select') html=renderMultiSelect();
   else if(state.view==='admin-stats') html=renderAdminStats();
+  else if(state.view==='admin-promo') html=renderAdminPromoPage();
 
   pushHistoryIfNeeded(viewKey);
 
@@ -2605,9 +2607,12 @@ function renderAdminStats(){
     <div class="form-section" style="margin:0 16px 8px;padding:4px 0">${adminBars(x.splits, x.n)}</div>
     <div style="font-size:12px;color:var(--text3);margin:0 20px 16px;line-height:1.4">Premium AI analizių šį mėnesį: ${x.aiPremiumMonth}. Premium kodų: ${s.promo?.used||0} panaudota iš ${s.promo?.total||0}${s.promo?.revoked?`, atšaukta ${s.promo.revoked}`:''}. Premium nepratęsė: ${x.lapsed}.</div>
 
-    ${renderAdminPromo()}
-
     ${section('Įrankiai')}
+    <div class="form-section" style="margin:0 16px 10px;padding:0">
+      <button class="settings-row tappable" id="adminPromoBtn" style="width:100%;background:none;border:none;text-align:left;color:inherit">
+        <i class="ti ti-ticket row-icon" style="color:var(--gold)"></i><span class="settings-row-label">Premium kodai<small>${state.promoCodes ? `${state.promoCodes.filter(c=>!c.usedBy&&!c.revokedAt).length} laisvi · ${state.promoCodes.filter(c=>c.usedBy).length} panaudoti` : 'Kurti ir valdyti kodus'}</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </button>
+    </div>
     <div class="form-section" style="margin:0 16px 16px;padding:0">
       <button class="settings-row tappable" id="adminTestNotifBtn" style="width:100%;background:none;border:none;text-align:left">
         <i class="ti ti-bell-ringing row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Testuoti garantijos priminimą<small>Sukuria laikiną įrašą (terminas rytoj) ir patikrina visą grandinę</small></span>
@@ -2713,9 +2718,20 @@ async function loadPromoCodes(){
     console.warn('promo codes load failed', e);
     state.promoCodes = [];
   }
-  if(state.view==='admin-stats') render();
+  if(state.view==='admin-stats' || state.view==='admin-promo') render();
 }
 
+function renderAdminPromoPage(){
+  return `<div>
+    <div class="page-header-sm">
+      <button class="back-btn" id="adminPromoBackBtn"><i class="ti ti-arrow-left"></i></button>
+      <h2>Premium kodai</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="height:12px"></div>
+    ${renderAdminPromo()}
+  </div>`;
+}
 function renderAdminPromo(){
   const codes = state.promoCodes || [];
   const last = state.promoLastCode;
@@ -3242,6 +3258,8 @@ function attachEvents(){
     openSupportFromDialog();
   });
   on('adminBackBtn','click',()=>{state.view='settings';render();});
+  on('adminPromoBtn','click',()=>{state.view='admin-promo';render();});
+  on('adminPromoBackBtn','click',()=>{state.view='admin-stats';render();});
   on('adminTestNotifBtn','click', testNotification);
   on('adminUserSearch','input',e=>{
     state.adminSearch = e.currentTarget.value || '';
