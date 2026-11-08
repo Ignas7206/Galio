@@ -1,0 +1,10 @@
+# Android signing key and build outputs: never publish (repo is public via GitHub Pages)
+*.keystore
+*.jks
+android-twa/build/
+android-twa/app/build/
+android-twa/.gradle/
+android-twa/*.apk
+android-twa/*.aab
+android-twa/*.idsig
+.claude/

@@ -26,8 +26,11 @@ const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos
 const MAX_PDF       = 5*1024*1024;
 const AI_FREE_USES  = 3; // lifetime AI document-analysis uses before Premium is required
 const FREE_DOC_LIMIT = 3; // non-Premium users can view/attach up to 3 document photos/files
-const PREMIUM_DAILY_LIMIT   = 30;  // Premium is capped, not unlimited — bounds our Anthropic billing exposure
-const PREMIUM_MONTHLY_LIMIT = 300;
+// Premium is capped, not unlimited. Sized so a user at the cap still costs less than the
+// ~€1.40/month we keep from €1.99 (after VAT and Google's 15%). The worker enforces the same caps.
+const PREMIUM_DAILY_LIMIT   = 20;
+const PREMIUM_MONTHLY_LIMIT = 60;
+const PREMIUM_SEARCH_MONTHLY_LIMIT = 10; // web warranty checks cost ~5x a scan
 
 let state = {
   booted:false, user:null, userDoc:null, loadingItems:false,
@@ -97,6 +100,7 @@ function premiumKind(user){
   if(user?.role==='admin') return 'admin';
   if(user?.plan!=='premium') return 'free';
   if(user?.planSource==='purchase' || user?.subscriptionStatus==='active') return 'purchased';
+  if(user?.planSource==='promo') return 'promo';
   return 'manual';
 }
 function needsCloudDowngrade(){
@@ -683,6 +687,7 @@ async function ensureUserDoc(user){
       render();
     }
   });
+  restorePlayPurchases();
 }
 
 // ── Items listener abstraction ──────────────────────────────────────────
@@ -1649,7 +1654,7 @@ function renderSettings(){
       <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
     </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
       <i class="ti ti-crown"></i>
-      <div class="pb-text">Atsinaujinkite į Premium – Galio saugykla, priminimai ir iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną</div>
+      <div class="pb-text">Atsinaujinkite į Premium – Galio saugykla, priminimai ir ${PREMIUM_MONTHLY_LIMIT} AI analizių per mėnesį</div>
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
     ${!state.online ? `<div class="plan-banner" style="background:var(--bg2);margin:0 16px 16px">
@@ -1928,8 +1933,8 @@ function renderPremium(){
       text:'Priminimai prieš garantijos pabaigą ir grąžinimo terminą — net kai programėlė uždaryta.' },
     { icon:'ti-cloud', color:'#3b9eff', title:'Galio saugykla',
       text:'Įrašai nepririšti prie vieno įrenginio ir gali veikti automatiniai priminimai.' },
-    { icon:'ti-sparkles', color:'#f5a623', title:`Iki ${PREMIUM_DAILY_LIMIT} AI analizių per dieną`,
-      text:`Skenuokite kvitus be rūpesčių — ${PREMIUM_MONTHLY_LIMIT} analizių per mėnesį (nemokamai tik ${AI_FREE_USES} visam laikui).` },
+    { icon:'ti-sparkles', color:'#f5a623', title:`${PREMIUM_MONTHLY_LIMIT} AI analizių per mėnesį`,
+      text:`Skenuokite kvitus be rūpesčių — iki ${PREMIUM_MONTHLY_LIMIT} analizių per mėnesį ir ${PREMIUM_SEARCH_MONTHLY_LIMIT} gamintojo garantijos patikrinimų (nemokamai tik ${AI_FREE_USES} analizės visam laikui).` },
     { icon:'ti-device-mobile', color:'#34c759', title:'Prieiga iš visų įrenginių',
       text:'Prarastas ar pakeistas įrenginys — jūsų garantijos nedingsta kartu su juo.' },
   ];
@@ -1959,10 +1964,135 @@ function renderPremium(){
         </div>`).join('')}
     </div>
     <div style="padding:16px;position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 30%)">
-      <button class="save-btn" id="premiumBuyBtn">Premium dar ruošiama</button>
-      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Prenumeratą įjungsime, kai bus paruošti mokėjimai.</p>
+      ${renderPremiumBuy()}
     </div>
   </div>`;
+}
+
+// -- Google Play Billing (Digital Goods API, works inside the Android app) ----
+const PLAY_BILLING_METHOD = 'https://play.google.com/billing';
+const PLAY_PRODUCTS = ['galio_premium_monthly','galio_premium_yearly'];
+const VERIFY_PURCHASE_URL = 'https://europe-west1-garantijos-4f397.cloudfunctions.net/verifyPlayPurchase';
+const PLAY_SUBS_URL = 'https://play.google.com/store/account/subscriptions?package=com.galio.app';
+
+async function getPlayBillingService(){
+  if(!('getDigitalGoodsService' in window)) return null;
+  try{ return await window.getDigitalGoodsService(PLAY_BILLING_METHOD); }catch(e){ return null; }
+}
+function formatPlayPrice(p){
+  try{ return new Intl.NumberFormat('lt-LT',{style:'currency',currency:p.currency}).format(Number(p.value)); }
+  catch(e){ return `${p.value} ${p.currency}`; }
+}
+function playPeriodLabel(iso){ return iso==='P1Y' ? 'per metus' : iso==='P1M' ? 'per mėnesį' : ''; }
+
+async function loadPlayProducts(){
+  if(state.play?.loading || state.play?.loaded) return;
+  state.play = {loading:true};
+  const svc = await getPlayBillingService();
+  let products = [];
+  if(svc){
+    try{
+      const details = await svc.getDetails(PLAY_PRODUCTS);
+      products = details
+        .map(d=>({sku:d.itemId, price:formatPlayPrice(d.price), period:d.subscriptionPeriod||''}))
+        .sort((a,b)=>PLAY_PRODUCTS.indexOf(a.sku)-PLAY_PRODUCTS.indexOf(b.sku));
+    }catch(e){ console.warn('Play getDetails failed', e); }
+  }
+  state.play = {loading:false, loaded:true, available:!!svc, products, busy:false};
+  if(state.view==='premium') render();
+}
+
+function renderPremiumBuy(){
+  if(isPremiumUser() && state.userDoc?.planSource==='promo'){
+    const exp = state.userDoc?.premiumExpiresAt?.toDate?.();
+    return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Premium iki ${exp?exp.toLocaleDateString('lt-LT'):'—'}</button>
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Premium suteiktas kodu. Turite dar vieną kodą? Jis pratęs laiką.</p>${renderPromoRedeem()}`;
+  }
+  if(isPremiumUser()){
+    const purchased = state.userDoc?.planSource==='purchase';
+    return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Jūs jau Premium narys</button>
+      ${purchased?`<p style="font-size:13px;text-align:center;margin:10px 0 0"><a href="${PLAY_SUBS_URL}" target="_blank" rel="noopener" style="color:var(--accent)">Valdyti prenumeratą Google Play</a></p>`:''}`;
+  }
+  const play = state.play;
+  if(!play || play.loading){
+    if(!play) setTimeout(loadPlayProducts, 0);
+    return `<button class="save-btn" disabled>Kraunama...</button>`;
+  }
+  if(!play.available){
+    return `<button class="save-btn" disabled>Premium – Android programėlėje</button>
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Premium prenumeratą galima įsigyti Galio programėlėje iš Google Play. Ją įsigijus, Premium veiks ir čia, prisijungus ta pačia paskyra.</p>${renderPromoRedeem()}`;
+  }
+  if(!play.products.length){
+    return `<button class="save-btn" disabled>Premium šiuo metu nepasiekiamas</button>
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Nepavyko gauti kainų iš Google Play. Patikrinkite ryšį ir bandykite vėliau.</p>${renderPromoRedeem()}`;
+  }
+  const busy = play.busy;
+  return play.products.map((p,i)=>`
+      <button class="save-btn play-buy-btn" data-sku="${p.sku}" ${busy?'disabled':''} style="${i>0?'margin-top:10px;background:var(--bg2);color:var(--text)':''}">
+        ${busy?'Vykdoma...':`${p.price} ${playPeriodLabel(p.period)}`}
+      </button>`).join('')+`
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Prenumerata atsinaujina automatiškai. Atšaukti galite bet kada Google Play nustatymuose.</p>
+      <p style="font-size:13px;text-align:center;margin:6px 0 0"><button id="playRestoreBtn" style="background:none;border:none;color:var(--accent);font-size:13px;cursor:pointer">Atkurti pirkimą</button></p>${renderPromoRedeem()}`;
+}
+
+async function verifyPurchaseToken(purchaseToken){
+  if(!purchaseToken) return {ok:false, error:'Negautas pirkimo patvirtinimas'};
+  const idToken = await state.user.getIdToken();
+  const r = await fetch(VERIFY_PURCHASE_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
+    body:JSON.stringify({purchaseToken})
+  });
+  let data = {};
+  try{ data = await r.json(); }catch(e){}
+  return {ok: r.ok && !!data.ok, error: data.error || 'Nepavyko patikrinti pirkimo'};
+}
+
+async function buyPremium(sku){
+  if(!state.user || state.play?.busy) return;
+  if(!state.online){
+    offlineDialog('Pirkimui reikia interneto','Prenumeratą galėsite įsigyti, kai bus interneto ryšys.');
+    return;
+  }
+  state.play.busy = true; render();
+  try{
+    const request = new PaymentRequest(
+      [{supportedMethods: PLAY_BILLING_METHOD, data: {sku}}],
+      {total: {label: 'Galio Premium', amount: {currency: 'EUR', value: '0'}}}
+    );
+    const response = await request.show();
+    const result = await verifyPurchaseToken(response.details?.purchaseToken);
+    await response.complete(result.ok ? 'success' : 'fail');
+    if(result.ok){
+      toast('✓ Premium įjungtas. Ačiū!', 5000);
+    }else{
+      showAppDialog('Pirkimas nepatvirtintas', `${result.error}. Jei pinigai nuskaičiuoti, paspauskite „Atkurti pirkimą“ arba parašykite mums.`, '', {});
+    }
+  }catch(e){
+    if(e?.name !== 'AbortError'){ console.warn('Purchase failed', e); toast('Pirkimas nepavyko – bandykite dar kartą'); }
+  }
+  state.play.busy = false; render();
+}
+
+// Re-links a Play subscription to this account (new phone, reinstall, or a purchase
+// whose confirmation was interrupted). Silent unless something is restored.
+async function restorePlayPurchases(manual=false){
+  if(!state.user || (!manual && isPremiumUser())) return;
+  const svc = await getPlayBillingService();
+  if(!svc){ if(manual) toast('Atkurti galima tik Android programėlėje'); return; }
+  try{
+    const purchases = await svc.listPurchases();
+    for(const p of purchases){
+      if(!PLAY_PRODUCTS.includes(p.itemId)) continue;
+      const r = await verifyPurchaseToken(p.purchaseToken);
+      if(r.ok){ toast('✓ Premium atkurtas'); return; }
+      if(manual){ showAppDialog('Nepavyko atkurti', r.error, '', {}); return; }
+    }
+    if(manual) toast('Aktyvios prenumeratos nerasta');
+  }catch(e){
+    console.warn('Restore failed', e);
+    if(manual) toast('Nepavyko atkurti – bandykite vėliau');
+  }
 }
 
 function renderContact(){
@@ -2093,7 +2223,7 @@ function renderAdminStats(){
         adminPlanFilter === 'all' ||
         (adminPlanFilter === 'premium' && kind !== 'free') ||
         (adminPlanFilter === 'purchased' && kind === 'purchased') ||
-        (adminPlanFilter === 'manual' && kind === 'manual') ||
+        (adminPlanFilter === 'manual' && (kind === 'manual' || kind === 'promo')) ||
         (adminPlanFilter === 'free' && kind === 'free') ||
         (adminPlanFilter === 'admin' && kind === 'admin') ||
         (adminPlanFilter === 'cloud' && u.storageMode === 'cloud');
@@ -2134,6 +2264,7 @@ function renderAdminStats(){
       <div class="stat-tile"><div class="n" style="color:var(--gold)">${s.premiumUsers}</div><div class="l">Premium</div></div>
       <div class="stat-tile"><div class="n" style="color:var(--accent)">${s.purchasedPremiumUsers||0}</div><div class="l">Pirktų</div></div>
     </div>
+    ${renderAdminPromo()}
     <div class="detail-section" style="margin:0 16px 16px">
       <div class="detail-rows">
         <div class="detail-row"><i class="ti ti-receipt"></i><span class="dr-label">Viso garantijų įrašų</span><span class="dr-val">${s.totalItems}</span></div>
@@ -2170,9 +2301,9 @@ function renderAdminStats(){
       ${filteredUsers.length===0 ? `<div style="padding:18px;text-align:center;color:var(--text3);font-size:14px">Nieko nerasta</div>` :
         filteredUsers.map(u => {
           const kind = premiumKind(u);
-          const planLabel = kind==='purchased' ? 'Premium · pirktas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
-          const planColor = kind==='purchased' ? 'var(--gold)' : kind==='manual' ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
-          const isPremiumPlan = kind==='purchased' || kind==='manual';
+          const planLabel = kind==='purchased' ? 'Premium · pirktas' : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
+          const planColor = kind==='purchased' ? 'var(--gold)' : kind==='promo' ? 'var(--accent)' : kind==='manual' ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
+          const isPremiumPlan = kind==='purchased' || kind==='manual' || kind==='promo';
           const isAdminUser = u.role==='admin';
           const actionLabel = kind==='purchased' ? 'Pirktas' : isPremiumPlan ? 'Nuimti suteiktą' : 'Suteikti Premium';
           const actionDisabled = kind==='purchased';
@@ -2234,6 +2365,105 @@ async function loadAdminStats(){
     state.view='settings';
   }
   render();
+  loadPromoCodes();
+}
+
+// ── One-time Premium codes (admin creates, a friend/tester redeems once) ──────
+const FUNCTIONS_BASE = 'https://europe-west1-garantijos-4f397.cloudfunctions.net';
+const PROMO_MONTH_OPTIONS = [1,3,6,12];
+
+async function callFunction(name, payload){
+  const idToken = await state.user.getIdToken();
+  const r = await fetch(`${FUNCTIONS_BASE}/${name}`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
+    body:JSON.stringify(payload||{})
+  });
+  let data = {};
+  try{ data = await r.json(); }catch(e){}
+  return {ok:r.ok, data};
+}
+
+async function loadPromoCodes(){
+  try{
+    const {ok, data} = await callFunction('listPromoCodes');
+    // Timestamps arrive as ms; wrap them so renderAdminPromo can treat them like Firestore ones.
+    const ts = ms => ms ? {toDate:()=>new Date(ms)} : null;
+    state.promoCodes = ok ? (data.codes||[]).map(c=>({...c, createdAt:ts(c.createdAt), usedAt:ts(c.usedAt)})) : [];
+  }catch(e){
+    console.warn('promo codes load failed', e);
+    state.promoCodes = [];
+  }
+  if(state.view==='admin') render();
+}
+
+function renderAdminPromo(){
+  const codes = state.promoCodes || [];
+  const last = state.promoLastCode;
+  const fmt = ts => ts?.toDate ? ts.toDate().toLocaleDateString('lt-LT') : '';
+  return `<div style="margin:0 16px 16px;padding:14px;background:var(--bg2);border-radius:var(--radius)">
+    <div style="font-size:16px;font-weight:600">Premium kodai</div>
+    <div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.4">Vienkartinis kodas suteikia nemokamą Premium pasirinktam laikui. Panaudoti gali tik vienas žmogus.</div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <select id="promoMonths" style="padding:10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text)">
+        ${PROMO_MONTH_OPTIONS.map(m=>`<option value="${m}" ${m===3?'selected':''}>${m} mėn.</option>`).join('')}
+      </select>
+      <input id="promoNote" maxlength="80" placeholder="Kam (neprivaloma)" style="flex:1;min-width:120px;padding:10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text)">
+      <button id="promoCreateBtn" class="save-btn" style="width:auto;margin:0;padding:10px 16px" ${state.promoBusy?'disabled':''}>${state.promoBusy?'...':'Sukurti'}</button>
+    </div>
+    ${last?`<div style="margin-top:12px;padding:12px;border-radius:10px;background:var(--accent-bg);display:flex;align-items:center;gap:10px">
+      <div style="flex:1;font-family:monospace;font-size:17px;font-weight:700;letter-spacing:1px">${last}</div>
+      <button id="promoCopyBtn" style="background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer">Kopijuoti</button>
+    </div>`:''}
+    ${codes.length?`<div style="margin-top:12px;border-top:0.5px solid var(--border)">
+      ${codes.map(c=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:0.5px solid var(--border);font-size:13px">
+        <div><div style="font-family:monospace;font-weight:600">${esc(c.code)}</div>
+          <div style="color:var(--text3)">${c.months} mėn.${c.note?` · ${esc(c.note)}`:''} · ${fmt(c.createdAt)}</div></div>
+        <div style="text-align:right;color:${c.usedBy?'var(--text3)':'var(--green)'}">${c.usedBy?`Panaudotas<br>${esc(c.usedByEmail||'')} ${fmt(c.usedAt)}`:'Laisvas'}</div>
+      </div>`).join('')}
+    </div>`:''}
+  </div>`;
+}
+
+async function createPromoCode(){
+  if(state.promoBusy) return;
+  const months = parseInt(document.getElementById('promoMonths')?.value||'3',10);
+  const note = document.getElementById('promoNote')?.value||'';
+  state.promoBusy = true; render();
+  try{
+    const {ok, data} = await callFunction('createPromoCode', {months, note});
+    if(ok && data.code){ state.promoLastCode = data.code; await loadPromoCodes(); }
+    else toast(data.error||'Nepavyko sukurti kodo');
+  }catch(e){ toast('Nepavyko sukurti kodo'); }
+  state.promoBusy = false; render();
+}
+
+async function redeemPromoCode(){
+  const input = document.getElementById('promoRedeemInput');
+  const code = (input?.value||'').trim();
+  if(!code){ toast('Įveskite kodą'); return; }
+  if(!state.online){ offlineDialog('Kodui reikia interneto','Kodą galėsite panaudoti, kai bus interneto ryšys.'); return; }
+  state.promoRedeemBusy = true; render();
+  try{
+    const {ok, data} = await callFunction('redeemPromoCode', {code});
+    if(ok && data.ok){
+      const until = new Date(data.expiresAt).toLocaleDateString('lt-LT');
+      showAppDialog('Premium įjungtas ✓', `Kodas panaudotas. Premium galioja iki ${until}.`, '', {hideSupport:true});
+    }else{
+      toast(data.error||'Nepavyko panaudoti kodo', 6000);
+    }
+  }catch(e){ toast('Nepavyko panaudoti kodo – bandykite vėliau'); }
+  state.promoRedeemBusy = false; render();
+}
+
+function renderPromoRedeem(){
+  if(state.userDoc?.planSource==='purchase' && isPremiumUser()) return '';
+  if(state.userDoc?.role==='admin') return '';
+  const busy = state.promoRedeemBusy;
+  return `<div style="display:flex;gap:8px;margin-top:14px">
+      <input id="promoRedeemInput" maxlength="32" autocapitalize="characters" placeholder="Turite kodą?" style="flex:1;padding:12px;border-radius:12px;border:0.5px solid var(--border);background:var(--bg2);color:var(--text);font-size:15px;text-transform:uppercase">
+      <button id="promoRedeemBtn" style="padding:12px 16px;border-radius:12px;border:none;background:var(--bg3);color:var(--accent);font-weight:600;font-size:15px;cursor:pointer" ${busy?'disabled':''}>${busy?'...':'Panaudoti'}</button>
+    </div>`;
 }
 
 
@@ -2460,7 +2690,14 @@ function attachEvents(){
   // Settings
   on('upgradeBtnSettings','click',()=>{state._premiumReturnView='settings';state.view='premium';render();});
   on('premiumBackBtn','click',()=>{state.view=state._premiumReturnView||'list';render();});
-  on('premiumBuyBtn','click',()=>toast('Premium prenumerata dar ruošiama'));
+  document.querySelectorAll('.play-buy-btn').forEach(b=>b.addEventListener('click',()=>buyPremium(b.dataset.sku)));
+  on('playRestoreBtn','click',()=>restorePlayPurchases(true));
+  on('promoRedeemBtn','click',redeemPromoCode);
+  on('promoCreateBtn','click',createPromoCode);
+  on('promoCopyBtn','click',()=>{
+    const c = state.promoLastCode; if(!c) return;
+    (navigator.clipboard?.writeText(c)||Promise.reject()).then(()=>toast('Nukopijuota')).catch(()=>toast(c, 8000));
+  });
   onAll('.theme-opt','click',e=>{
     const t=e.currentTarget.dataset.theme;
     state.theme=t; localStorage.setItem('galio_theme',t); applyTheme(); render();
@@ -2639,7 +2876,7 @@ function attachEvents(){
     if(!user) return;
     const kind = premiumKind(user);
     if(kind==='purchased'){ toast('Pirktas Premium bus valdomas per mokėjimų sistemą'); return; }
-    const newPlan = kind==='manual' ? 'free' : 'premium';
+    const newPlan = (kind==='manual' || kind==='promo') ? 'free' : 'premium';
     showConfirmDialog(
       newPlan==='premium' ? 'Suteikti Premium?' : 'Nuimti Premium?',
       `${newPlan==='premium'?'Suteikti Premium planą':'Nuimti suteiktą Premium'} vartotojui ${user.email}?`,
@@ -3826,6 +4063,12 @@ async function checkPolicy(item){
         }]}]
       })
     });
+    if(res.status===429){
+      let m=`Pasiektas mėnesio garantijos patikrinimų limitas (${PREMIUM_SEARCH_MONTHLY_LIMIT}).`;
+      try{ m=(await res.json()).error||m; }catch(e){}
+      toast(m,6000);
+      state.policyChecking=false; render(); return;
+    }
     if(!res.ok) throw new Error('request failed');
     const data = await res.json();
     const text = (data.content||[]).filter(c=>c.type==='text').map(c=>c.text||'').join(' ').trim()
@@ -4272,7 +4515,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     if(!stillCurrent()) return;
     if(res.status===401){toast('Sesija pasibaigė, prisijunkite iš naujo');return;}
     if(res.status===403){toast('Patvirtinkite el. paštą, kad naudotumėte AI analizę');return;}
-    if(res.status===429){toast('Pasiektas AI analizių limitas');return;}
+    if(res.status===429){let m='Pasiektas AI analizių limitas';try{m=(await res.json()).error||m;}catch(e){}toast(m,6000);return;}
     if(!res.ok)return;
 
     await chargeAiUsageNow();
