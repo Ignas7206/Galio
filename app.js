@@ -1992,16 +1992,17 @@ async function loadPlayProducts(){
   if(state.play?.loading || state.play?.loaded) return;
   state.play = {loading:true};
   const svc = await getPlayBillingService();
-  let products = [];
+  let products = [], diag = '';
   if(svc){
     try{
       const details = await svc.getDetails(PLAY_PRODUCTS);
+      diag = `getDetails: ${details.length} (${details.map(d=>d.itemId).join(',')||'-'})`;
       products = details
         .map(d=>({sku:d.itemId, price:formatPlayPrice(d.price), period:d.subscriptionPeriod||''}))
         .sort((a,b)=>PLAY_PRODUCTS.indexOf(a.sku)-PLAY_PRODUCTS.indexOf(b.sku));
-    }catch(e){ console.warn('Play getDetails failed', e); }
+    }catch(e){ console.warn('Play getDetails failed', e); diag = `getDetails klaida: ${e?.name||''} ${e?.message||e}`; }
   }
-  state.play = {loading:false, loaded:true, available:!!svc, products, busy:false};
+  state.play = {loading:false, loaded:true, available:!!svc, products, busy:false, diag};
   if(state.view==='premium') render();
 }
 
@@ -2029,7 +2030,8 @@ function renderPremiumBuy(){
   }
   if(!play.products.length){
     return `<button class="save-btn" disabled>Premium šiuo metu nepasiekiamas</button>
-      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Nepavyko gauti kainų iš Google Play. Patikrinkite ryšį ir bandykite vėliau.</p>${renderPromoRedeem()}`;
+      <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Nepavyko gauti kainų iš Google Play. Patikrinkite ryšį ir bandykite vėliau.</p>
+      <p style="font-size:10px;color:var(--text3);text-align:center;margin:4px 0 0;opacity:.7">${esc(play.diag||'')}</p>${renderPromoRedeem()}`;
   }
   const busy = play.busy;
   return play.products.map((p,i)=>`
