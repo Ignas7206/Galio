@@ -944,8 +944,8 @@ window.addEventListener('popstate', () => {
   if(requestUnsavedAddExit('list')) return;
   if(state.view==='multi-select'){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view==='add'&&state.addMode){ discardPendingAdd(); state.view='list'; render(); return; }
-  if(state.view==='admin-stats' && state.adminUserSheet){ state.adminUserSheet=null; history.pushState({view:'admin-stats'},'',location.href); render(); return; }
-  if(state.view==='admin-promo'){ state.view='admin-stats'; render(); return; }
+  if(state.view==='admin-users' && state.adminUserSheet){ state.adminUserSheet=null; history.pushState({view:'admin-users'},'',location.href); render(); return; }
+  if(state.view==='admin-promo' || state.view==='admin-users'){ state.view='admin-stats'; render(); return; }
   if(state.view==='contact' || state.view==='admin-stats'){ state.view='settings'; render(); return; }
   if(state.view==='premium'){ state.view=state._premiumReturnView||'list'; render(); return; }
   if(state.view!=='list'){ state.view='list'; render(); return; }
@@ -1018,7 +1018,7 @@ function _doRender(){
 
   nav.style.display='flex';
   if(state.view!=='settings') state.settingsSheet=null;
-  if(state.view!=='admin-stats') state.adminUserSheet=null;
+  if(state.view!=='admin-users') state.adminUserSheet=null;
   let html='';
   let viewKey = state.view;
   if(state.view==='list')          html=renderList();
@@ -1032,6 +1032,7 @@ function _doRender(){
   else if(state.view==='multi-select') html=renderMultiSelect();
   else if(state.view==='admin-stats') html=renderAdminStats();
   else if(state.view==='admin-promo') html=renderAdminPromoPage();
+  else if(state.view==='admin-users') html=renderAdminStats('users');
 
   pushHistoryIfNeeded(viewKey);
 
@@ -2511,7 +2512,7 @@ function adminColumns(days){
   </div>`;
 }
 
-function renderAdminStats(){
+function renderAdminStats(mode='stats'){
   const s = state.adminStats;
   const users = state.adminUsers || [];
   const range = state.adminRange || 30;
@@ -2560,6 +2561,52 @@ function renderAdminStats(){
       <button class="back-btn" id="adminRefreshBtn" title="Atnaujinti"><i class="ti ti-refresh"></i></button>
     </div>`;
   if(!s) return `<div>${head}<div class="empty-state"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:16px">Kraunama...</p></div></div>`;
+  if(mode==='users') return `<div>
+    <div class="page-header-sm">
+      <button class="back-btn" id="adminUsersBackBtn"><i class="ti ti-arrow-left"></i></button>
+      <h2>Vartotojai</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="height:12px"></div>
+    <div class="form-section" style="margin:0 16px 12px;padding:12px">
+      <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:10px 12px;margin-bottom:10px">
+        <i class="ti ti-search" style="font-size:18px;color:var(--text3);flex-shrink:0"></i>
+        <input id="adminUserSearch" value="${esc(state.adminSearch||'')}" placeholder="Ieškoti pagal el. paštą, UID, planą" style="width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;min-width:0" />
+      </div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:10px">
+        ${filterOptions.map(([value,label])=>`<button class="chip${adminPlanFilter===value?' active':''}" data-admin-filter="${value}" style="flex-shrink:0">${label}</button>`).join('')}
+      </div>
+      <select id="adminSortSelect" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;padding:10px 12px;outline:none">
+        ${sortOptions.map(([value,label])=>`<option value="${value}" ${adminSort===value?'selected':''}>Rikiuoti: ${label}</option>`).join('')}
+      </select>
+      <div style="font-size:13px;color:var(--text3);margin-top:10px">${filteredUsers.length} iš ${users.length} paskyrų</div>
+    </div>
+    <div class="form-section" style="margin:0 16px 16px;padding:0">
+      ${filteredUsers.length===0 ? `<div style="padding:18px;text-align:center;color:var(--text3);font-size:14px">Nieko nerasta</div>` :
+        filteredUsers.map(u => {
+          const kind = premiumKind(u);
+          const planLabel = kind==='purchased' ? `Moka · ${u.playProductId==='galio_premium_yearly'?'metinis':'mėnesinis'}` : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
+          const planColor = kind==='purchased' ? 'var(--gold)' : (kind==='promo' || kind==='manual') ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
+          const isPremiumPlan = kind==='purchased' || kind==='manual' || kind==='promo';
+          const isAdminUser = u.role==='admin';
+          const how = (u.providers||[]).includes('google.com') ? 'Google' : 'el. paštas';
+          const aiInfo = kind==='free' && u.aiUsesRemaining!==null ? ` · AI liko ${u.aiUsesRemaining}/${AI_FREE_USES}` : '';
+          return `<div class="settings-row tappable admin-user" data-uid="${esc(u.uid)}" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px;cursor:pointer">
+            <div style="display:flex;width:100%;align-items:flex-start;gap:10px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
+                <div style="font-size:14px;color:${planColor};margin-top:3px;font-weight:600">${planLabel}${isAdminUser && kind!=='admin'?' · Administratorius':''}${u.premiumExpiresMs&&isPremiumPlan?` <span style="color:var(--text3);font-weight:400">iki ${fmtDate(u.premiumExpiresMs)}</span>`:''}</div>
+                <div style="font-size:13px;color:var(--text2);margin-top:4px">Aktyvus ${adminAgo(u.lastActiveMs)} · registr. ${fmtDate(u.createdMs)}</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:3px;line-height:1.35">${u.itemCount||0} įrašų · ${u.storageMode==='cloud'?'saugykloje':'įrenginyje'} · ${how}${u.emailVerified?'':' · nepatvirtintas'}${u.hasPush?' · push':''}${aiInfo} · ID ${esc((u.uid||'').slice(0,8))}</div>
+              </div>
+              <i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px;margin-top:2px"></i>
+            </div>
+          </div>`;
+        }).join('')
+      }
+    </div>
+    ${renderAdminUserSheet()}
+  </div>`;
   const x = adminSlices(users, range);
   const section = (t, sub='') => `<p class="form-label-section" style="margin:4px 16px 8px">${t}${sub?` <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text3)">· ${sub}</span>`:''}</p>`;
   const fmtDate = t => t ? new Date(t).toLocaleDateString('lt-LT') : '—';
@@ -2611,6 +2658,9 @@ function renderAdminStats(){
 
     ${section('Įrankiai')}
     <div class="form-section" style="margin:0 16px 10px;padding:0">
+      <button class="settings-row tappable" id="adminUsersBtn" style="width:100%;background:none;border:none;text-align:left;color:inherit">
+        <i class="ti ti-users row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Vartotojai<small>${users.length} paskyros · paieška, filtrai, kortelės</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </button>
       <button class="settings-row tappable" id="adminPromoBtn" style="width:100%;background:none;border:none;text-align:left;color:inherit">
         <i class="ti ti-ticket row-icon" style="color:var(--gold)"></i><span class="settings-row-label">Premium kodai<small>${state.promoCodes ? `${state.promoCodes.filter(c=>!c.usedBy&&!c.revokedAt).length} laisvi · ${state.promoCodes.filter(c=>c.usedBy).length} panaudoti` : 'Kurti ir valdyti kodus'}</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </button>
@@ -2621,45 +2671,6 @@ function renderAdminStats(){
       </button>
     </div>
 
-    ${section('Vartotojai')}
-    <div class="form-section" style="margin:0 16px 12px;padding:12px">
-      <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:10px 12px;margin-bottom:10px">
-        <i class="ti ti-search" style="font-size:18px;color:var(--text3);flex-shrink:0"></i>
-        <input id="adminUserSearch" value="${esc(state.adminSearch||'')}" placeholder="Ieškoti pagal el. paštą, UID, planą" style="width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;min-width:0" />
-      </div>
-      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:10px">
-        ${filterOptions.map(([value,label])=>`<button class="chip${adminPlanFilter===value?' active':''}" data-admin-filter="${value}" style="flex-shrink:0">${label}</button>`).join('')}
-      </div>
-      <select id="adminSortSelect" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font-size:15px;padding:10px 12px;outline:none">
-        ${sortOptions.map(([value,label])=>`<option value="${value}" ${adminSort===value?'selected':''}>Rikiuoti: ${label}</option>`).join('')}
-      </select>
-      <div style="font-size:13px;color:var(--text3);margin-top:10px">${filteredUsers.length} iš ${users.length} paskyrų</div>
-    </div>
-    <div class="form-section" style="margin:0 16px 16px;padding:0">
-      ${filteredUsers.length===0 ? `<div style="padding:18px;text-align:center;color:var(--text3);font-size:14px">Nieko nerasta</div>` :
-        filteredUsers.map(u => {
-          const kind = premiumKind(u);
-          const planLabel = kind==='purchased' ? `Moka · ${u.playProductId==='galio_premium_yearly'?'metinis':'mėnesinis'}` : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Admin' : 'Nemokamas';
-          const planColor = kind==='purchased' ? 'var(--gold)' : (kind==='promo' || kind==='manual') ? 'var(--accent)' : kind==='admin' ? 'var(--green)' : 'var(--text3)';
-          const isPremiumPlan = kind==='purchased' || kind==='manual' || kind==='promo';
-          const isAdminUser = u.role==='admin';
-          const how = (u.providers||[]).includes('google.com') ? 'Google' : 'el. paštas';
-          const aiInfo = kind==='free' && u.aiUsesRemaining!==null ? ` · AI liko ${u.aiUsesRemaining}/${AI_FREE_USES}` : '';
-          return `<div class="settings-row tappable admin-user" data-uid="${esc(u.uid)}" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px;cursor:pointer">
-            <div style="display:flex;width:100%;align-items:flex-start;gap:10px">
-              <div style="flex:1;min-width:0">
-                <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
-                <div style="font-size:14px;color:${planColor};margin-top:3px;font-weight:600">${planLabel}${isAdminUser && kind!=='admin'?' · Administratorius':''}${u.premiumExpiresMs&&isPremiumPlan?` <span style="color:var(--text3);font-weight:400">iki ${fmtDate(u.premiumExpiresMs)}</span>`:''}</div>
-                <div style="font-size:13px;color:var(--text2);margin-top:4px">Aktyvus ${adminAgo(u.lastActiveMs)} · registr. ${fmtDate(u.createdMs)}</div>
-                <div style="font-size:12px;color:var(--text3);margin-top:3px;line-height:1.35">${u.itemCount||0} įrašų · ${u.storageMode==='cloud'?'saugykloje':'įrenginyje'} · ${how}${u.emailVerified?'':' · nepatvirtintas'}${u.hasPush?' · push':''}${aiInfo} · ID ${esc((u.uid||'').slice(0,8))}</div>
-              </div>
-              <i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px;margin-top:2px"></i>
-            </div>
-          </div>`;
-        }).join('')
-      }
-    </div>
-    ${renderAdminUserSheet()}
   </div>`;
 }
 
@@ -3305,6 +3316,8 @@ function attachEvents(){
   });
   on('adminBackBtn','click',()=>{state.view='settings';render();});
   on('adminPromoBtn','click',()=>{state.view='admin-promo';render();});
+  on('adminUsersBtn','click',()=>{state.view='admin-users';render();});
+  on('adminUsersBackBtn','click',()=>{state.view='admin-stats';render();});
   on('adminPromoBackBtn','click',()=>{state.view='admin-stats';render();});
   on('adminTestNotifBtn','click', testNotification);
   on('adminUserSearch','input',e=>{
