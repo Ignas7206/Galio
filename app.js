@@ -117,7 +117,6 @@ function needsCloudDowngrade(){
 // so every entry point (tap +, long-press +, picker) stays in sync.
 function startNewItem(mode){
   state.form=emptyForm();
-  state.docFromFiles=false;
   state.docError='';
   state.addMode=mode;
   state.view='add';
@@ -1403,20 +1402,13 @@ function renderPicker(){
   const aiExhausted = !isPremium && aiLeft<=0;
   const docLimitReached = !canAttachNewDoc();
   const offline = !state.online;
-  const aiNote = offline ? 'Reikia interneto. Dabar galite įvesti rankiniu būdu.'
-    : docLimitReached ? `Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`
-    : aiExhausted ? 'AI analizės išnaudotos. Toliau įveskite rankiniu būdu.' : '';
 
   return`<div>
     <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-x"></i></button><h2>Nauja garantija</h2></div>
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Fotografuoti čekį</h3><p>${aiNote || `AI ištrauks prekes, garantiją ir grąžinimo terminą${!isPremium?` (${aiLeft} liko)`:''}.`}</p></div>
-      </button>
-      <button class="picker-card" id="modeFile">
-        <div class="picker-icon" style="background:var(--orange-bg)"><i class="ti ti-file-upload" style="color:var(--orange)"></i></div>
-        <div><h3>Įkelti failą</h3><p>${aiNote || 'Sąskaita PDF, elektroninis čekis ar ekrano nuotrauka iš e. parduotuvės.'}</p></div>
+        <div><h3>Nuskaityti dokumentą</h3><p>${offline?'Reikia interneto. Dabar galite įvesti rankiniu būdu.':docLimitReached?`Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`:aiExhausted?'AI analizės išnaudotos. Toliau įveskite rankiniu būdu.':`AI ištrauks prekes, garantiją ir grąžinimo terminą${!isPremium?` (${aiLeft} liko)`:''}.`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
@@ -1424,10 +1416,6 @@ function renderPicker(){
       </button>
     </div>
     ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
-    <div style="display:flex;gap:12px;align-items:flex-start;margin:8px 20px 20px;color:var(--text3);font-size:14px;line-height:1.45">
-      <i class="ti ti-bulb" style="font-size:20px;flex-shrink:0;margin-top:1px"></i>
-      <span>Pirkote internetu? Užsakymo patvirtinimą iš el. laiško išsaugokite kaip PDF arba padarykite ekrano nuotrauką ir įkelkite.</span>
-    </div>
   </div>`;
 }
 
@@ -1525,7 +1513,7 @@ function renderAdd(){
       ${multiItemBanner}
       <div class="doc-upload-area">
         ${docAreaHtml}
-        ${docLimitReached?'':`<input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto && !state.docFromFiles?'capture="environment"':''} style="display:none" />`}
+        ${docLimitReached?'':`<input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto?'capture="environment"':''} style="display:none" />`}
         ${f.docData?`<button class="doc-remove-btn" id="removeDoc"><i class="ti ti-trash" style="font-size:14px"></i>Pašalinti dokumentą</button>`:''}
         ${state.docError?`<p class="doc-error">${esc(state.docError)}</p>`:''}
         ${state.analyzing?`<div class="analyzing-row"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI analizuoja dokumentą...</span></div>`:''}
@@ -2761,24 +2749,17 @@ function attachEvents(){
     }
     state.form.qualityWarning=null; state.form.docData=null; state.form.docMime=null; state.form.docFileName=null; renderSync(); document.getElementById('docInput')?.click();
   });
-  const startDocMode = fromFiles => {
+  on('modePhoto','click',()=>{
+    if(document.getElementById('modePhoto')?.disabled)return;
     if(!canAttachNewDoc()){
       showAppDialog('Dokumentų limitas pasiektas', `Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
       return;
     }
-    if(!state.online){
-      offlineDialog('Nuskaitymui reikia interneto',
-        'Dokumento nuskaitymas veikia su AI, todėl jam reikia interneto. Dabar galite įvesti prekę rankiniu būdu, o dokumentą pridėti vėliau.');
-      return;
-    }
-    state.docFromFiles=!!fromFiles;
     state.addMode='photo';state.aiRetriesUsedThisItem=0;state.pendingAiCharge=false;state.aiMultiItems=[];state.aiNameReview=false;
     renderSync();
     requestAnimationFrame(()=>{ document.getElementById('docInput')?.click(); });
-  };
-  on('modePhoto','click',()=>startDocMode(false));
-  on('modeFile','click',()=>startDocMode(true));
-  on('modeManual','click',()=>{state.docFromFiles=false;state.addMode='manual';state.aiNameReview=false;render();});
+  });
+  on('modeManual','click',()=>{state.addMode='manual';state.aiNameReview=false;render();});
 
   on('backBtn','click',()=>{
     if(state.view==='add' && state.analyzing){
