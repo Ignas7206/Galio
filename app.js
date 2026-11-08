@@ -3264,11 +3264,29 @@ async function runExpiredCleanup(months){
   if(n){ toast(`Ištrinta senų įrašų: ${n}`); render(); }
 }
 let _cleanupDoneThisSession = false;
+// Never deletes quietly: shows which entries are due and lets the user keep them.
+// "Ne dabar" asks again in 30 days (per device).
+const CLEANUP_SNOOZE_DAYS = 30;
+function cleanupSnoozeKey(){ return 'galio_cleanup_snooze_' + (state.user?.uid||''); }
 function maybeAutoCleanup(){
   if(_cleanupDoneThisSession || state.loadingItems || !state.user) return;
-  const months = keepExpiredMonths();
+  if(state.appDialog || state.view !== 'list') return;   // try again on a later render
   _cleanupDoneThisSession = true;
-  if(months) runExpiredCleanup(months);
+  const months = keepExpiredMonths();
+  if(!months) return;
+  try{ if(Date.now() < (parseInt(localStorage.getItem(cleanupSnoozeKey())||'0',10)||0)) return; }catch(e){}
+  const old = itemsPastRetention(months);
+  if(!old.length) return;
+  const label = (EXPIRED_KEEP_OPTIONS.find(o=>o[0]===months)||[])[1] || '';
+  const names = old.slice(0, 6).map(i=>'• '+i.name).join('\n') + (old.length > 6 ? `\n… ir dar ${old.length-6}` : '');
+  showAppDialog('Ištrinti senus įrašus?',
+    `Šių įrašų garantija baigėsi seniau nei prieš ${label}:\n${names}\n\nJie bus ištrinti visam laikui kartu su dokumentais. Nustatymą galite pakeisti skiltyje „Nustatymai“.`,
+    '', {
+      align:'left', okText:'Ištrinti', supportText:'Ne dabar', supportAction:'cancel',
+      onOk: ()=>runExpiredCleanup(months),
+    });
+  // Whatever the answer, do not ask again for a while unless they delete now.
+  try{ localStorage.setItem(cleanupSnoozeKey(), String(Date.now() + CLEANUP_SNOOZE_DAYS*86400000)); }catch(e){}
 }
 function changeKeepExpired(months){
   const label = (EXPIRED_KEEP_OPTIONS.find(o=>o[0]===months)||[])[1] || '';
