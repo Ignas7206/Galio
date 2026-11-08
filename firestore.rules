@@ -87,7 +87,10 @@ service cloud.firestore {
                                  'warrantyMonths','docType','docNumber','notes',
                                  'notifyEnabled','docUrl','docMime','docFileName','docStoragePath',
                                  'returnDeadline','notifyDays','notifyReturnDays','notifyRepeatDays',
-                                 'returnDays','itemPhotoUrl','itemPhotoMime','itemPhotoFileName','itemPhotoStoragePath']);
+                                 'returnDays','itemPhotoUrl','itemPhotoMime','itemPhotoFileName','itemPhotoStoragePath',
+                                 'searchTags','searchTagsFor'])
+                    && (!('searchTags' in request.resource.data) || (request.resource.data.searchTags is string
+                        && request.resource.data.searchTags.size() <= 400));
 
       allow delete: if isOwner(userId);
     }

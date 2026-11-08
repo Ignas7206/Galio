@@ -1171,16 +1171,17 @@ function attachAuthEvents(){
 // ── List ───────────────────────────────────────────────────────────────────
 function renderList(){
   setTimeout(maybeAutoCleanup, 0);
+  setTimeout(refreshSearchTags, 1500);
   const{items,filterCat,sortBy,userDoc}=state;
   const expired =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d<0;}).length;
   const expiring=items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0&&d<=30;}).length;
   const valid   =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0;}).length;
   const isPremium = isPremiumUser();
 
-  const query = state.searchOpen ? normalizeSearchText(state.search) : '';
+  const query = state.searchOpen ? searchTerms(state.search) : [];
   const filtered=items
     .filter(i=>filterCat==='Visos'||i.category===filterCat)
-    .filter(i=>!query || itemSearchText(i).includes(query))
+    .filter(i=>!query.length || itemMatches(i, query))
     .sort((a,b)=>{
       // Expired warranties always go to the end, whatever the chosen order.
       const ea=(daysLeft(a.warrantyEnd)??0)<0, eb=(daysLeft(b.warrantyEnd)??0)<0;
@@ -1259,7 +1260,7 @@ function renderList(){
     <div class="empty-icon"><i class="ti ti-shield-check"></i></div>
     <h3>Pridėkite pirmą pirkinį</h3>
     <p>Nuskenuokite dokumentą. Galio parodys garantijos pabaigą ir iki kada prekę dar galima grąžinti.</p>
-  </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>${query?'Pabandykite kitą žodį':'Pabandykite kitą kategoriją'}</p></div>`:'';
+  </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>${query.length?'Pabandykite kitą žodį':'Pabandykite kitą kategoriją'}</p></div>`:'';
 
   return`<div>
     <div class="page-header">
@@ -1306,7 +1307,52 @@ function renderList(){
 // ── Search ─────────────────────────────────────────────────────────────────
 function itemSearchText(i){
   return normalizeSearchText([i.name,i.shop,i.category,i.docType,i.docNumber,i.notes,
-    i.purchaseDate,i.warrantyEnd,i.returnDeadline].filter(Boolean).join(' '));
+    i.purchaseDate,i.warrantyEnd,i.returnDeadline,i.searchTags].filter(Boolean).join(' '));
+}
+// "keptuvės" finds "keptuvė", "laikrodžio" finds "laikrodis": drop the ending and match
+// word starts, so "laik" no longer hits the middle of "laisvalaikis".
+function searchTerms(q){
+  return normalizeSearchText(q).split(/[^a-z0-9]+/).filter(Boolean)
+    .map(w => /\d/.test(w) || w.length <= 4 ? w : w.slice(0, Math.max(4, w.length - 2)));
+}
+function itemMatches(item, terms){
+  const text = itemSearchText(item);
+  const words = text.split(/[^a-z0-9]+/);
+  return terms.every(t => /\d/.test(t) ? text.includes(t) : words.some(w => w.startsWith(t)));
+}
+
+// Search keywords (synonyms, related products) for entries that do not have them yet:
+// old entries, manual ones, renamed ones. Runs quietly in the background.
+const _tagsTried = new Set();
+let _tagsRunning = false;
+async function refreshSearchTags(){
+  if(_tagsRunning || !state.user || !state.user.emailVerified || state.loadingItems || !navigator.onLine) return;
+  const todo = state.items.filter(i => i.name && i.searchTagsFor !== i.name && !_tagsTried.has(i.id + '|' + i.name)).slice(0, 40);
+  if(!todo.length) return;
+  _tagsRunning = true;
+  todo.forEach(i => _tagsTried.add(i.id + '|' + i.name));
+  try{
+    const idToken = await state.user.getIdToken();
+    const res = await fetch(WORKER_URL + '/tags', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
+      body: JSON.stringify({ names: todo.map(i => i.name) }),
+    });
+    if(!res.ok) return;
+    const { tags } = await res.json();
+    if(!Array.isArray(tags) || tags.length !== todo.length) return;
+    for(let k = 0; k < todo.length; k++){
+      const item = state.items.find(i => i.id === todo[k].id);
+      if(!item || item.name !== todo[k].name) continue;
+      const patch = { searchTags: String(tags[k] || '').slice(0, 400), searchTagsFor: item.name };
+      if(state.storageMode === 'cloud'){
+        await updateDoc(doc(db,'users',state.user.uid,'warranties',item.id), patch).catch(e => console.warn('tags save', e));
+      }else{
+        Object.assign(item, patch);
+        await localPut(state.user.uid, item).catch(e => console.warn('tags save', e));
+      }
+    }
+  }catch(e){ console.warn('Search tags failed:', e); }
+  finally{ _tagsRunning = false; }
 }
 function renderSearch(){
   const q=state.search;
@@ -1799,9 +1845,12 @@ function renderSettings(){
     <div class="form-section" style="margin:0 16px 8px;padding:12px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
         <span style="font-size:15px">Saugoti pasibaigus garantijai</span>
-        <select id="keepExpiredSelect" style="padding:8px 10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px">
-          ${EXPIRED_KEEP_OPTIONS.map(([m,l])=>`<option value="${m}" ${keepExpiredMonths()===m?'selected':''}>${l}</option>`).join('')}
-        </select>
+        <div style="position:relative;flex-shrink:0">
+          <select id="keepExpiredSelect" style="appearance:none;-webkit-appearance:none;width:104px;height:36px;padding:0 30px 0 12px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;line-height:36px;text-align:left;cursor:pointer">
+            ${EXPIRED_KEEP_OPTIONS.map(([m,l])=>`<option value="${m}" ${keepExpiredMonths()===m?'selected':''}>${l}</option>`).join('')}
+          </select>
+          <i class="ti ti-chevron-down" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--text2);pointer-events:none"></i>
+        </div>
       </div>
     </div>
     <p style="font-size:13px;color:var(--text3);margin:0 20px 20px;line-height:1.4">Seni įrašai ištrinami automatiškai atidarius programėlę, kai pasibaigė ir garantija, ir grąžinimo terminas.</p>
