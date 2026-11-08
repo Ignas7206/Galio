@@ -722,7 +722,7 @@ async function ensureUserDoc(user){
   }
   maybeShowReturnFeatureIntro(existingUserDoc);
   state.storageMode = state.userDoc.storageMode || 'local';
-  try{ if(typeof Notification!=='undefined' && Notification.permission==='granted' && state.userDoc.fcmToken) setupForegroundPush(); }catch(e){}
+  try{ if(typeof Notification!=='undefined' && Notification.permission==='granted' && (state.userDoc.fcmToken || state.userDoc.fcmTokens?.length)) setupForegroundPush(); }catch(e){}
   // live updates to plan/itemCount/storageMode/aiUsesRemaining
   onSnapshot(ref_, s=>{
     if(s.exists()){
@@ -3425,7 +3425,10 @@ async function requestPushPermission(){
     if(!token) return {ok:false, reason:'no-token'};
     setupForegroundPush();
 
-    await updateDoc(doc(db,'users',state.user.uid), { fcmToken: token, notifyEnabled: true });
+    // Every device the user enabled reminders on gets them (the 5 most recent), not just the last one.
+    const fcmTokens = [...(state.userDoc?.fcmTokens||[]).filter(t=>t && t!==token), token].slice(-5);
+    await updateDoc(doc(db,'users',state.user.uid), { fcmToken: token, fcmTokens, notifyEnabled: true });
+    if(state.userDoc){ state.userDoc.fcmToken = token; state.userDoc.fcmTokens = fcmTokens; }
     return {ok:true};
   }catch(e){
     console.warn('Push permission error:', e);

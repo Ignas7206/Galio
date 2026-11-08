@@ -58,8 +58,11 @@ service cloud.firestore {
                        && request.resource.data.emailVerified is bool)
                       ||
                       (request.resource.data.diff(resource.data).affectedKeys()
-                         .hasOnly(['fcmToken','notifyEnabled'])
-                       || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmToken'])
+                         .hasOnly(['fcmToken','fcmTokens','notifyEnabled'])
+                       && (!('fcmTokens' in request.resource.data)
+                           || (request.resource.data.fcmTokens is list && request.resource.data.fcmTokens.size() <= 5)))
+                      ||
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fcmToken'])
                        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifyEnabled']))
                     ))
                     || isAdminPlanUpdate();
