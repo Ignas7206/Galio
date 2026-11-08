@@ -722,6 +722,7 @@ async function ensureUserDoc(user){
   }
   maybeShowReturnFeatureIntro(existingUserDoc);
   state.storageMode = state.userDoc.storageMode || 'local';
+  try{ if(typeof Notification!=='undefined' && Notification.permission==='granted' && state.userDoc.fcmToken) setupForegroundPush(); }catch(e){}
   // live updates to plan/itemCount/storageMode/aiUsesRemaining
   onSnapshot(ref_, s=>{
     if(s.exists()){
@@ -3360,6 +3361,30 @@ async function testNotification(){
   }
 }
 
+// While the app is open, FCM hands the message to the page instead of showing it,
+// so without this a reminder arriving with the app on screen was silently lost.
+let _fgPushReady = false;
+async function setupForegroundPush(){
+  if(_fgPushReady) return;
+  _fgPushReady = true;
+  try{
+    const { getMessaging, onMessage } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js');
+    const { firebaseApp } = await import('./firebase-config.js');
+    onMessage(getMessaging(firebaseApp), async payload=>{
+      const n = payload.notification || {};
+      const title = n.title || 'Galio', body = n.body || '';
+      try{
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, {
+          body, icon: 'icon-192.png', badge: 'icon-192.png',
+          tag: payload.data?.tag || 'galio-notif',
+          data: { url: 'https://ignas7206.github.io/Galio/' },
+        });
+      }catch(e){ toast(`${title}${body?' — '+body:''}`, 6000); }
+    });
+  }catch(e){ _fgPushReady = false; console.warn('Foreground push setup failed:', e); }
+}
+
 // Returns {ok:true} on success, or {ok:false, reason} so callers can tell the
 // user WHY push wasn't set up instead of silently claiming success — reason
 // is one of: 'offline' | 'unsupported' | 'denied' | 'no-token' | 'error'.
@@ -3382,6 +3407,7 @@ async function requestPushPermission(){
       serviceWorkerRegistration: await navigator.serviceWorker.ready,
     });
     if(!token) return {ok:false, reason:'no-token'};
+    setupForegroundPush();
 
     await updateDoc(doc(db,'users',state.user.uid), { fcmToken: token, notifyEnabled: true });
     return {ok:true};
