@@ -17,7 +17,10 @@ import {
 } from './local-db.js';
 
 const WORKER_URL    = 'https://long-moon-d252.ltdigitaltools.workers.dev';
-const CATEGORIES    = ['Elektronika','Buitinė technika','Avalynė / drabužiai','Baldai','Automobiliai','Kita'];
+const CATEGORIES    = ['Elektronika','Buitinė technika','Įrankiai ir sodas','Avalynė / drabužiai','Baldai','Sportas ir laisvalaikis','Auto prekės','Kita'];
+// Older records used "Automobiliai"; show them under the new name.
+const LEGACY_CATEGORY = { 'Automobiliai': 'Auto prekės' };
+const withCurrentCategory = it => (it && LEGACY_CATEGORY[it.category]) ? { ...it, category: LEGACY_CATEGORY[it.category] } : it;
 const DOC_TYPES     = ['Kvitas / čekis','Sąskaita-faktūra (SF)','Banko išrašas','Kita'];
 const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
 const RETURN_DAY_OPTS = [7,14,30,45,60,90];
@@ -774,7 +777,7 @@ function attachItemsListener(uid, retryCount=0){
     getDocsFromServer(q).then(snap=>{
       if(state.storageMode!=='cloud') return; // mode may have changed while this was in flight
       state.items = snap.docs
-        .map(d=>({id:d.id,...d.data()}))
+        .map(d=>withCurrentCategory({id:d.id,...d.data()}))
         .sort((a,b)=>(b.createdAtMs||0)-(a.createdAtMs||0));
       state.loadingItems = false;
       render();
@@ -787,7 +790,7 @@ function attachItemsListener(uid, retryCount=0){
     state.itemsUnsub = onSnapshot(q, snap=>{
       const wasEmpty = state.loadingItems;
       state.items = snap.docs
-        .map(d=>({id:d.id,...d.data()}))
+        .map(d=>withCurrentCategory({id:d.id,...d.data()}))
         .sort((a,b)=>(b.createdAtMs||0)-(a.createdAtMs||0));
       state.loadingItems = false;
       if(wasEmpty && state.items.length===0 && !state.addPulse){
@@ -818,7 +821,7 @@ function attachItemsListener(uid, retryCount=0){
     localGetAll(uid).then(items=>{
       items.sort((a,b)=>(b.createdAtMs||0)-(a.createdAtMs||0));
       const wasEmpty = state.loadingItems;
-      state.items = items;
+      state.items = items.map(withCurrentCategory);
       state.loadingItems = false;
       if(wasEmpty && state.items.length===0 && !state.addPulse){
         state.addPulse = true;
@@ -1736,7 +1739,7 @@ function renderSettings(){
       </button>` : ''}
     </div>
     <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5;margin:0">
-      ${isCloud?'Jūsų įrašai, dokumentai ir nuotraukos laikomi Galio saugykloje ir pasiekiami prisijungus prie Galio kituose įrenginiuose.':isPremium?'Jūsų įrašai, dokumentai ir nuotraukos dabar laikomi tik šiame įrenginyje. Perkelkite į Galio saugyklą, jei norite juos pasiekti kituose įrenginiuose.':'Nemokamame plane įrašai, dokumentai ir nuotraukos laikomi tik šiame įrenginyje. Galio saugykla įeina į Premium.'}
+      ${isCloud?'Jūsų įrašai, dokumentai ir nuotraukos laikomi Galio saugykloje ir pasiekiami kituose įrenginiuose prisijungus prie savo paskyros.':isPremium?'Jūsų įrašai, dokumentai ir nuotraukos dabar laikomi tik šiame įrenginyje. Perkelkite į Galio saugyklą, jei norite juos pasiekti kituose įrenginiuose.':'Nemokamame plane įrašai, dokumentai ir nuotraukos laikomi tik šiame įrenginyje. Galio saugykla įeina į Premium.'}
     </p>
 
     <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
@@ -4326,7 +4329,7 @@ async function toggleStorageMode(){
   }
 
   const confirmMsg = wantsCloud
-    ? `Perkelti įrašus į Galio saugyklą?\n\nTaip galės veikti automatiniai priminimai, o įrašus pasieksite prisijungę prie Galio.`
+    ? `Perkelti įrašus į Galio saugyklą?\n\nTaip galės veikti automatiniai priminimai, o įrašus pasieksite bet kuriame įrenginyje prisijungę prie savo paskyros.`
     : `Palikti įrašus tik šiame telefone?\n\nJūsų ${state.items.length} įrašai nebebus matomi kituose įrenginiuose, o automatiniai priminimai neveiks.`;
   showConfirmDialog(
     wantsCloud ? 'Perkelti į Galio saugyklą?' : 'Laikyti tik įrenginyje?',
@@ -4738,7 +4741,7 @@ Grąžink TIK JSON be markdown, šios struktūros:
   "quality": "good|blurry|partial|unclear",
   "qualityNote": "trumpas paaiškinimas jei quality nėra 'good', pvz. 'Trūksta apatinės dokumento dalies' arba null",
   "items": [
-    {"name":"tikslus prekės pavadinimas iš dokumento","price":"galutinė už šią prekę sumokėta kaina po jai taikytų nuolaidų (pvz. 39,50 su nuolaida -3,95 → 35,55) arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|Buitinė technika|Avalynė / drabužiai|Baldai|Automobiliai|Kita"}
+    {"name":"tikslus prekės pavadinimas iš dokumento","price":"galutinė už šią prekę sumokėta kaina po jai taikytų nuolaidų (pvz. 39,50 su nuolaida -3,95 → 35,55) arba null","warrantyMonths":24,"warrantyApplies":true,"category":"Elektronika|Buitinė technika|Įrankiai ir sodas|Avalynė / drabužiai|Baldai|Sportas ir laisvalaikis|Auto prekės|Kita"}
   ]
 }
 warrantyMonths kiekvienai prekei:
@@ -4748,7 +4751,7 @@ warrantyMonths kiekvienai prekei:
 - jei warrantyApplies=false, warrantyMonths=null.
 price: jei po prekės eilute yra nuolaida (pvz. „Nuolaida -3,95“, „-30%“), atimk ją iš tos prekės kainos. Bendros čekio nuolaidos neskirstyk.
 returnDays: jei dokumente matosi grąžinimo terminas (pvz. "30 dienų", "return within 30 days"), grąžink tą skaičių. Jei terminas nematomas, grąžink null.
-category kiekvienai prekei: viena iš: Elektronika, Buitinė technika, Avalynė / drabužiai, Baldai, Automobiliai, Kita.
+category kiekvienai prekei: viena iš: Elektronika, Buitinė technika, Įrankiai ir sodas (įrankiai, sodo technika, statybos prekės), Avalynė / drabužiai, Baldai, Sportas ir laisvalaikis (sporto prekės, išmanieji laikrodžiai, dviračiai, žaislai), Auto prekės (padangos, auto priedai), Kita.
 Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tuščią masyvą [].`}
       ]}]})
     });
