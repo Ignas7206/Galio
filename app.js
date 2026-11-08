@@ -1273,7 +1273,7 @@ function renderList(){
     ${planBanner}
     ${notifPromo}
     ${state.searchOpen ? `<div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
-      <div class="search-bar" style="margin:0;flex:1"><i class="ti ti-search"></i><input type="search" id="searchInput" placeholder="Pavadinimas, parduotuvė, dok. nr." value="${esc(state.search)}" /></div>
+      <div class="search-bar" style="margin:0;flex:1"><i class="ti ti-search"></i><input type="text" enterkeyhint="search" autocomplete="off" id="searchInput" placeholder="Pavadinimas, parduotuvė, dok. nr." value="${esc(state.search)}" /></div>
       <button id="searchCloseBtn" aria-label="Uždaryti paiešką" style="width:38px;height:38px;flex-shrink:0;background:var(--bg2);border:none;border-radius:50%;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer"><i class="ti ti-x" style="font-size:18px"></i></button>
     </div>` : `<div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
       <button id="searchOpenBtn" aria-label="Ieškoti" style="width:38px;height:38px;flex-shrink:0;background:none;border:1px solid var(--border2);border-radius:50%;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer"><i class="ti ti-search" style="font-size:17px"></i></button>
