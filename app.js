@@ -938,6 +938,7 @@ window.addEventListener('popstate', () => {
   // form, detail, settings, search) returns to the main list rather than
   // exiting — matches the in-app back button's behavior.
   if(state.lightbox){ state.lightbox=null; render(); return; }
+  if(state.settingsSheet && state.view==='settings'){ state.settingsSheet=null; history.pushState({view:'settings'},'',location.href); render(); return; }
   if(state.qrScanning){ stopQrScanner(); return; }
   if(state.analyzing && state.view==='add'){ requestAnalysisExit('list'); return; }
   if(requestUnsavedAddExit('list')) return;
@@ -1012,6 +1013,7 @@ function _doRender(){
   }
 
   nav.style.display='flex';
+  if(state.view!=='settings') state.settingsSheet=null;
   let html='';
   let viewKey = state.view;
   if(state.view==='list')          html=renderList();
@@ -1771,149 +1773,129 @@ function renderSettings(){
       ? '<i class="ti ti-crown" style="font-size:15px"></i> Premium narys'
       : `Nemokamas planas · ${state.items.length} įrašų`;
 
+  const keepM = keepExpiredMonths();
+  const keepLabel = (EXPIRED_KEEP_OPTIONS.find(o=>o[0]===keepM)||[])[1] || '';
+  const themeOpts = [['auto','Auto','device-mobile'],['light','Šviesi','sun'],['dark','Tamsi','moon']];
+  const themeLabel = (themeOpts.find(o=>o[0]===state.theme)||themeOpts[0])[1];
+  const aiVal = isPremium
+    ? `${state.userDoc?.aiMonthKey===new Date().toISOString().slice(0,7)?(state.userDoc?.aiMonthCount||0):0}/${PREMIUM_MONTHLY_LIMIT} šį mėn.`
+    : `liko ${aiLeft}/${AI_FREE_USES}`;
+  const rowBtn = 'width:100%;background:none;border:none;text-align:left;color:inherit';
+  const chev = '<i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px"></i>';
+  const appVersion = esc((document.querySelector('script[src*="app.js"]')?.src.split('v=')[1])||'?');
+
   return `<div>
     <div class="page-header">
       <span class="page-title">Nustatymai</span>
-      <button class="icon-btn" id="settingsLogoutBtn2"><i class="ti ti-logout" style="font-size:18px"></i></button>
     </div>
 
-    <div class="settings-profile">
-      <div class="settings-avatar">${avatarHtml}</div>
+    <button class="settings-profile tappable" id="settingsAccountBtn" style="width:calc(100% - 32px);border:none;text-align:left;color:inherit;padding:14px 16px">
+      <div class="settings-avatar" style="width:44px;height:44px;font-size:18px">${avatarHtml}</div>
       <div class="settings-profile-info">
         <div class="settings-profile-email">${esc(accountName)}</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(accountEmail)}</div>
-        <div class="settings-profile-plan${isPremium?' premium':''}">
-          ${planLabel}
-        </div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px">${providerLabel} · ID ${esc(uidShort)}</div>
+        <div class="settings-profile-plan${isPremium?' premium':''}">${planLabel}</div>
       </div>
-    </div>
+      ${chev}
+    </button>
 
-    ${needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 16px">
+    ${needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
       <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-      <div class="pb-text" style="color:var(--text)">Premium nepratęstas. Įrašai dar laikomi Galio saugykloje tik tam, kad galėtumėte juos saugiai perkelti į šį įrenginį.</div>
+      <div class="pb-text" style="color:var(--text)">Premium nepratęstas. Perkelkite įrašus į šį įrenginį.</div>
       <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
-    </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 16px">
+    </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 14px">
       <i class="ti ti-crown"></i>
-      <div class="pb-text">Atsinaujinkite į Premium – Galio saugykla, priminimai ir ${PREMIUM_MONTHLY_LIMIT} AI analizių per mėnesį</div>
+      <div class="pb-text">Premium: Galio saugykla, priminimai ir ${PREMIUM_MONTHLY_LIMIT} AI analizių per mėnesį</div>
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
-    ${!state.online ? `<div class="plan-banner" style="background:var(--bg2);margin:0 16px 16px">
+    ${!state.online ? `<div class="plan-banner" style="background:var(--bg2);margin:0 16px 14px">
       <i class="ti ti-wifi-off" style="color:var(--text2)"></i>
-      <div class="pb-text" style="color:var(--text2)">Nėra interneto ryšio. Saugojimo ir priminimų nustatymus galėsite keisti prisijungę.</div>
+      <div class="pb-text" style="color:var(--text2)">Nėra interneto. Saugojimo ir priminimų nustatymus pakeisite prisijungę.</div>
     </div>` : ''}
 
-    <p class="form-label-section" style="margin:0 16px 8px">Įrašų saugojimas</p>
-    <div class="form-section" style="margin:0 16px 10px;overflow:hidden">
-      <div style="display:flex;align-items:center;gap:14px;padding:16px">
-        <i class="ti ti-${isCloud?'cloud':'device-mobile'}" style="font-size:24px;color:var(--accent);flex-shrink:0"></i>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:16px;font-weight:600;color:var(--text)">${isCloud?'Galio saugykloje':'Šiame įrenginyje'}</div>
-          <div style="font-size:13px;color:var(--text3);line-height:1.35;margin-top:2px">${isCloud?'Įrašai ir dokumentai saugomi Galio saugykloje':'Įrašai ir dokumentai saugomi tik šiame įrenginyje'}</div>
-        </div>
-        ${(!isPremium && !isCloud) ? '<i class="ti ti-lock" style="color:var(--text3);font-size:16px;flex-shrink:0"></i>' : ''}
+    <div class="form-section" style="margin:0 16px 14px">
+      <button class="settings-row tappable" id="settingsStorageBtn" style="${rowBtn}">
+        <i class="ti ti-${isCloud?'cloud':'device-mobile'} row-icon"></i><span class="settings-row-label">Įrašų saugojimas</span>
+        <span class="settings-row-val">${isCloud?'Galio saugykla':'Įrenginyje'}</span>${chev}
+      </button>
+      <div class="settings-row">
+        <i class="ti ti-sparkles row-icon"></i><span class="settings-row-label">AI analizės</span>
+        <span class="settings-row-val">${aiVal}</span>
       </div>
-      ${(isPremium || isCloud) ? `<button class="tappable" id="storageModeToggle" ${state.migratingStorage?'disabled':''} style="width:100%;background:none;border:none;border-top:0.5px solid var(--border);padding:14px 16px;font-size:15px;font-weight:600;color:var(--accent);cursor:${state.migratingStorage?'default':'pointer'};text-align:center;opacity:${state.migratingStorage?'0.55':'1'}">
-        ${state.migratingStorage?'Perkeliama...':(isCloud?'Laikyti tik įrenginyje':'Perkelti į Galio saugyklą')}
-      </button>` : ''}
-    </div>
-    <p style="font-size:13px;color:var(--text3);padding:0 16px 20px;line-height:1.5;margin:0">
-      ${isCloud?'Jūsų įrašai, dokumentai ir nuotraukos laikomi Galio saugykloje ir pasiekiami kituose įrenginiuose prisijungus prie savo paskyros.':isPremium?'Jūsų įrašai, dokumentai ir nuotraukos dabar laikomi tik šiame įrenginyje. Perkelkite į Galio saugyklą, jei norite juos pasiekti kituose įrenginiuose.':'Nemokamame plane įrašai, dokumentai ir nuotraukos laikomi tik šiame įrenginyje. Galio saugykla įeina į Premium.'}
-    </p>
-
-    <p class="form-label-section" style="margin:0 16px 8px">AI analizė</p>
-    <div class="form-section" style="margin:0 16px 20px">
-      ${isPremium ? `
-      <div class="detail-row" style="padding:13px 16px">
-        <i class="ti ti-sparkles" style="font-size:18px;color:var(--text3);width:20px"></i>
-        <span class="dr-label">Šiandien</span>
-        <span class="dr-val">${state.userDoc?.aiDayKey===new Date().toISOString().slice(0,10)?(state.userDoc?.aiDayCount||0):0}/${PREMIUM_DAILY_LIMIT}</span>
-      </div>
-      <div class="detail-row" style="padding:13px 16px">
-        <i class="ti ti-calendar" style="font-size:18px;color:var(--text3);width:20px"></i>
-        <span class="dr-label">Šį mėnesį</span>
-        <span class="dr-val">${state.userDoc?.aiMonthKey===new Date().toISOString().slice(0,7)?(state.userDoc?.aiMonthCount||0):0}/${PREMIUM_MONTHLY_LIMIT}</span>
-      </div>` : `
-      <div class="detail-row" style="padding:13px 16px">
-        <i class="ti ti-sparkles" style="font-size:18px;color:var(--text3);width:20px"></i>
-        <span class="dr-label">Liko nemokamų analizių</span>
-        <span class="dr-val">${aiLeft}/${AI_FREE_USES}</span>
-      </div>`}
-    </div>
-
-    <p class="form-label-section" style="margin:0 16px 8px">Pasibaigę įrašai</p>
-    <div class="form-section" style="margin:0 16px 8px;padding:12px 14px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <span style="font-size:15px">Saugoti pasibaigus garantijai</span>
-        <div style="position:relative;flex-shrink:0">
-          <select id="keepExpiredSelect" style="appearance:none;-webkit-appearance:none;width:104px;height:36px;padding:0 30px 0 12px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;line-height:36px;text-align:left;cursor:pointer">
-            ${EXPIRED_KEEP_OPTIONS.map(([m,l])=>`<option value="${m}" ${keepExpiredMonths()===m?'selected':''}>${l}</option>`).join('')}
-          </select>
-          <i class="ti ti-chevron-down" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--text2);pointer-events:none"></i>
-        </div>
-      </div>
-    </div>
-    <p style="font-size:13px;color:var(--text3);margin:0 20px 20px;line-height:1.4">Seni įrašai ištrinami automatiškai atidarius programėlę, kai pasibaigė ir garantija, ir grąžinimo terminas.</p>
-
-    <p class="form-label-section" style="margin:0 16px 8px">Išvaizda</p>
-    <div class="form-section" style="margin:0 16px 20px;padding:14px 16px">
-      <div class="theme-picker">
-        <button class="theme-opt${state.theme==='auto'?' active':''}" data-theme="auto"><i class="ti ti-device-mobile"></i><span>Auto</span></button>
-        <button class="theme-opt${state.theme==='light'?' active':''}" data-theme="light"><i class="ti ti-sun"></i><span>Šviesi</span></button>
-        <button class="theme-opt${state.theme==='dark'?' active':''}" data-theme="dark"><i class="ti ti-moon"></i><span>Tamsi</span></button>
-      </div>
-    </div>
-
-    <p class="form-label-section" style="margin:0 16px 8px">Priminimai</p>
-    <div class="form-section" style="margin:0 16px 20px">
       <div class="settings-row" style="${!isCloud?'opacity:0.65':''}">
         <i class="ti ti-bell row-icon"></i>
-        <div class="settings-row-label">Priminimai<small>${isCloud?'Siunčiami tik pasirinkus priminimus prie įrašo':'Veikia tik kai įrašai Galio saugykloje'}</small></div>
+        <div class="settings-row-label">Priminimai${!isCloud?'<small>Tik su Galio saugykla</small>':''}</div>
         <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
       </div>
-    </div>
-
-    ${isAdmin ? `<p class="form-label-section" style="margin:0 16px 8px">Administravimas</p>
-    <div class="form-section" style="margin:0 16px 20px">
-      <button class="settings-row tappable" id="adminPanelBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-chart-bar row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Admin valdymas</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      <button class="settings-row tappable" id="settingsExpiredBtn" style="${rowBtn}">
+        <i class="ti ti-archive row-icon"></i><span class="settings-row-label">Seni įrašai</span>
+        <span class="settings-row-val">${keepM?`trinti po ${esc(keepLabel)}`:'saugoti visada'}</span>${chev}
       </button>
-    </div>` : ''}
-
-    ${canChangePassword ? `<p class="form-label-section" style="margin:0 16px 8px">Paskyra</p>
-    <div class="form-section" style="margin:0 16px 20px">
-      <button class="settings-row tappable" id="changePwdBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-lock row-icon"></i><span class="settings-row-label">Pakeisti slaptažodį</span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
-      </button>
-    </div>` : ''}
-
-    <p class="form-label-section" style="margin:0 16px 8px">Pagalba</p>
-    <div class="form-section" style="margin:0 16px 20px">
-      <button class="settings-row tappable" id="helpContactBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-help-circle row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Susisiekti su pagalba<small>Rašykite mums tiesiogiai</small></span>
+      <button class="settings-row tappable" id="settingsThemeBtn" style="${rowBtn}">
+        <i class="ti ti-palette row-icon"></i><span class="settings-row-label">Išvaizda</span>
+        <span class="settings-row-val">${themeLabel}</span>${chev}
       </button>
     </div>
 
-    <p class="form-label-section" style="margin:0 16px 8px">Teisinė informacija</p>
-    <div class="form-section" style="margin:0 16px 20px">
-      <a class="settings-row tappable" href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:flex">
-        <i class="ti ti-shield-lock row-icon"></i><span class="settings-row-label">Privatumo politika</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
-      </a>
-      <a class="settings-row tappable" href="terms.html" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;display:flex">
-        <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Naudojimo sąlygos</span><i class="ti ti-external-link" style="color:var(--text3);font-size:14px"></i>
-      </a>
-    </div>
-
-    <div class="form-section" style="margin:0 16px 20px">
-      <button class="settings-row tappable" id="settingsLogoutRow" style="width:100%;background:none;border:none;text-align:left;color:inherit">
-        <i class="ti ti-logout row-icon"></i><span class="settings-row-label">Atsijungti</span>
+    <div class="form-section" style="margin:0 16px 10px">
+      ${isAdmin ? `<button class="settings-row tappable" id="adminPanelBtn" style="${rowBtn}">
+        <i class="ti ti-chart-bar row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Admin valdymas</span>${chev}
+      </button>` : ''}
+      <button class="settings-row tappable" id="helpContactBtn" style="${rowBtn}">
+        <i class="ti ti-help-circle row-icon"></i><span class="settings-row-label">Susisiekti su pagalba</span>${chev}
       </button>
-      <button class="settings-row tappable danger" id="deleteAccountBtn" style="width:100%;background:none;border:none;text-align:left">
-        <i class="ti ti-trash row-icon"></i><span class="settings-row-label">Ištrinti paskyrą</span>
+      <button class="settings-row tappable" id="settingsLegalBtn" style="${rowBtn}">
+        <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Teisinė informacija</span>${chev}
       </button>
     </div>
-    <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 24px">Galio versija ${esc((document.querySelector('script[src*="app.js"]')?.src.split('v=')[1])||'?')}</p>
+    <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 12px">Galio versija ${appVersion}</p>
+    ${renderSettingsSheet({isPremium, isCloud, canChangePassword, accountEmail, providerLabel, uidShort, keepM, themeOpts, appVersion})}
+  </div>`;
+}
 
+// Bottom sheets opened from the settings rows. Anything marked data-close shuts the
+// sheet before its own action runs (see attach code).
+function renderSettingsSheet(o){
+  const k = state.settingsSheet;
+  if(!k) return '';
+  const opt = (attrs, label, selected, cls='') =>
+    `<button class="warranty-opt ${cls}${selected?' selected':''}" data-close ${attrs}>${label}${selected?'<i class="ti ti-check"></i>':''}</button>`;
+  const note = t => `<p style="font-size:14px;color:var(--text2);line-height:1.45;margin:0 20px 14px">${t}</p>`;
+  let title = '', body = '';
+  if(k==='account'){
+    title = 'Paskyra';
+    body = note(`${esc(o.accountEmail)}<br><span style="font-size:12px;color:var(--text3)">${o.providerLabel} · ID ${esc(o.uidShort)}</span>`)
+      + (o.canChangePassword ? `<button class="warranty-opt" data-close id="changePwdBtn">Pakeisti slaptažodį<i class="ti ti-lock" style="color:var(--text3)"></i></button>` : '')
+      + `<button class="warranty-opt" data-close id="settingsLogoutRow">Atsijungti<i class="ti ti-logout" style="color:var(--text3)"></i></button>`
+      + `<button class="warranty-opt" data-close id="deleteAccountBtn" style="color:var(--red)">Ištrinti paskyrą<i class="ti ti-trash" style="color:var(--red)"></i></button>`;
+  }else if(k==='storage'){
+    title = 'Įrašų saugojimas';
+    body = note(o.isCloud
+        ? 'Įrašai, dokumentai ir nuotraukos laikomi Galio saugykloje ir pasiekiami kituose įrenginiuose prisijungus prie savo paskyros.'
+        : o.isPremium
+          ? 'Įrašai, dokumentai ir nuotraukos dabar laikomi tik šiame įrenginyje. Perkelkite į Galio saugyklą, jei norite juos pasiekti kituose įrenginiuose.'
+          : 'Nemokamame plane įrašai, dokumentai ir nuotraukos laikomi tik šiame įrenginyje. Galio saugykla įeina į Premium.')
+      + ((o.isPremium || o.isCloud)
+        ? `<div style="padding:0 20px 8px"><button class="save-btn" data-close id="storageModeToggle" style="margin:0" ${state.migratingStorage?'disabled':''}>${state.migratingStorage?'Perkeliama...':(o.isCloud?'Laikyti tik įrenginyje':'Perkelti į Galio saugyklą')}</button></div>`
+        : `<div style="padding:0 20px 8px"><button class="save-btn" data-close id="upgradeBtnSettings" style="margin:0">Premium</button></div>`);
+  }else if(k==='expired'){
+    title = 'Seni įrašai';
+    body = note('Kai baigiasi ir garantija, ir grąžinimo terminas, Galio po pasirinkto laiko pasiūlys tokius įrašus ištrinti. Be jūsų patvirtinimo niekas netrinama.')
+      + EXPIRED_KEEP_OPTIONS.map(([m,l]) => opt(`data-keep="${m}"`, m ? `Trinti po ${esc(l)}` : 'Saugoti visada', o.keepM===m, 'keep-opt')).join('');
+  }else if(k==='theme'){
+    title = 'Išvaizda';
+    body = o.themeOpts.map(([t,l,ic]) => opt(`data-theme="${t}"`, `<span style="display:flex;align-items:center;gap:12px"><i class="ti ti-${ic}" style="color:var(--text2)"></i>${l}</span>`, state.theme===t, 'theme-row')).join('');
+  }else if(k==='legal'){
+    title = 'Teisinė informacija';
+    body = `<a class="warranty-opt" data-close href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none">Privatumo politika<i class="ti ti-external-link" style="color:var(--text3)"></i></a>`
+      + `<a class="warranty-opt" data-close href="terms.html" target="_blank" rel="noopener" style="text-decoration:none">Naudojimo sąlygos<i class="ti ti-external-link" style="color:var(--text3)"></i></a>`;
+  }
+  return `<div class="warranty-sheet" id="settingsSheet">
+    <div class="warranty-overlay" id="settingsSheetOverlay"></div>
+    <div class="warranty-panel">
+      <div class="warranty-handle"></div>
+      <div class="warranty-title">${title}</div>
+      ${body}
+    </div>
   </div>`;
 }
 
@@ -2927,7 +2909,7 @@ function attachEvents(){
     const c = state.promoLastCode; if(!c) return;
     (navigator.clipboard?.writeText(c)||Promise.reject()).then(()=>toast('Nukopijuota')).catch(()=>toast(c, 8000));
   });
-  onAll('.theme-opt','click',e=>{
+  onAll('.theme-row','click',e=>{
     const t=e.currentTarget.dataset.theme;
     state.theme=t; localStorage.setItem('galio_theme',t); applyTheme(); render();
   });
@@ -2942,7 +2924,16 @@ function attachEvents(){
       .catch(()=>toast('Klaida siunčiant laišką'));
   });
   on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
-  on('keepExpiredSelect','change',e=>changeKeepExpired(parseInt(e.target.value,10)||0));
+  [['settingsAccountBtn','account'],['settingsStorageBtn','storage'],['settingsExpiredBtn','expired'],
+   ['settingsThemeBtn','theme'],['settingsLegalBtn','legal']].forEach(([id,k])=>on(id,'click',()=>{state.settingsSheet=k;render();}));
+  on('settingsSheetOverlay','click',()=>{state.settingsSheet=null;render();});
+  const ss=document.getElementById('settingsSheet');
+  if(ss){
+    // close first, so dialogs opened by the row's own handler are not hidden behind the sheet
+    ss.addEventListener('click',e=>{ if(e.target.closest('[data-close]')) state.settingsSheet=null; },true);
+    ss.addEventListener('click',e=>{ if(e.target.closest('[data-close]') && !state.settingsSheet && document.getElementById('settingsSheet')) render(); });
+  }
+  onAll('.keep-opt','click',e=>{ const m=parseInt(e.currentTarget.dataset.keep,10)||0; if(m!==keepExpiredMonths()) changeKeepExpired(m); });
   on('settingsLogoutRow','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   on('deleteAccountBtn','click',confirmDeleteAccount);
   on('multiCancelBtn','click',()=>{ discardPendingAdd(); state.view='list'; render(); });
