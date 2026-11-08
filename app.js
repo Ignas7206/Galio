@@ -2516,7 +2516,7 @@ async function loadPromoCodes(){
     const {ok, data} = await callFunction('listPromoCodes');
     // Timestamps arrive as ms; wrap them so renderAdminPromo can treat them like Firestore ones.
     const ts = ms => ms ? {toDate:()=>new Date(ms)} : null;
-    state.promoCodes = ok ? (data.codes||[]).map(c=>({...c, createdAt:ts(c.createdAt), usedAt:ts(c.usedAt)})) : [];
+    state.promoCodes = ok ? (data.codes||[]).map(c=>({...c, createdAt:ts(c.createdAt), usedAt:ts(c.usedAt), revokedAt:ts(c.revokedAt)})) : [];
   }catch(e){
     console.warn('promo codes load failed', e);
     state.promoCodes = [];
@@ -2546,10 +2546,25 @@ function renderAdminPromo(){
       ${codes.map(c=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:9px 0;border-bottom:0.5px solid var(--border);font-size:13px">
         <div><div style="font-family:monospace;font-weight:600">${esc(c.code)}</div>
           <div style="color:var(--text3)">${promoMonthsLabel(c.months)}${c.note?` · ${esc(c.note)}`:''} · ${fmt(c.createdAt)}</div></div>
-        <div style="text-align:right;color:${c.usedBy?'var(--text3)':'var(--green)'}">${c.usedBy?`Panaudotas<br>${esc(c.usedByEmail||'')} ${fmt(c.usedAt)}`:'Laisvas'}</div>
+        <div style="text-align:right;color:${c.revokedAt?'var(--red)':c.usedBy?'var(--text3)':'var(--green)'}">${c.revokedAt?`Deaktyvuotas ${fmt(c.revokedAt)}${c.usedByEmail?`<br>${esc(c.usedByEmail)}`:''}`:c.usedBy?`Panaudotas<br>${esc(c.usedByEmail||'')} ${fmt(c.usedAt)}`:'Laisvas'}
+          ${c.revokedAt?'':`<br><button class="promo-revoke" data-code="${esc(c.code)}" style="margin-top:6px;background:none;border:0.5px solid var(--red);color:var(--red);border-radius:8px;padding:4px 10px;font-size:13px;font-weight:600;cursor:pointer">Deaktyvuoti</button>`}</div>
       </div>`).join('')}
     </div>`:''}
   </div>`;
+}
+
+function revokePromoCode(code){
+  const c = (state.promoCodes||[]).find(x=>x.code===code);
+  const msg = c?.usedBy
+    ? `${c.usedByEmail||'Vartotojas'} neteks šiuo kodu suteikto Premium iškart. Apmokėtos prenumeratos tai neliečia.`
+    : 'Kodo nebebus galima panaudoti.';
+  showConfirmDialog('Deaktyvuoti kodą?', msg, async ()=>{
+    try{
+      const {ok, data} = await callFunction('revokePromoCode', {code});
+      if(ok){ toast(data.endsPremium ? 'Kodas deaktyvuotas, Premium atimtas' : 'Kodas deaktyvuotas'); await loadPromoCodes(); }
+      else toast(data.error||'Nepavyko deaktyvuoti');
+    }catch(e){ toast('Nepavyko deaktyvuoti'); }
+  }, {okText:'Deaktyvuoti', align:'center'});
 }
 
 async function createPromoCode(){
@@ -2834,6 +2849,7 @@ function attachEvents(){
   on('playRestoreBtn','click',()=>restorePlayPurchases(true));
   on('promoRedeemBtn','click',redeemPromoCode);
   on('promoCreateBtn','click',createPromoCode);
+  document.querySelectorAll('.promo-revoke').forEach(b=>b.addEventListener('click',()=>revokePromoCode(b.dataset.code)));
   on('promoCopyBtn','click',()=>{
     const c = state.promoLastCode; if(!c) return;
     (navigator.clipboard?.writeText(c)||Promise.reject()).then(()=>toast('Nukopijuota')).catch(()=>toast(c, 8000));
@@ -4904,7 +4920,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     if(p.isPurchaseDocument===false){
       state.form.docData=null; state.form.docMime=null; state.form.docFileName=null;
       state.form.qualityWarning=null;
-      state.docError='Čekis nerastas';
+      state.docError='Pirkimo dokumentas nerastas';
       return;
     }
 
