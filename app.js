@@ -545,8 +545,9 @@ function friendlyAuthError(code){
 let _bootWatchdog = null;
 window.__galioAppStarted = true;
 document.addEventListener('DOMContentLoaded', ()=>{
+  window.__galioBootStep = 'prisijungimo patikra (auth)';
   _bootWatchdog = setTimeout(()=>{
-    if(!state.booted){
+    if(!state.booted || (state.user && !state.userDoc)){
       const scr = document.getElementById('screen');
       if(scr) scr.innerHTML = `
         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;padding:32px;text-align:center">
@@ -555,10 +556,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
           <p style="font-size:14px;color:var(--text2)">Patikrinkite interneto ryšį ir bandykite iš naujo</p>
           <button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:12px;padding:12px 28px;font-size:15px;font-weight:600;cursor:pointer">Bandyti iš naujo</button>
           <button onclick="window.__galioResetCache && window.__galioResetCache()" style="background:none;border:none;color:var(--accent);font-size:14px;cursor:pointer">Išvalyti talpyklą ir perkrauti</button>
-          <p style="font-size:11px;color:var(--text3);word-break:break-word;max-width:320px">${(window.__galioErrors||[]).slice(-3).map(esc).join('<br>') || 'Prisijungimo patikra neatsakė per 10 s'}</p>
+          <p style="font-size:11px;color:var(--text3);word-break:break-word;max-width:320px">Užstrigo: ${esc(window.__galioBootStep||'?')}${(window.__galioErrors||[]).length ? '<br>'+(window.__galioErrors||[]).slice(-3).map(esc).join('<br>') : ''}</p>
         </div>`;
     }
-  }, 10000);
+  }, 12000);
 });
 
 // 2. Analyzing watchdog — jei AI analizė užtrunka >35s, automatiškai atšaukia
@@ -595,7 +596,7 @@ function startViewWatchdog(view){
 function clearViewWatchdog(){ if(_viewWatchdog){ clearTimeout(_viewWatchdog); _viewWatchdog=null; } }
 onAuthStateChanged(auth, async (user)=>{
   state.booted=true;
-  clearTimeout(_bootWatchdog);
+  if(!user) clearTimeout(_bootWatchdog); // logged in: keep watching until the user doc loads
   const wasLoggedIn = !!state.user;
   state.user=user;
   if(user){
@@ -617,6 +618,7 @@ onAuthStateChanged(auth, async (user)=>{
     }
     state._intentionalLogout = false;
   }
+  if(user){ clearTimeout(_bootWatchdog); window.__galioBootStep = 'paruošta'; }
   render();
   if(user) render();
 });
@@ -643,7 +645,9 @@ async function ensureUserDoc(user){
   state.storageError = '';
   state.appDialog = null;
   const ref_ = doc(db,'users',user.uid);
+  window.__galioBootStep = 'paskyros duomenys (getDoc)';
   const snap = await getDoc(ref_);
+  window.__galioBootStep = 'paskyros duomenys gauti';
   const existingUserDoc = snap.exists();
   if(!snap.exists()){
     const initial = {
@@ -652,22 +656,23 @@ async function ensureUserDoc(user){
       emailVerified: user.emailVerified || false,
       createdAt: serverTimestamp(),
     };
+    window.__galioBootStep = 'naujos paskyros kūrimas (setDoc)';
     await setDoc(ref_, initial);
     state.userDoc = initial;
   }else{
     state.userDoc = snap.data();
     // Backfill fields for accounts created before this field existed
     if(state.userDoc.aiUsesRemaining === undefined){
-      try{ await updateDoc(ref_, { aiUsesRemaining: AI_FREE_USES }); }catch(e){}
+      updateDoc(ref_, { aiUsesRemaining: AI_FREE_USES }).catch(()=>{}); // background: don't block the first screen
       state.userDoc.aiUsesRemaining = AI_FREE_USES;
     }
     if(state.userDoc.storageMode === undefined){
-      try{ await updateDoc(ref_, { storageMode: 'local' }); }catch(e){}
+      updateDoc(ref_, { storageMode: 'local' }).catch(()=>{});
       state.userDoc.storageMode = 'local';
     }
     // Atnaujinti emailVerified jei pasikeitė (pvz. vartotojas patvirtino paštą)
     if(state.userDoc.emailVerified !== user.emailVerified){
-      try{ await updateDoc(ref_, { emailVerified: user.emailVerified || false }); }catch(e){}
+      updateDoc(ref_, { emailVerified: user.emailVerified || false }).catch(()=>{});
       state.userDoc.emailVerified = user.emailVerified || false;
     }
   }
