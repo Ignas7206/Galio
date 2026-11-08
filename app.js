@@ -1552,6 +1552,7 @@ function renderDetail(){
             <small>Ji bus rodoma pagrindiniame sąraše vietoje dokumento.</small>
           </span>
         </button>
+        <input type="file" id="detailItemPhotoInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" style="display:none" />
       </div>`;
 
   const itemPrice = extractPriceFromNotes(item.notes);
@@ -2716,9 +2717,10 @@ function attachEvents(){
     render();
   });
   on('detailAddPhotoBtn','click',()=>{
-    document.getElementById('editItemBtn')?.click();
-    document.getElementById('itemPhotoInput')?.click();
+    state._photoTargetItemId = state.selected;
+    document.getElementById('detailItemPhotoInput')?.click();
   });
+  on('detailItemPhotoInput','change',handleItemPhoto);
   on('deleteBtn2','click',()=>deleteItem(state.selected));
   on('checkPolicyBtn','click',()=>{const it=state.items.find(i=>i.id===state.selected);if(it)checkPolicy(it);});
 
@@ -3928,11 +3930,15 @@ function handleItemPhoto(e){
           showAppDialog('Nuotrauka per didelė', `Nuotrauka per didelė net po suspaudimo (${fmtSize(compressedBytes)}). Pabandykite kitą nuotrauką.`, '', {hideSupport:true, align:'center'});
           return;
         }
-        state.form.itemPhotoData = compressed;
-        state.form.itemPhotoMime = 'image/jpeg';
-        state.form.itemPhotoFileName = file.name.replace(/\.[^.]+$/,'.jpg');
-        state.form.itemPhotoStoragePath = null;
-        render();
+        const targetItemId = state._photoTargetItemId; state._photoTargetItemId = null;
+        openPhotoEditor(compressed, edited => {
+          if(targetItemId){ saveDetailItemPhoto(targetItemId, edited); return; }
+          state.form.itemPhotoData = edited;
+          state.form.itemPhotoMime = 'image/jpeg';
+          state.form.itemPhotoFileName = file.name.replace(/\.[^.]+$/,'.jpg');
+          state.form.itemPhotoStoragePath = null;
+          render();
+        });
       }catch(err){
         console.warn('Item photo processing failed:', err);
         showAppDialog('Nuotraukos nepavyko apdoroti', 'Pabandykite kitą nuotrauką arba pakeiskite kameros formatą į JPEG.', '', {hideSupport:true, align:'center'});
@@ -3941,6 +3947,76 @@ function handleItemPhoto(e){
     reader.onerror = ()=>showAppDialog('Nuotraukos nepavyko nuskaityti', 'Pabandykite pasirinkti nuotrauką dar kartą.', '', {hideSupport:true, align:'center'});
     reader.readAsDataURL(file);
   })();
+}
+
+// ── Photo editor: square crop + rotate (Cropper.js, loaded on first use) ──────
+const CROPPER_JS = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js';
+const CROPPER_CSS = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css';
+let _cropperLoad = null;
+function loadCropper(){
+  if(window.Cropper) return Promise.resolve();
+  if(_cropperLoad) return _cropperLoad;
+  _cropperLoad = new Promise((res, rej)=>{
+    const css = document.createElement('link'); css.rel='stylesheet'; css.href=CROPPER_CSS; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src=CROPPER_JS; js.onload=res; js.onerror=()=>{ _cropperLoad=null; rej(new Error('cropper load failed')); };
+    document.head.appendChild(js);
+  });
+  return _cropperLoad;
+}
+
+// Shows the photo full screen with crop/rotate; calls onDone(jpegDataUrl). Lives outside
+// render() so app re-renders cannot destroy it mid-edit.
+async function openPhotoEditor(dataUrl, onDone){
+  try{ await loadCropper(); }catch(e){ onDone(dataUrl); return; } // offline: keep the photo as is
+  const wrap = document.createElement('div');
+  wrap.id = 'photoEditor';
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;display:flex;flex-direction:column';
+  wrap.innerHTML = `
+    <div style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center"><img id="photoEditorImg" style="display:block;max-width:100%;max-height:100%"></div>
+    <div style="display:flex;gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:#111">
+      <button id="peCancel" style="flex:1;padding:14px;border-radius:12px;border:1px solid #444;background:none;color:#ddd;font-size:15px">Atšaukti</button>
+      <button id="peRotate" style="padding:14px 18px;border-radius:12px;border:none;background:#222;color:#fff;font-size:20px" aria-label="Pasukti"><i class="ti ti-rotate-clockwise"></i></button>
+      <button id="peSave" style="flex:1;padding:14px;border-radius:12px;border:none;background:var(--accent,#2f6bff);color:#fff;font-size:15px;font-weight:600">Išsaugoti</button>
+    </div>`;
+  document.body.appendChild(wrap);
+  const img = wrap.querySelector('#photoEditorImg');
+  img.src = dataUrl;
+  const cropper = new window.Cropper(img, { aspectRatio: 1, viewMode: 1, autoCropArea: 0.9, background: false, dragMode: 'move' });
+  const close = ()=>{ try{ cropper.destroy(); }catch(e){} wrap.remove(); };
+  wrap.querySelector('#peCancel').onclick = close;
+  wrap.querySelector('#peRotate').onclick = ()=>cropper.rotate(90);
+  wrap.querySelector('#peSave').onclick = ()=>{
+    const canvas = cropper.getCroppedCanvas({ width: 900, height: 900, imageSmoothingQuality: 'high' });
+    const out = canvas ? canvas.toDataURL('image/jpeg', 0.82) : dataUrl;
+    close();
+    onDone(out);
+  };
+}
+
+// Saves an item photo straight onto an existing record (no edit form).
+async function saveDetailItemPhoto(itemId, dataUrl){
+  const item = state.items.find(i=>i.id===itemId);
+  if(!item || !state.user) return;
+  toast('Saugoma nuotrauka…', 20000);
+  try{
+    const fields = { itemPhotoMime:'image/jpeg', itemPhotoFileName:'daiktas.jpg' };
+    if(state.storageMode==='cloud'){
+      const path = `users/${state.user.uid}/item-photos/${itemId}.jpg`;
+      const url = await uploadDataUrlToStorage(path, dataUrl, 'image/jpeg');
+      Object.assign(fields, { itemPhotoUrl:url, itemPhotoStoragePath:path });
+      await updateDoc(doc(db,'users',state.user.uid,'warranties',itemId), fields);
+    }else{
+      Object.assign(fields, { itemPhotoUrl:dataUrl, itemPhotoStoragePath:null });
+      await localPut(state.user.uid, { ...item, ...fields });
+    }
+    const idx = state.items.findIndex(i=>i.id===itemId);
+    if(idx>=0) state.items[idx] = { ...state.items[idx], ...fields };
+    toast('Nuotrauka išsaugota ✓');
+    render();
+  }catch(e){
+    console.warn('Item photo save failed:', e);
+    toast('Nepavyko išsaugoti nuotraukos. '+(e.message||''), 7000);
+  }
 }
 
 function handleDoc(e){
