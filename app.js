@@ -3084,11 +3084,7 @@ async function saveNotifSettings(skip=false){
   try{
     if(enabled){
       const pushResult = await requestPushPermission();
-      if(pushResult.ok){
-        notifData.fcmTokenUpdated = true;
-      }else{
-        pushBlockedReason = pushResult.reason;
-      }
+      if(!pushResult.ok) pushBlockedReason = pushResult.reason;
     }
 
     const targetIds = Array.isArray(m.itemIds) && m.itemIds.length ? m.itemIds : [m.itemId];
@@ -3121,7 +3117,7 @@ async function saveNotifSettings(skip=false){
     }
   }catch(e){
     console.warn('Notif save error:', e);
-    toast('Nepavyko išsaugoti priminimų');
+    toast(`Nepavyko išsaugoti priminimų (${e?.code||e?.message||'klaida'})`);
   }
 
   state.notifModal = null;
