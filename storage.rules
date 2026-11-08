@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Receipts and invoices
+    match /users/{userId}/documents/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.size > 0
+                   && (request.resource.contentType.matches('image/jpeg')
+                       || request.resource.contentType.matches('image/png')
+                       || request.resource.contentType.matches('image/webp')
+                       || request.resource.contentType.matches('image/heic')
+                       || request.resource.contentType.matches('image/heif')
+                       || request.resource.contentType.matches('application/pdf'))
+                   && isPremiumCloudUser(userId);
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Item photos (shown in the list instead of the receipt). Images only.
+    match /users/{userId}/item-photos/{fileName} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.size > 0
+                   && request.resource.contentType.matches('image/.*')
+                   && isPremiumCloudUser(userId);
+
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    function isPremiumCloudUser(userId) {
+      let userDoc = firestore.get(/databases/(default)/documents/users/$(userId)).data;
+      return (userDoc.plan == 'premium' || userDoc.get('role', '') == 'admin') && userDoc.storageMode == 'cloud';
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -80,7 +80,8 @@ service cloud.firestore {
                        .hasOnly(['name','category','shop','purchaseDate','warrantyEnd',
                                  'warrantyMonths','docType','docNumber','notes',
                                  'notifyEnabled','docUrl','docMime','docFileName','docStoragePath',
-                                 'returnDeadline','notifyDays','notifyReturnDays','notifyRepeatDays']);
+                                 'returnDeadline','notifyDays','notifyReturnDays','notifyRepeatDays',
+                                 'returnDays','itemPhotoUrl','itemPhotoMime','itemPhotoFileName','itemPhotoStoragePath']);
 
       allow delete: if isOwner(userId);
     }
@@ -101,7 +102,7 @@ service cloud.firestore {
 
     function isAdminPlanUpdate() {
       return isAdmin()
-             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plan'])
+             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plan','planSource','subscriptionStatus','premiumDowngradeRequired','premiumRevokedAt'])
              && request.resource.data.plan in ['free', 'premium', 'tester', 'friend'];
     }
 

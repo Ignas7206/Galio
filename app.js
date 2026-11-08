@@ -465,7 +465,44 @@ function lockedDocHtml(compact=false){
     <button class="save-btn" id="upgradeBtnDoc" style="margin-top:14px">Premium</button>`}
   </div>`;
 }
+// Errors must not vanish in 5 s: anything that reads like a failure opens a dialog that
+// stays until dismissed, and the text is e-mailed to the Galio admin automatically.
+const ERROR_TOAST_RE = /^(nepavyko|klaida)|permission|insufficient|unauthorized/i;
+const _reportedErrors = new Set();
+function sendErrorReport(message, source='app'){
+  const key = String(message).slice(0, 200);
+  if(_reportedErrors.has(key) || _reportedErrors.size > 10) return; // once per message, max 10 per session
+  _reportedErrors.add(key);
+  const v = (document.querySelector('script[src*="app.js"]')?.src.split('v=')[1]) || '?';
+  const diag = [
+    `šaltinis: ${source}`, `versija: ${v}`, `ekranas: ${state.view||'-'}`,
+    `vartotojas: ${state.user?.email||'neprisijungęs'} (${state.user?.uid||'-'})`,
+    `saugojimas: ${state.storageMode||'-'}`, `planas: ${state.userDoc?.plan||'-'}`,
+    `žingsnis: ${window.__galioBootStep||'-'}`, `naršyklė: ${navigator.userAgent}`,
+  ].join(' | ');
+  fetch(WORKER_URL + '/contact', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name: 'Galio klaidų pranešimas',
+      email: state.user?.email || 'noreply@galio.app',
+      message: `Automatinis klaidos pranešimas:
+
+${String(message).slice(0, 1500)}`,
+      diag,
+    }),
+  }).catch(()=>{});
+}
+function reportProblem(message){
+  sendErrorReport(message, 'pranešimas vartotojui');
+  showAppDialog('Kažkas nepavyko', `${message}
+
+Apie šią klaidą automatiškai pranešėme Galio komandai.`, '', {hideSupport:true, align:'center'});
+}
+window.addEventListener('error', e => { if(e?.message) sendErrorReport(`${e.message} @${(e.filename||'').split('/').pop()}:${e.lineno||''}`, 'window.onerror'); });
+window.addEventListener('unhandledrejection', e => { const r=e?.reason; sendErrorReport(`promise: ${r?.code||''} ${r?.message||r}`, 'unhandledrejection'); });
+
 function toast(msg, ms=5200){
+  if(ERROR_TOAST_RE.test(String(msg))){ reportProblem(String(msg)); return; }
   document.querySelectorAll('.toast').forEach(e=>e.remove());
   const el=document.createElement('div');el.className='toast';el.textContent=msg;
   el.style.whiteSpace='normal';
@@ -2166,7 +2203,7 @@ function renderAppDialog(){
     <div class="warranty-panel" style="box-sizing:border-box;padding-left:20px;padding-right:20px">
       <div class="warranty-handle"></div>
       <div class="warranty-title">${esc(d.title||'Pranešimas')}</div>
-      <p style="font-size:14px;color:var(--text2);line-height:1.45;margin:0 0 18px;text-align:${textAlign}">${esc(d.message||'')}</p>
+      <p style="font-size:14px;color:var(--text2);line-height:1.45;margin:0 0 18px;text-align:${textAlign};white-space:pre-line;word-break:break-word">${esc(d.message||'')}</p>
       <div style="${actionWrapStyle}">
         ${supportBtn}
         <button id="appDialogOkBtn" class="save-btn" style="${okBtnStyle}">${d.okText || 'Gerai'}</button>
