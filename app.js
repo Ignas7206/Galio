@@ -2561,6 +2561,7 @@ function renderAdminStats(mode='stats'){
       <button class="back-btn" id="adminRefreshBtn" title="Atnaujinti"><i class="ti ti-refresh"></i></button>
     </div>`;
   if(!s) return `<div>${head}<div class="empty-state"><div class="spinner" style="margin:0 auto"></div><p style="margin-top:16px">Kraunama...</p></div></div>`;
+  const fmtDate = t => t ? new Date(t).toLocaleDateString('lt-LT') : '—';
   if(mode==='users') return `<div>
     <div class="page-header-sm">
       <button class="back-btn" id="adminUsersBackBtn"><i class="ti ti-arrow-left"></i></button>
@@ -2609,7 +2610,6 @@ function renderAdminStats(mode='stats'){
   </div>`;
   const x = adminSlices(users, range);
   const section = (t, sub='') => `<p class="form-label-section" style="margin:4px 16px 8px">${t}${sub?` <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text3)">· ${sub}</span>`:''}</p>`;
-  const fmtDate = t => t ? new Date(t).toLocaleDateString('lt-LT') : '—';
 
   return `<div>
     ${head}
