@@ -1859,14 +1859,20 @@ function showNotifModal(itemId, itemData, savedNote=''){
   const savedWarrantyDays = Array.isArray(item.notifyDays) ? item.notifyDays : null;
   const savedReturnDays = Array.isArray(item.notifyReturnDays) ? item.notifyReturnDays : null;
   const defaults = savedWarrantyDays || state._lastNotifDays || suggested;
+  // Only offer reminders that can still fire (fewer days than are left); if none
+  // survive, fall back to a sensible default instead of an empty or useless list.
+  const fitDays = (arr, left, fallback) => {
+    const ok = (arr||[]).filter(d => Number.isFinite(d) && d > 0 && d < left);
+    return ok.length ? ok : (left > fallback ? [fallback] : (left > 1 ? [1] : []));
+  };
 
   state.notifModal = {
     savedNote,
     itemId: firstItemId,
     itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
     enabled: true,
-    selectedDays: warrantyActive ? [...defaults] : [],
-    returnSelectedDays: returnActive ? [...(savedReturnDays || state._lastReturnNotifDays || [3])] : [],
+    selectedDays: warrantyActive ? fitDays(defaults, warrantyDaysLeft, 30) : [],
+    returnSelectedDays: returnActive ? fitDays(savedReturnDays || state._lastReturnNotifDays || [3], returnDaysLeft, 3) : [],
     hasWarranty: hasWarrantyDate,
     hasReturn: hasReturnDate,
     warrantyActive,
@@ -1920,9 +1926,9 @@ function renderNotifModal(){
     </div>`;
   };
 
-  return `<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-end">
-    <div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 34px;max-height:85vh;overflow-y:auto">
-      <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 20px"></div>
+  return `<div id="notifBackdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;display:flex;align-items:flex-end">
+    <div id="notifSheet" style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;padding:20px 20px 34px;max-height:85vh;overflow-y:auto;transition:transform .2s ease">
+      <div id="notifGrab" style="padding:4px 0 16px;margin:-4px 0 4px;cursor:grab"><div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto"></div></div>
       ${state.notifModal?.savedNote?`<div style="text-align:center;font-size:13px;font-weight:600;color:var(--green);margin:0 0 6px"><i class="ti ti-circle-check"></i> ${esc(state.notifModal.savedNote)}</div>`:''}
       <h3 style="font-size:19px;font-weight:750;margin:0 0 18px;text-align:center">Kada priminti?</h3>
       ${m.hasWarranty ? sectionHtml({kind:'warranty', title:'Garantija', active:m.warrantyActive, expired:m.warrantyExpired, days:warrantyDays}) : ''}
@@ -2862,6 +2868,31 @@ function attachEvents(){
   });
   on('notifSaveBtn','click',()=>saveNotifSettings(false));
   on('notifAddWarrantyBtn','click',()=>addNotifReminder('warranty'));
+  // Close the reminder sheet without saving: tap the dimmed area or swipe the sheet down.
+  (()=>{
+    const backdrop = document.getElementById('notifBackdrop');
+    const sheet = document.getElementById('notifSheet');
+    if(!backdrop || !sheet) return;
+    const closeSheet = ()=>{ state.notifModal = null; if(state.view!=='detail') state.view='list'; render(); };
+    backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeSheet(); });
+    let startY = null, dy = 0;
+    sheet.addEventListener('touchstart', e=>{
+      if(sheet.scrollTop > 0) { startY = null; return; }   // let the sheet scroll first
+      startY = e.touches[0].clientY; dy = 0; sheet.style.transition = 'none';
+    }, {passive:true});
+    sheet.addEventListener('touchmove', e=>{
+      if(startY===null) return;
+      dy = Math.max(0, e.touches[0].clientY - startY);
+      sheet.style.transform = `translateY(${dy}px)`;
+    }, {passive:true});
+    sheet.addEventListener('touchend', ()=>{
+      if(startY===null) return;
+      sheet.style.transition = 'transform .2s ease';
+      if(dy > 90){ sheet.style.transform = 'translateY(100%)'; setTimeout(closeSheet, 180); }
+      else sheet.style.transform = '';
+      startY = null;
+    });
+  })();
   on('notifAddReturnBtn','click',()=>addNotifReminder('return'));
   onAll('.notif-remove','click',e=>{
     removeNotifReminder(e.currentTarget.dataset.kind, parseInt(e.currentTarget.dataset.day,10));
