@@ -422,9 +422,6 @@
     <button class="nav-btn active" data-tab="list" id="navList">
       <i class="ti ti-shield-check"></i><span>Garantijos</span>
     </button>
-    <button class="nav-btn" data-tab="search" id="navSearch">
-      <i class="ti ti-search"></i><span>Ieškoti</span>
-    </button>
     <button class="nav-add" id="navAdd"><div class="nav-add-circle"><i class="ti ti-plus"></i></div></button>
     <button class="nav-btn" data-tab="settings" id="navSettings">
       <i class="ti ti-settings"></i><span>Nustatymai</span>
@@ -449,12 +446,12 @@
     document.body.innerHTML = '<div style="font-family:sans-serif;padding:32px;text-align:center"><p style="font-size:16px;font-weight:600">Galio nepasikrovė</p><p style="font-size:12px;color:#888;word-break:break-word">' + (window.__galioErrors.join('<br>') || 'app.js nepaleistas') + '</p><button onclick="__galioResetCache()" style="margin-top:16px;padding:12px 24px;border:none;border-radius:12px;background:#2f6bff;color:#fff;font-size:15px">Išvalyti talpyklą ir perkrauti</button></div>';
   }, 20000);
 </script>
-<script type="module" src="firebase-config.js?v=20261108-2220"></script>
-<script type="module" src="app.js?v=20261108-2220"></script>
+<script type="module" src="firebase-config.js?v=20261108-2340"></script>
+<script type="module" src="app.js?v=20261108-2340"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20261108-2220').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20261108-2340').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
@@ -471,7 +468,6 @@
     }
     // Nav mygtukų listener'iai — vieną kartą
     document.getElementById('navList')?.addEventListener('click',()=>{ window._appNav('list'); });
-    document.getElementById('navSearch')?.addEventListener('click',()=>{ window._appNav('search'); });
     document.getElementById('navSettings')?.addEventListener('click',()=>{ window._appNav('settings'); });
 
     // + mygtukas — tap = picker, long-press = kamera

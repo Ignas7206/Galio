@@ -910,7 +910,7 @@ async function doLogout(){
   state.items=[]; state.userDoc=null; state.storageMode='local'; state.storageError=''; state.appDialog=null;
   state.form=emptyForm(); state.docError='';
   state.policyResult=null; state.policyResultFor=null; state.policyChecking=false;
-  state.search=''; state.lightbox=null;
+  state.search=''; state.searchOpen=false; state.lightbox=null;
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
@@ -1015,7 +1015,7 @@ function _doRender(){
   let html='';
   let viewKey = state.view;
   if(state.view==='list')          html=renderList();
-  else if(state.view==='search')   html=renderSearch();
+  else if(state.view==='search'){ state.view='list'; state.searchOpen=true; html=renderList(); }
   else if(state.view==='add'&&!state.addMode) { html=renderPicker(); viewKey='add-picker'; }
   else if(state.view==='add')      { html=renderAdd(); viewKey='add-form'; }
   else if(state.view==='detail')   html=renderDetail();
@@ -1177,8 +1177,10 @@ function renderList(){
   const valid   =items.filter(i=>{const d=daysLeft(i.warrantyEnd);return d!==null&&d>=0;}).length;
   const isPremium = isPremiumUser();
 
+  const query = state.searchOpen ? normalizeSearchText(state.search) : '';
   const filtered=items
     .filter(i=>filterCat==='Visos'||i.category===filterCat)
+    .filter(i=>!query || itemSearchText(i).includes(query))
     .sort((a,b)=>{
       // Expired warranties always go to the end, whatever the chosen order.
       const ea=(daysLeft(a.warrantyEnd)??0)<0, eb=(daysLeft(b.warrantyEnd)??0)<0;
@@ -1257,7 +1259,7 @@ function renderList(){
     <div class="empty-icon"><i class="ti ti-shield-check"></i></div>
     <h3>Pridėkite pirmą pirkinį</h3>
     <p>Nuskenuokite dokumentą. Galio parodys garantijos pabaigą ir iki kada prekę dar galima grąžinti.</p>
-  </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>Pabandykite kitą kategoriją</p></div>`:'';
+  </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>${query?'Pabandykite kitą žodį':'Pabandykite kitą kategoriją'}</p></div>`:'';
 
   return`<div>
     <div class="page-header">
@@ -1270,7 +1272,11 @@ function renderList(){
     ${offlineBanner}
     ${planBanner}
     ${notifPromo}
-    <div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
+    ${state.searchOpen ? `<div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
+      <div class="search-bar" style="margin:0;flex:1"><i class="ti ti-search"></i><input type="search" id="searchInput" placeholder="Pavadinimas, parduotuvė, dok. nr." value="${esc(state.search)}" /></div>
+      <button id="searchCloseBtn" aria-label="Uždaryti paiešką" style="width:38px;height:38px;flex-shrink:0;background:var(--bg2);border:none;border-radius:50%;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer"><i class="ti ti-x" style="font-size:18px"></i></button>
+    </div>` : `<div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
+      <button id="searchOpenBtn" aria-label="Ieškoti" style="width:38px;height:38px;flex-shrink:0;background:none;border:1px solid var(--border2);border-radius:50%;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer"><i class="ti ti-search" style="font-size:17px"></i></button>
       <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
         <i class="ti ti-filter" style="font-size:15px;flex-shrink:0"></i>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${filterCat}</span>
@@ -1281,7 +1287,7 @@ function renderList(){
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sortBy==='newest'?'Naujausi':sortBy==='expiring'?'Baigiasi':'A–Z'}</span>
         <i class="ti ti-chevron-down" style="font-size:15px;flex-shrink:0"></i>
       </button>
-    </div>
+    </div>`}
     ${state.catDropOpen ? `<div id="catDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
     <div style="position:fixed;left:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       ${['Visos',...CATEGORIES].map(c=>`<button class="sort-drop-item${filterCat===c?' active':''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
@@ -1298,6 +1304,10 @@ function renderList(){
 }
 
 // ── Search ─────────────────────────────────────────────────────────────────
+function itemSearchText(i){
+  return normalizeSearchText([i.name,i.shop,i.category,i.docType,i.docNumber,i.notes,
+    i.purchaseDate,i.warrantyEnd,i.returnDeadline].filter(Boolean).join(' '));
+}
 function renderSearch(){
   const q=state.search;
   const query=normalizeSearchText(q);
@@ -2659,6 +2669,11 @@ function attachEvents(){
     state.selected=e.currentTarget.dataset.id;state.view='detail';render();
   });
 
+  on('searchOpenBtn','click',()=>{
+    state.searchOpen=true; state.catDropOpen=false; state.sortDropOpen=false; render();
+    document.getElementById('searchInput')?.focus();
+  });
+  on('searchCloseBtn','click',()=>{ state.searchOpen=false; state.search=''; render(); });
   on('searchInput','input',e=>{
     state.search=e.target.value;
     clearTimeout(state._searchDebounce);
