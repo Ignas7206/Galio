@@ -1,4 +1,4 @@
-const CACHE = 'galio-v13';
+const CACHE = 'galio-v14';
 const BASE = '/Galio';
 const ASSETS = [
   BASE + '/icon-192.png',
@@ -39,7 +39,9 @@ self.addEventListener('fetch', e => {
 
   if (NETWORK_FIRST.includes(reqUrl.pathname)) {
     e.respondWith(
-      fetch(e.request)
+      // no-cache = always revalidate with GitHub Pages; otherwise its 10-minute
+      // max-age can keep serving a stale (or broken) app shell after a deploy.
+      fetch(reqUrl.href, { cache: 'no-cache', credentials: 'same-origin' })
         .then(res => {
           const copy = res.clone();
           caches.open(CACHE).then(c => c.put(e.request, copy));

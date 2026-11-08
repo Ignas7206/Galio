@@ -432,12 +432,12 @@
   </nav>
 </div>
 
-<script type="module" src="firebase-config.js?v=20261108-1520"></script>
-<script type="module" src="app.js?v=20261108-1520"></script>
+<script type="module" src="firebase-config.js?v=20261108-1530"></script>
+<script type="module" src="app.js?v=20261108-1530"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20261108-1520').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20261108-1530').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
