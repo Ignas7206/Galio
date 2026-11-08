@@ -1978,7 +1978,8 @@ function renderPremium(){
           </div>
         </div>`).join('')}
     </div>
-    <div style="padding:8px 16px 32px">
+    <div style="height:16px"></div>
+    <div style="position:sticky;bottom:0;z-index:5;padding:14px 16px 16px;background:var(--bg);border-top:0.5px solid var(--border);box-shadow:0 -8px 16px rgba(0,0,0,.18)">
       ${renderPremiumBuy()}
     </div>
   </div>`;
