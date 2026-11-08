@@ -2674,34 +2674,43 @@ function attachEvents(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn);};
   const onAll=(sel,ev,fn)=>document.querySelectorAll(sel).forEach(el=>el.addEventListener(ev,fn));
 
-  // Swipe-to-delete on list cards
+  // Swipe-to-delete on list cards. Only a clearly sideways swipe counts (a scroll that
+  // drifts sideways is ignored), and it must cover ~45% of the card to ask about deleting.
   onAll('.swipe-wrap','touchstart',e=>{
     const id=e.currentTarget.dataset.swipeId;
-    state.swipe={id,startX:e.touches[0].clientX,currentX:0,dragging:true};
+    state.swipe={id,startX:e.touches[0].clientX,startY:e.touches[0].clientY,currentX:0,dragging:true,dir:null};
   });
   onAll('.swipe-wrap','touchmove',e=>{
-    if(!state.swipe.dragging||state.swipe.id!==e.currentTarget.dataset.swipeId)return;
-    const dx=e.touches[0].clientX-state.swipe.startX;
-    if(dx<0){
-      state.swipe.currentX=Math.max(dx,-88);
-      if(Math.abs(state.swipe.currentX)>8) state.swipe.justSwiped=true;
-      const card=e.currentTarget.querySelector('.card');
-      if(card)card.style.transform=`translateX(${state.swipe.currentX}px)`;
+    const sw=state.swipe;
+    if(!sw.dragging||sw.id!==e.currentTarget.dataset.swipeId)return;
+    const dx=e.touches[0].clientX-sw.startX, dy=e.touches[0].clientY-sw.startY;
+    if(!sw.dir){
+      if(Math.abs(dx)<14 && Math.abs(dy)<14) return;           // not decided yet
+      sw.dir = (dx<0 && Math.abs(dx) > Math.abs(dy)*2) ? 'x' : 'y';
+      if(sw.dir==='y'){ sw.dragging=false; return; }             // a scroll: leave the card alone
     }
-  });
-  onAll('.swipe-wrap','touchend',e=>{
-    if(!state.swipe.dragging||state.swipe.id!==e.currentTarget.dataset.swipeId)return;
     const card=e.currentTarget.querySelector('.card');
-    const id=state.swipe.id;
-    if(state.swipe.currentX<-60){
-      if(card)card.style.transform='translateX(-88px)';
-      // confirm via tap on revealed delete area is implicit; auto-trigger confirm dialog
-      setTimeout(()=>{ if(card)card.style.transform=''; deleteItem(id); },80);
-    } else {
-      if(card)card.style.transform='';
-    }
-    state.swipe={id:null,startX:0,currentX:0,dragging:false};
+    const w=card?card.offsetWidth:320;
+    sw.currentX=Math.max(Math.min(dx,0),-w*0.6);
+    if(Math.abs(sw.currentX)>8) sw.justSwiped=true;
+    if(card){ card.style.transition='none'; card.style.transform=`translateX(${sw.currentX}px)`; }
   });
+  const endSwipe=e=>{
+    const sw=state.swipe;
+    if(sw.id!==e.currentTarget.dataset.swipeId)return;
+    const card=e.currentTarget.querySelector('.card');
+    const id=sw.id;
+    const w=card?card.offsetWidth:320;
+    if(card) card.style.transition='';
+    if(sw.dir==='x' && sw.currentX < -Math.max(120, w*0.45)){
+      setTimeout(()=>{ if(card)card.style.transform=''; deleteItem(id); },80);
+    } else if(card) card.style.transform='';
+    state.swipe={id:null,startX:0,startY:0,currentX:0,dragging:false,dir:null,justSwiped:!!sw.justSwiped};
+    // Swallow only the click that may follow this swipe, not the next real tap.
+    if(sw.justSwiped) setTimeout(()=>{ state.swipe.justSwiped=false; },350);
+  };
+  onAll('.swipe-wrap','touchend',endSwipe);
+  onAll('.swipe-wrap','touchcancel',endSwipe);
 
   on('resendVerifyBtn','click',resendVerification);
   on('notifPromoBanner','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
