@@ -372,8 +372,8 @@ function confirmExpiredTerms({warrantyEnd, returnDeadline, label='Šios prekės'
   }
   if(isExpiredDate(returnDeadline)){
     showAppDialog(
-      'Grąžinimo laikas pasibaigęs',
-      `Nemokamo grąžinimo terminas baigėsi ${fmtDate(returnDeadline)}. Įrašą išsaugosime, nes garantija dar galioja.`,
+      'Garantija dar galioja ✓',
+      `Grąžinti prekės nebegalima (terminas baigėsi ${fmtDate(returnDeadline)}), bet garantija dar galioja. Įrašą išsaugosime ir priminsime, kol ji nesibaigė.`,
       '',
       {hideSupport:true, align:'center', onOk:onProceed}
     );
@@ -3508,8 +3508,8 @@ async function saveMultiItems(){
     return;
   }else if(expiredReturn.length){
     showAppDialog(
-      'Grąžinimo laikas pasibaigęs',
-      `Nemokamo grąžinimo terminas baigėsi ${fmtDate(returnDeadlineForReceipt)}. Įrašus išsaugosime, nes garantijos dar galioja.`,
+      'Garantijos dar galioja ✓',
+      `Grąžinti prekių nebegalima (terminas baigėsi ${fmtDate(returnDeadlineForReceipt)}), bet garantijos dar galioja. Įrašus išsaugosime ir priminsime, kol jos nesibaigė.`,
       '',
       {hideSupport:true, align:'center', onOk: finishSaveMultiItems}
     );
