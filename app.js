@@ -4878,7 +4878,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     if(p.isPurchaseDocument===false){
       state.form.docData=null; state.form.docMime=null; state.form.docFileName=null;
       state.form.qualityWarning=null;
-      state.docError='Nuotraukoje neatpažintas pirkimo dokumentas (čekis ar sąskaita), todėl ji neprisegta. Nufotografuokite čekį arba įveskite duomenis rankiniu būdu.';
+      state.docError='Čekio neradome. Nufotografuokite čekį ar sąskaitą.';
       return;
     }
 
