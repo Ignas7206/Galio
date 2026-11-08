@@ -2057,15 +2057,8 @@ function renderPremiumBuy(){
 
 async function verifyPurchaseToken(purchaseToken){
   if(!purchaseToken) return {ok:false, error:'Negautas pirkimo patvirtinimas'};
-  const idToken = await state.user.getIdToken();
-  const r = await fetch(VERIFY_PURCHASE_URL,{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
-    body:JSON.stringify({purchaseToken})
-  });
-  let data = {};
-  try{ data = await r.json(); }catch(e){}
-  return {ok: r.ok && !!data.ok, error: data.error || 'Nepavyko patikrinti pirkimo'};
+  const {ok, data} = await callFunction('verifyPlayPurchase', {purchaseToken});
+  return {ok: ok && !!data.ok, error: data.error || 'Nepavyko patikrinti pirkimo'};
 }
 
 async function buyPremium(sku){
@@ -2393,16 +2386,27 @@ const FUNCTIONS_BASE = 'https://europe-west1-garantijos-4f397.cloudfunctions.net
 const PROMO_MONTH_OPTIONS = [1,3,6,12,0]; // 0 = unlimited
 const promoMonthsLabel = m => m===0 ? 'Neribotai' : `${m} mėn.`;
 
-async function callFunction(name, payload){
-  const idToken = await state.user.getIdToken();
-  const r = await fetch(`${FUNCTIONS_BASE}/${name}`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
-    body:JSON.stringify(payload||{})
-  });
-  let data = {};
-  try{ data = await r.json(); }catch(e){}
-  return {ok:r.ok, data};
+// Server calls never hang silently: after 25 s the caller gets a clear "took too long" error.
+async function callFunction(name, payload, timeoutMs=25000){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), timeoutMs);
+  try{
+    const idToken = await state.user.getIdToken();
+    const r = await fetch(`${FUNCTIONS_BASE}/${name}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
+      body:JSON.stringify(payload||{}),
+      signal: ctrl.signal,
+    });
+    let data = {};
+    try{ data = await r.json(); }catch(e){}
+    return {ok:r.ok, data};
+  }catch(e){
+    if(e?.name==='AbortError') return {ok:false, data:{error:'Serveris neatsakė per 25 s. Patikrinkite ryšį ir bandykite dar kartą.'}};
+    throw e;
+  }finally{
+    clearTimeout(timer);
+  }
 }
 
 async function loadPromoCodes(){
@@ -2465,8 +2469,10 @@ async function redeemPromoCode(){
   if(!code){ toast('Įveskite kodą'); return; }
   if(!state.online){ offlineDialog('Kodui reikia interneto','Kodą galėsite panaudoti, kai bus interneto ryšys.'); return; }
   state.promoRedeemBusy = true; render();
+  toast('Tikrinamas kodas…', 25000);
   try{
     const {ok, data} = await callFunction('redeemPromoCode', {code});
+    document.querySelectorAll('.toast').forEach(t=>t.remove());
     if(ok && data.ok){
       const msg = data.expiresAt ? `Kodas panaudotas. Premium galioja iki ${new Date(data.expiresAt).toLocaleDateString('lt-LT')}.` : 'Kodas panaudotas. Premium galioja neribotai.';
       showAppDialog('Premium įjungtas ✓', msg, '', {hideSupport:true});
@@ -2483,7 +2489,7 @@ function renderPromoRedeem(){
   const busy = state.promoRedeemBusy;
   return `<div style="display:flex;gap:8px;margin-top:14px">
       <input id="promoRedeemInput" maxlength="32" autocapitalize="characters" placeholder="Turite kodą?" style="flex:1;padding:12px;border-radius:12px;border:0.5px solid var(--border);background:var(--bg2);color:var(--text);font-size:15px;text-transform:uppercase">
-      <button id="promoRedeemBtn" style="padding:12px 16px;border-radius:12px;border:none;background:var(--bg3);color:var(--accent);font-weight:600;font-size:15px;cursor:pointer" ${busy?'disabled':''}>${busy?'...':'Panaudoti'}</button>
+      <button id="promoRedeemBtn" style="padding:12px 16px;border-radius:12px;border:none;background:var(--bg3);color:var(--accent);font-weight:600;font-size:15px;cursor:pointer" ${busy?'disabled':''}>${busy?'Tikrinama…':'Panaudoti'}</button>
     </div>`;
 }
 
