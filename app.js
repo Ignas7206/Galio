@@ -79,7 +79,7 @@ let state = {
   adminUsers: [],
   adminSearch: '',
   adminPlanFilter: 'all',
-  adminSort: 'email',
+  adminSort: 'active',
   theme: localStorage.getItem('galio_theme') || 'auto',
 };
 try{
