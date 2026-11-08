@@ -184,9 +184,9 @@
     .empty-state p { font-size: 16px; color: var(--text2); line-height: 1.5; margin-bottom: 24px; }
 
     /* Two big choices that fill the screen, so it does not look like options are missing. */
-    .picker-page { display: flex; flex-direction: column; min-height: calc(100dvh - var(--nav-h) - var(--safe-top) - var(--safe-bottom)); }
-    .picker-cards { flex: 1; padding: 16px 16px 20px; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
-    .picker-card { flex: 1; max-height: 340px; background: var(--bg2); border: none; border-radius: var(--radius-lg); padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; width: 100%; transition: opacity 0.1s; }
+    .picker-page { display: flex; flex-direction: column; height: 100%; }
+    .picker-cards { flex: 1; min-height: 0; padding: 16px 16px 20px; display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+    .picker-card { flex: 1 1 0; min-height: 150px; max-height: 340px; background: var(--bg2); border: none; border-radius: var(--radius-lg); padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; text-align: center; width: 100%; transition: opacity 0.1s; }
     .picker-card > div:last-child { max-width: 280px; }
     .picker-card:active { opacity: 0.7; }
     .picker-card:disabled { opacity: 0.5; }
@@ -449,12 +449,12 @@
     document.body.innerHTML = '<div style="font-family:sans-serif;padding:32px;text-align:center"><p style="font-size:16px;font-weight:600">Galio nepasikrovė</p><p style="font-size:12px;color:#888;word-break:break-word">' + (window.__galioErrors.join('<br>') || 'app.js nepaleistas') + '</p><button onclick="__galioResetCache()" style="margin-top:16px;padding:12px 24px;border:none;border-radius:12px;background:#2f6bff;color:#fff;font-size:15px">Išvalyti talpyklą ir perkrauti</button></div>';
   }, 20000);
 </script>
-<script type="module" src="firebase-config.js?v=20261109-0125"></script>
-<script type="module" src="app.js?v=20261109-0125"></script>
+<script type="module" src="firebase-config.js?v=20261109-0140"></script>
+<script type="module" src="app.js?v=20261109-0140"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20261109-0125').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20261109-0140').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
