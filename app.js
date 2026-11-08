@@ -1898,6 +1898,9 @@ function showNotifModal(itemId, itemData, savedNote=''){
     return;
   }
 
+  // Opened from an item's page: show exactly what is saved (nothing saved = no rows).
+  // Opened right after saving a new item: pre-fill suggested reminders.
+  const editingExisting = state.view === 'detail';
   const suggested = warrantyActive ? suggestNotifDays(item?.warrantyMonths, returnActive) : [];
   // Editing an existing item should show its saved choices. New items use the last preference.
   const savedWarrantyDays = Array.isArray(item.notifyDays) ? item.notifyDays : null;
@@ -1907,16 +1910,18 @@ function showNotifModal(itemId, itemData, savedNote=''){
   // survive, fall back to a sensible default instead of an empty or useless list.
   const fitDays = (arr, left, fallback) => {
     const ok = (arr||[]).filter(d => Number.isFinite(d) && d > 0 && d < left);
+    if(editingExisting) return ok;
     return ok.length ? ok : (left > fallback ? [fallback] : (left > 1 ? [1] : []));
   };
+  const savedOff = editingExisting && item.notifyEnabled === false;
 
   state.notifModal = {
     savedNote,
     itemId: firstItemId,
     itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
     enabled: true,
-    selectedDays: warrantyActive ? fitDays(defaults, warrantyDaysLeft, 30) : [],
-    returnSelectedDays: returnActive ? fitDays(savedReturnDays || state._lastReturnNotifDays || [3], returnDaysLeft, 3) : [],
+    selectedDays: warrantyActive && !savedOff ? fitDays(editingExisting ? savedWarrantyDays : defaults, warrantyDaysLeft, 30) : [],
+    returnSelectedDays: returnActive && !savedOff ? fitDays(editingExisting ? savedReturnDays : (savedReturnDays || state._lastReturnNotifDays || [3]), returnDaysLeft, 3) : [],
     hasWarranty: hasWarrantyDate,
     hasReturn: hasReturnDate,
     warrantyActive,
@@ -1925,7 +1930,7 @@ function showNotifModal(itemId, itemData, savedNote=''){
     returnExpired,
     item,
   };
-  state.view='list';
+  if(!editingExisting) state.view='list';
   render();
 }
 
@@ -1942,9 +1947,9 @@ function renderNotifModal(){
     return `<div class="notif-row" data-kind="${kind}" data-day="${day}" style="display:grid;grid-template-columns:76px 1fr 38px;gap:8px;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:10px;margin-bottom:8px">
       <input class="notif-amount" data-kind="${kind}" data-day="${day}" type="number" min="1" max="99" value="${amount}" inputmode="numeric" style="width:100%;height:40px;border:none;background:var(--bg);border-radius:10px;color:var(--text);font-size:16px;font-weight:700;text-align:center;padding:0 8px">
       <select class="notif-unit" data-kind="${kind}" data-day="${day}" style="width:100%;height:40px;border:none;background:var(--bg);border-radius:10px;color:var(--text);font-size:14px;font-weight:650;padding:0 10px">
-        <option value="1" ${unit==='1'?'selected':''}>dienos prieš</option>
-        <option value="7" ${unit==='7'?'selected':''}>savaitės prieš</option>
-        <option value="30" ${unit==='30'?'selected':''}>mėnesiai prieš</option>
+        <option value="1" ${unit==='1'?'selected':''}>d. prieš</option>
+        <option value="7" ${unit==='7'?'selected':''}>sav. prieš</option>
+        <option value="30" ${unit==='30'?'selected':''}>mėn. prieš</option>
       </select>
       <button class="notif-remove" data-kind="${kind}" data-day="${day}" aria-label="Pašalinti priminimą" style="width:38px;height:38px;border:none;background:transparent;color:var(--text3);display:flex;align-items:center;justify-content:center"><i class="ti ti-x" style="font-size:20px"></i></button>
     </div>`;
