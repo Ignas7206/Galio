@@ -529,6 +529,7 @@ function showAppDialog(title, message, supportDraft='', options={}){
     supportText: options.supportText || '',
     supportAction: options.supportAction || '',
     onOk: options.onOk || null,
+    onCancel: options.onCancel || null,
   };
   render();
 }
@@ -543,6 +544,7 @@ function showConfirmDialog(title, message, onConfirm, options={}){
     supportText: options.cancelText || 'Atšaukti',
     supportAction: 'cancel',
     onOk: onConfirm,
+    onCancel: options.onCancel || null,
   });
 }
 function maybeShowReturnFeatureIntro(existingUserDoc=false){
@@ -624,7 +626,7 @@ function startAnalyzeWatchdog(){
 }
 function clearAnalyzeWatchdog(){ if(_analyzeWatchdog){ clearTimeout(_analyzeWatchdog); _analyzeWatchdog=null; } }
 
-// 3. View stuck watchdog — jei per 15s nepavyko įkrauti admin stats, grįžta atgal
+// 3. View stuck watchdog — jei per 95s nepavyko įkrauti admin stats, grįžta atgal
 let _viewWatchdog = null;
 function startViewWatchdog(view){
   clearViewWatchdog();
@@ -688,8 +690,10 @@ function stopEmailVerifyPoll(){ if(verifyPollTimer){clearInterval(verifyPollTime
 // No saved copy (first sign-in on this device) -> keep waiting for the server.
 async function getDocFast(ref_){
   const server = getDoc(ref_);
-  const timer = new Promise(r => setTimeout(() => r('slow'), 5000));
+  let t;
+  const timer = new Promise(r => { t = setTimeout(() => r('slow'), 5000); });
   const first = await Promise.race([server, timer]).catch(e => e);
+  clearTimeout(t);
   if(first !== 'slow' && !(first instanceof Error)) return first;
   window.__galioBootStep = 'paskyros duomenys (lėtas ryšys)';
   try{
@@ -707,6 +711,8 @@ async function ensureUserDoc(user){
   const snap = await getDocFast(ref_);
   window.__galioBootStep = 'paskyros duomenys gauti';
   const existingUserDoc = snap.exists();
+  // Data from the on-device copy may be old: show it, but change nothing until the server answers.
+  const stale = !!snap.metadata?.fromCache;
   if(!snap.exists()){
     const initial = {
       email:user.email, plan:'free', itemCount:0, notifyEnabled:true,
@@ -722,21 +728,22 @@ async function ensureUserDoc(user){
   }else{
     state.userDoc = snap.data();
     // Backfill fields for accounts created before this field existed
-    if(state.userDoc.aiUsesRemaining === undefined){
+    if(stale){ /* fresh data comes through onSnapshot below */ }
+    else if(state.userDoc.aiUsesRemaining === undefined){
       updateDoc(ref_, { aiUsesRemaining: AI_FREE_USES }).catch(()=>{}); // background: don't block the first screen
       state.userDoc.aiUsesRemaining = AI_FREE_USES;
     }
-    if(state.userDoc.storageMode === undefined){
+    if(!stale && state.userDoc.storageMode === undefined){
       updateDoc(ref_, { storageMode: 'local' }).catch(()=>{});
       state.userDoc.storageMode = 'local';
     }
     // Atnaujinti emailVerified jei pasikeitė (pvz. vartotojas patvirtino paštą)
-    if(state.userDoc.emailVerified !== user.emailVerified){
+    if(!stale && state.userDoc.emailVerified !== user.emailVerified){
       updateDoc(ref_, { emailVerified: user.emailVerified || false }).catch(()=>{});
       state.userDoc.emailVerified = user.emailVerified || false;
     }
   }
-  maybeShowReturnFeatureIntro(existingUserDoc);
+  if(!stale) maybeShowReturnFeatureIntro(existingUserDoc);
   state.storageMode = state.userDoc.storageMode || 'local';
   try{ if(typeof Notification!=='undefined' && Notification.permission==='granted' && (state.userDoc.fcmToken || state.userDoc.fcmTokens?.length)) setupForegroundPush(); }catch(e){}
   // live updates to plan/itemCount/storageMode/aiUsesRemaining
@@ -754,11 +761,11 @@ async function ensureUserDoc(user){
         attachItemsListener(state.user.uid);
       }
       render();
-      autoMoveToCloud();
+      if(!s.metadata.fromCache) autoMoveToCloud();
     }
   });
   restorePlayPurchases();
-  setTimeout(autoMoveToCloud, 1500);
+  if(!stale) setTimeout(autoMoveToCloud, 1500);
 }
 
 // ── Items listener abstraction ──────────────────────────────────────────
@@ -2697,7 +2704,7 @@ function renderAdminUserSheet(){
   const fmtDT = t => t ? new Date(t).toLocaleString('lt-LT', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
   const plan = kind==='purchased' ? `Moka · ${u.playProductId==='galio_premium_yearly'?'metinis':'mėnesinis'}` : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Administratorius' : 'Nemokamas';
   const rows = [
-    ['Planas', plan + (u.premiumExpiresMs && kind!=='free' && kind!=='admin' ? ` (iki ${new Date(u.premiumExpiresMs).toLocaleDateString('lt-LT')})` : '')],
+    ['Planas', plan + (u.premiumExpiresMs && kind==='promo' ? ` (iki ${new Date(u.premiumExpiresMs).toLocaleDateString('lt-LT')})` : '')],
     ['Paskutinį kartą aktyvus', `${adminAgo(u.lastActiveMs)}`],
     ['Paskutinis prisijungimas', fmtDT(u.lastSignInMs)],
     ['Užsiregistravo', fmtDT(u.createdMs)],
@@ -3324,7 +3331,9 @@ function attachEvents(){
       return;
     }
     if(state.appDialog?.supportAction==='cancel'){
+      const onCancel = state.appDialog.onCancel;
       state.appDialog=null;
+      if(onCancel) onCancel();
       render();
       return;
     }
@@ -3372,7 +3381,8 @@ function attachEvents(){
   });
   onAll('[data-action="togglePremium"]','click', e=>{
     const uid = e.currentTarget.dataset.uid;
-    state.adminUserSheet = null;
+    const reopen = state.adminUserSheet;
+    state.adminUserSheet = null; // the card would cover the confirm window
     const user = state.adminUsers?.find(u=>u.uid===uid);
     if(!user) return;
     const kind = premiumKind(user);
@@ -3381,8 +3391,8 @@ function attachEvents(){
     showConfirmDialog(
       newPlan==='premium' ? 'Suteikti Premium?' : 'Nuimti Premium?',
       `${newPlan==='premium'?'Suteikti Premium planą':'Nuimti suteiktą Premium'} vartotojui ${user.email}?`,
-      ()=>applyAdminPremiumToggle(uid, newPlan),
-      {align:'center'}
+      async ()=>{ await applyAdminPremiumToggle(uid, newPlan); if(reopen && state.view==='admin-users'){ state.adminUserSheet = reopen; render(); } },
+      {align:'center', onCancel: ()=>{ if(reopen) state.adminUserSheet = reopen; }}
     );
   });
 }
@@ -3399,6 +3409,7 @@ async function applyAdminPremiumToggle(uid, newPlan){
     });
     user.plan = newPlan;
     user.planSource = newPlan==='premium' ? 'manual' : '';
+    user.premiumExpiresMs = 0;
     user.subscriptionStatus = '';
     user.premiumDowngradeRequired = newPlan==='free';
     toast(newPlan==='premium' ? `✓ ${user.email} dabar Premium` : `✓ ${user.email} grąžintas į nemokamą planą`);
@@ -3657,7 +3668,7 @@ async function testNotification(){
     if(state.storageMode!=='cloud'){
       toast('2/2 Siunčiamas tiesioginis testas...');
       const directUrl = `https://europe-west1-garantijos-4f397.cloudfunctions.net/testWarrantyNotification?uid=${state.user.uid}&date=${today()}&direct=1`;
-      const resp = await fetch(directUrl);
+      const resp = await fetch(directUrl, { headers: { Authorization: 'Bearer ' + await state.user.getIdToken() } });
       const data = await resp.json();
       if(data.sent>0){
         showAppDialog(
@@ -3690,7 +3701,7 @@ async function testNotification(){
     // 3. Iškviesti Cloud Function (patikrina daysLeft, siunčia tikrą push)
     toast('3/4 Kviečiamas serveris...');
     const fnUrl = `https://europe-west1-garantijos-4f397.cloudfunctions.net/testWarrantyNotification?uid=${state.user.uid}&date=${today()}`;
-    const resp = await fetch(fnUrl);
+    const resp = await fetch(fnUrl, { headers: { Authorization: 'Bearer ' + await state.user.getIdToken() } });
     const data = await resp.json();
 
     // 4. Ištrinti laikiną įrašą
