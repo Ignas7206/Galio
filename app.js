@@ -1154,39 +1154,53 @@ function _doRender(){
 }
 
 // ── Onboarding ─────────────────────────────────────────────────────────────
-const ONBOARD_SLIDES = [
-  { icon:'ti-camera', bg:'var(--accent-bg)', color:'var(--accent)', title:'Nufotografuok dokumentą', text:'AI automatiškai atpažįsta produktą, parduotuvę ir datas iš nuotraukos ar PDF per kelias sekundes.' },
-  { icon:'ti-rotate-2', bg:'rgba(59,130,246,.14)', color:'#60a5fa', title:'Nepražiopsok grąžinimo', text:'Pirk internetu ramiau: nuskenuok dokumentą, o Galio parodys tikslią datą iki kada gali grąžinti prekę ir leis pasirinkti priminimą prieš terminą.' },
-  { icon:'ti-device-laptop', bg:'var(--orange-bg)', color:'var(--orange)', title:'Sąskaita kompiuteryje?', text:'Ne bėda — atidaryk ją ekrane ir nufotografuok telefonu. AI perskaito net ir ekrano nuotrauką.' },
-  { icon:'ti-bell-ringing', bg:'var(--red-bg)', color:'var(--red)', title:'Priminimai terminams', text:'Gauk priminimą prieš grąžinimo terminą arba garantijos pabaigą, kad nereikėtų visko laikyti galvoje.' },
-  { icon:'ti-cloud-lock', bg:'var(--green-bg)', color:'var(--green)', title:'Saugu ir visada po ranka', text:'Įrašai gali būti laikomi Galio saugykloje, todėl jie nepririšti prie vieno įrenginio.' },
-];
+function onboardSlides(){
+  const ic = { bg:'var(--accent-bg)', color:'var(--accent)' };
+  const share = canShareToGalio();
+  return [
+    { ...ic, icon:'ti-scan', title:'Nufotografuok čekį', text:'AI pats atpažįsta prekę, parduotuvę ir datas iš nuotraukos ar PDF – per kelias sekundes.' },
+    share
+      ? { ...ic, icon:'ti-share', title:'Sąskaita el. pašte?', text:'Gmail’e ar galerijoje paspausk „Bendrinti“ → Galio. AI sukurs įrašą, fotografuoti nereikia.' }
+      : { ...ic, icon:'ti-device-laptop', title:'Sąskaita kompiuteryje?', text:'Atidaryk ją ekrane ir nufotografuok telefonu – AI perskaito ir ekrano nuotrauką.' },
+    { ...ic, icon:'ti-rotate-2', title:'Nepražiopsok grąžinimo', text:'Galio parodo tikslią datą, iki kada gali grąžinti prekę, ir primena prieš terminą.' },
+    { ...ic, icon:'ti-shield-check', title:'Garantija po ranka', text:'Visi čekiai vienoje vietoje. Priminsime ir prieš baigiantis garantijai.' },
+  ];
+}
 function renderOnboarding(){
-  const slides = ONBOARD_SLIDES.map(s=>`
+  const list = onboardSlides();
+  const slides = list.map(s=>`
     <div class="onboard-slide">
       <div class="onboard-icon" style="background:${s.bg}"><i class="ti ${s.icon}" style="color:${s.color}"></i></div>
       <h2>${esc(s.title)}</h2>
       <p>${esc(s.text)}</p>
     </div>`).join('');
-  const dots = ONBOARD_SLIDES.map((_,i)=>`<div class="onboard-dot${i===state.onboardSlide?' active':''}"></div>`).join('');
-  const isLast = state.onboardSlide === ONBOARD_SLIDES.length-1;
+  const dots = list.map((_,i)=>`<div class="onboard-dot${i===state.onboardSlide?' active':''}"></div>`).join('');
+  const isLast = state.onboardSlide === list.length-1;
   return `<div class="onboard-wrap">
     <div class="onboard-slides" id="onboardSlides">${slides}</div>
-    <div class="onboard-dots">${dots}</div>
+    <div class="onboard-dots" id="onboardDots">${dots}</div>
     <div class="onboard-footer">
       <button class="login-btn" id="onboardNext">${isLast?'Pradėti':'Toliau'}</button>
-      ${!isLast?`<button class="onboard-skip" id="onboardSkip">Praleisti</button>`:''}
+      <button class="onboard-skip" id="onboardSkip" style="${isLast?'visibility:hidden':''}">Praleisti</button>
     </div>
   </div>`;
 }
 function attachOnboardingEvents(){
   const track = document.getElementById('onboardSlides');
+  const count = onboardSlides().length;
   const finish = ()=>{ state.showOnboarding=false; localStorage.setItem('galio_onboarded','1'); render(); };
+  // update dots/buttons in place – a full render would reset the scroll and replay every slide
+  const sync = ()=>{
+    document.querySelectorAll('#onboardDots .onboard-dot').forEach((d,i)=>d.classList.toggle('active', i===state.onboardSlide));
+    const last = state.onboardSlide===count-1;
+    const nb = document.getElementById('onboardNext'); if(nb) nb.textContent = last?'Pradėti':'Toliau';
+    const sk = document.getElementById('onboardSkip'); if(sk) sk.style.visibility = last?'hidden':'';
+  };
+  if(track && state.onboardSlide) track.scrollLeft = track.clientWidth*state.onboardSlide;
   document.getElementById('onboardNext')?.addEventListener('click',()=>{
-    if(state.onboardSlide < ONBOARD_SLIDES.length-1){
-      state.onboardSlide++; render();
-      const t=document.getElementById('onboardSlides');
-      if(t) t.scrollTo({left: t.clientWidth*state.onboardSlide, behavior:'smooth'});
+    if(state.onboardSlide < count-1){
+      state.onboardSlide++; sync();
+      track?.scrollTo({left: track.clientWidth*state.onboardSlide, behavior:'smooth'});
     } else { finish(); }
   });
   document.getElementById('onboardSkip')?.addEventListener('click', finish);
@@ -1196,7 +1210,7 @@ function attachOnboardingEvents(){
       clearTimeout(scrollTimeout);
       scrollTimeout=setTimeout(()=>{
         const idx = Math.round(track.scrollLeft / track.clientWidth);
-        if(idx!==state.onboardSlide){ state.onboardSlide=idx; render(); const t=document.getElementById('onboardSlides'); if(t)t.scrollLeft=track.clientWidth*idx; }
+        if(idx!==state.onboardSlide){ state.onboardSlide=idx; sync(); }
       },80);
     });
   }
