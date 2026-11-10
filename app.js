@@ -547,6 +547,50 @@ function showConfirmDialog(title, message, onConfirm, options={}){
     onCancel: options.onCancel || null,
   });
 }
+// The Play app 1.5+ (build 6) opens Galio with ?app=6 and is in the phone's share menu.
+// Tips about sharing are shown only there: a browser tab or an older app cannot receive shares.
+(function rememberAppBuild(){
+  try{
+    const p = new URLSearchParams(location.search);
+    const b = parseInt(p.get('app') || '', 10);
+    if(b){
+      localStorage.setItem('galio_app_build', String(b));
+      p.delete('app');
+      history.replaceState(history.state, '', location.pathname + (p.toString() ? '?' + p : '') + location.hash);
+    }
+  }catch(e){}
+})();
+function canShareToGalio(){
+  try{ return (parseInt(localStorage.getItem('galio_app_build') || '0', 10) || 0) >= 6; }catch(e){ return false; }
+}
+function shareUsed(){ try{ return localStorage.getItem('galio_share_used') === '1'; }catch(e){ return false; } }
+function maybeShowShareIntro(existingUserDoc=false){
+  const seenKey = 'galio_share_intro_v1';
+  try{
+    if(!existingUserDoc || !canShareToGalio() || state.appDialog || localStorage.getItem(seenKey)==='1') return;
+    if(!(localStorage.getItem('galio_onboarded') || localStorage.getItem('garantijos_onboarded'))) return;
+    localStorage.setItem(seenKey,'1');
+  }catch(e){ return; }
+  state.appDialog = {
+    title: 'Nauja: bendrinkite į Galio',
+    message: 'Gavote sąskaitą el. paštu ar nuotrauką galerijoje? Telefone paspauskite „Bendrinti“ ir pasirinkite Galio – AI pats sukurs įrašą, fotografuoti nereikės.',
+    supportDraft: '',
+    hideSupport: true,
+    align: 'center',
+  };
+}
+function maybeShareTip(){
+  // After a camera scan, now and then remind that a PDF or email receipt can simply be shared.
+  try{
+    if(!canShareToGalio() || shareUsed()) return;
+    const shown = parseInt(localStorage.getItem('galio_share_tips') || '0', 10) || 0;
+    const scans = (parseInt(localStorage.getItem('galio_scan_count') || '0', 10) || 0) + 1;
+    localStorage.setItem('galio_scan_count', String(scans));
+    if(shown >= 3 || scans % 3 !== 1) return;
+    localStorage.setItem('galio_share_tips', String(shown + 1));
+    setTimeout(()=>toast('Patarimas: el. laiško sąskaitą ar PDF galite tiesiog „Bendrinti“ į Galio', 7000), 1500);
+  }catch(e){}
+}
 function maybeShowReturnFeatureIntro(existingUserDoc=false){
   const seenKey = 'galio_return_deadline_intro_v2';
   const onboarded = localStorage.getItem('galio_onboarded') || localStorage.getItem('garantijos_onboarded');
@@ -684,6 +728,8 @@ async function consumeSharedFile(){
       const name = decodeURIComponent(res.headers.get('X-File-Name') || 'dokumentas');
       file = new File([blob], name, { type: blob.type || res.headers.get('Content-Type') || '' });
       await cache.delete('/Galio/__shared');
+      localStorage.setItem('galio_share_used', '1');
+      if(!canShareToGalio()) localStorage.setItem('galio_app_build', '6');
     }
   }catch(e){}
   if(!file){ toast('Galio gali priimti čekio nuotrauką arba PDF', 5000); return; }
@@ -698,6 +744,7 @@ async function consumeSharedFile(){
   }
   startNewItem('photo');
   renderSync();
+  state._fromShare = true;
   handleDoc({ target: { files: [file], value: '' } });
 }
 
@@ -777,7 +824,7 @@ async function ensureUserDoc(user){
       state.userDoc.emailVerified = user.emailVerified || false;
     }
   }
-  if(!stale) maybeShowReturnFeatureIntro(existingUserDoc);
+  if(!stale){ maybeShowReturnFeatureIntro(existingUserDoc); maybeShowShareIntro(existingUserDoc); }
   state.storageMode = state.userDoc.storageMode || 'local';
   try{ if(typeof Notification!=='undefined' && Notification.permission==='granted' && (state.userDoc.fcmToken || state.userDoc.fcmTokens?.length)) setupForegroundPush(); }catch(e){}
   // live updates to plan/itemCount/storageMode/aiUsesRemaining
@@ -1481,6 +1528,7 @@ function renderPicker(){
         <div><h3>Įvesti rankiniu būdu</h3><p>Patys įrašykite prekę, garantijos pabaigą ir grąžinimo datą.</p></div>
       </button>
     </div>
+    ${canShareToGalio() && !offline ? `<p class="picker-share-tip"><i class="ti ti-share"></i>Sąskaitą iš el. pašto ar PDF galite tiesiog <b>„Bendrinti“ → Galio</b></p>` : ''}
     ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
   </div>`;
 }
@@ -3090,7 +3138,7 @@ function attachEvents(){
   on('aiNameReviewInput','input',e=>{state.form.name=e.target.value;const b=document.getElementById('aiNameReviewSave');if(b)b.disabled=!state.form.name.trim();syncSave();});
   on('aiNameReviewSave','click',()=>{if(!state.form.name.trim())return;state.aiNameReview=false;render();});
 
-  on('docInput','change',handleDoc);
+  on('docInput','change',e=>{ state._fromShare=false; handleDoc(e); });
   on('itemPhotoInput','change',handleItemPhoto);
   on('qrScanBtn','click',startQrScanner);
   on('removeDoc','click',()=>{state.form.docData=null;state.form.docMime=null;state.form.docFileName=null;state.docError='';render();});
@@ -5326,6 +5374,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
       return;
     }
 
+    if(!state._fromShare) maybeShareTip();
     if(items.length===1){
       applyAiItemToForm(items[0], p);
       state.aiNameReview = true;

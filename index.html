@@ -192,6 +192,8 @@
     .picker-card:disabled { opacity: 0.5; }
     .picker-icon { width: 76px; height: 76px; border-radius: 22px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .picker-icon i { font-size: 36px; }
+    .picker-share-tip { margin: 0 20px 14px; font-size: 13px; color: var(--text2); text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; }
+    .picker-share-tip i { color: var(--accent); font-size: 16px; }
     .picker-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
     .picker-card p { font-size: 15px; color: var(--text2); line-height: 1.45; margin: 0; }
 
@@ -453,12 +455,12 @@
     document.body.innerHTML = '<div style="font-family:sans-serif;padding:32px;text-align:center"><p style="font-size:16px;font-weight:600">Galio nepasikrovė</p><p style="font-size:12px;color:#888;word-break:break-word">' + (window.__galioErrors.join('<br>') || 'app.js nepaleistas') + '</p><button onclick="__galioResetCache()" style="margin-top:16px;padding:12px 24px;border:none;border-radius:12px;background:#2f6bff;color:#fff;font-size:15px">Išvalyti talpyklą ir perkrauti</button></div>';
   }, 20000);
 </script>
-<script type="module" src="firebase-config.js?v=20261110-1500"></script>
-<script type="module" src="app.js?v=20261110-1500"></script>
+<script type="module" src="firebase-config.js?v=20261110-1630"></script>
+<script type="module" src="app.js?v=20261110-1630"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20261110-1500').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20261110-1630').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
