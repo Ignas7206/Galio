@@ -36,7 +36,7 @@ const FREE_DOC_LIMIT = 3; // non-Premium users can view/attach up to 3 document 
 // ~€1.40/month we keep from €1.99 (after VAT and Google's 15%). The worker enforces the same caps.
 const PREMIUM_DAILY_LIMIT   = 20;
 const PREMIUM_MONTHLY_LIMIT = 60;
-const PREMIUM_SEARCH_MONTHLY_LIMIT = 10; // web warranty checks cost ~5x a scan
+const PREMIUM_SEARCH_MONTHLY_LIMIT = 5;  // web warranty checks cost ~5x a scan
 
 let state = {
   booted:false, user:null, userDoc:null, loadingItems:false,
@@ -1852,7 +1852,7 @@ function renderDetail(){
   </div>` : '';
 
   const policySection = isPremium ? `<div class="detail-section">
-    ${state.policyChecking ? `<div class="analyzing-row" style="justify-content:center"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI tikrina papildomas sąlygas...</span></div>`
+    ${state.policyChecking ? `<div class="analyzing-row" style="justify-content:center"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">Galio tikrina papildomas sąlygas…</span></div>`
       : state.policyResult && state.policyResultFor===item.id ? `<div class="plan-banner" style="background:var(--accent-bg);align-items:flex-start">
           <i class="ti ti-info-circle" style="color:var(--accent);margin-top:2px;flex-shrink:0"></i>
           <div class="pb-text" style="color:var(--text);font-size:14px;line-height:1.5"><b style="color:var(--accent)">Papildoma informacija:</b><br/>${esc(state.policyResult.replace(/\*\*/g,'').replace(/\*/g,''))}</div>
@@ -4863,8 +4863,8 @@ async function checkPolicy(item){
   if(!isPremiumUser()){ toast('Ši funkcija prieinama tik Premium nariams'); return; }
   if(!state.online){
     offlineDialog(
-      'AI patikrinimui reikia interneto',
-      'Gamintojo garantijos patikrinimas veikia su AI, todėl jam reikia interneto.'
+      'Patikrinimui reikia interneto',
+      'Gamintojo garantijos sąlygos ieškomos internete, todėl reikia ryšio.'
     );
     return;
   }
