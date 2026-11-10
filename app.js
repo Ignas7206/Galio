@@ -98,7 +98,7 @@ function applyTheme(){
 }
 applyTheme();
 
-function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,returnDeadline:'',docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,itemPhotoData:null,itemPhotoMime:null,itemPhotoFileName:null,itemPhotoStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
+function emptyForm(){return{name:'',category:'',shop:'',purchaseDate:'',warrantyEnd:'',warrantyMonths:24,returnDays:14,returnDeadline:'',docType:'Kvitas / čekis',docNumber:'',notes:'',docData:null,docMime:null,docFileName:null,docStoragePath:null,docThumb:null,itemPhotoData:null,itemPhotoMime:null,itemPhotoFileName:null,itemPhotoStoragePath:null,notifyEnabled:true,warrantyAppliesWarning:false,qualityWarning:null};}
 
 // Admin and active Premium users get Premium rights.
 function isPremiumUser(){ return state.userDoc?.plan==='premium' || state.userDoc?.role==='admin'; }
@@ -426,6 +426,8 @@ function cardThumbHtml(item){
   if(photo.itemPhotoUrl) return `<img class="card-thumb" src="${esc(photo.itemPhotoUrl)}" alt="" loading="lazy" />`;
   const doc = effectiveDoc(item);
   if(doc.docUrl && !canViewDoc(item)) return lockedDocHtml(true);
+  const pdfThumb = item?.docThumb || findSharedDocument(item)?.docThumb;
+  if(doc.docMime==='application/pdf' && pdfThumb && /^data:image\/jpeg;base64,/.test(pdfThumb)) return `<img class="card-thumb" src="${pdfThumb}" alt="" loading="lazy" />`;
   if(doc.docMime==='application/pdf') return `<div class="card-icon" style="background:var(--red-bg)"><i class="ti ti-file-type-pdf" style="color:var(--red)"></i></div>`;
   if(doc.docUrl && canViewDoc(item)) return `<img class="card-thumb" src="${esc(doc.docUrl)}" alt="" loading="lazy" />`;
   return `<div class="card-icon"><i class="ti ti-receipt"></i></div>`;
@@ -3336,6 +3338,7 @@ function attachEvents(){
     state.form.docData=r.docData||null;
     state.form.docMime=r.docMime||null;
     state.form.docFileName=r.docFileName||null;
+    state.form.docThumb=r.docThumb||null;
     state.form.warrantyAppliesWarning=item.warrantyApplies===false;
     state.multiEditIdx=idx;
     state.addMode='manual';
@@ -4069,6 +4072,7 @@ async function finishSaveItem(){
     docType:f.docType, docNumber:(f.docNumber||'').slice(0,100), notes:(f.notes||'').slice(0,1000),
     notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
     itemPhotoUrl:null, itemPhotoMime:null, itemPhotoFileName:null, itemPhotoStoragePath:null,
+    ...(f.docMime==='application/pdf' && f.docThumb ? {docThumb:f.docThumb} : {}),
     returnDays: formReturnDaysForSave(f),
     returnDeadline: formReturnDeadline(f),
     createdAtMs: Date.now(),
@@ -4308,6 +4312,7 @@ async function finishSaveMultiItems(){
         notes:item.price?`Kaina: ${String(item.price).slice(0,50)}`:'',
         docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
         itemPhotoUrl:null, itemPhotoMime:null, itemPhotoFileName:null, itemPhotoStoragePath:null,
+        ...(r.docMime==='application/pdf' && r.docThumb ? {docThumb:r.docThumb} : {}),
         returnDays: r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop),
         returnDeadline: receiptReturnDeadline(r),
         notifyEnabled: false,
@@ -4746,13 +4751,50 @@ function handleDoc(e){
   })();
 }
 
+// First page of a PDF as a small JPEG, made on the device so the list can show it.
+let _pdfJs = null;
+function loadPdfJs(){
+  if(_pdfJs) return _pdfJs;
+  _pdfJs = new Promise((res, rej)=>{
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    sc.onload = ()=>{ try{ window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; res(window.pdfjsLib); }catch(e){ rej(e); } };
+    sc.onerror = ()=>{ _pdfJs = null; rej(new Error('pdf.js')); };
+    document.head.appendChild(sc);
+  });
+  return _pdfJs;
+}
+async function makePdfThumb(b64){
+  try{
+    const lib = await loadPdfJs();
+    const bytes = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+    const pdf = await lib.getDocument({ data: bytes }).promise;
+    const page = await pdf.getPage(1);
+    const v1 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: 240 / v1.width });
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(vp.width); cv.height = Math.min(Math.round(vp.height), 340);
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    pdf.destroy?.();
+    const url = cv.toDataURL('image/jpeg', 0.7);
+    return url.length < 60000 ? url : null;
+  }catch(e){ console.warn('PDF thumb:', e); return null; }
+}
+
 function proceedWithFile(file, isPdf){
   const reader=new FileReader();
   reader.onload=async ev=>{
     const dataUrl=ev.target.result;
     if(isPdf){
       const b64=dataUrl.split(',')[1];
-      state.form.docData=b64;state.form.docMime='application/pdf';state.form.docFileName=file.name;
+      state.form.docData=b64;state.form.docMime='application/pdf';state.form.docFileName=file.name;state.form.docThumb=null;
+      const thumbP = makePdfThumb(b64).then(t=>{
+        if(state.form.docData===b64) state.form.docThumb=t;
+        if(state.multiItemReceipt && state.multiItemReceipt.docData===b64) state.multiItemReceipt.docThumb=t;
+        return t;
+      });
       // AI reads PDFs too; the AI server accepts up to 5 MB per request (base64 included)
       if(state.addMode==='photo' && b64.length <= MAX_PDF_AI_B64){
         state.analyzing=true;
@@ -4768,6 +4810,7 @@ function proceedWithFile(file, isPdf){
       }else if(state.addMode==='photo'){
         toast('PDF prisegtas, bet per didelis automatiniam nuskaitymui – užpildykite laukus ranka', 6000);
       }
+      await thumbP;
       render();
     }else{
       try{
@@ -5339,6 +5382,7 @@ GRIEŽTOS TAISYKLĖS (svarbiausia):
 4. Jei dokumentas neryškus, apkarpytas, ar dalis teksto neįskaitoma – privalai tai nurodyti quality lauke, nepaisant to stenkis ištraukti ką gali.
 5. Jei čekyje/sąskaitoje YRA KELIOS atskiros prekės (ne paslaugos) – grąžink KIEKVIENĄ atskirai items masyve. Paslaugos (pristatymas, montavimas, garantijos pratęsimas ir pan.) NĖRA prekės – jų neįtrauk į items, bet gali paminėti notes lauke.
 6. Kiekvienai prekei nurodyk, ar jai paprastai taikoma vartotojo teisinė garantija dėl prekės trūkumų pagal ES/LT teisę (warrantyApplies). Drabužiai, avalynė, aksesuarai, baldai, elektronika, technika – paprastai TAIP. Paslaugos, greitai gendantys produktai ir prekės, kurios nėra ilgalaikė vartojimo prekė, – paprastai NE.
+8. Jei dokumentas yra kreditinė sąskaita-faktūra ar kitas pinigų grąžinimo pirkėjui dokumentas – prekių kainas grąžink su minuso ženklu, kaip dokumente.
 7. Nepainiok garantijos su grąžinimu. Higienos, apatiniai, kosmetika ar panašios prekės gali turėti ribotą grąžinimą, bet tai savaime nepanaikina garantijos dėl broko.
 
 Grąžink TIK JSON be markdown, šios struktūros:
@@ -5397,6 +5441,16 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
 
     const items = mergeSameItems(Array.isArray(p.items) ? p.items.filter(it=>it && typeof it.name==='string' && it.name.trim()) : []);
 
+    // A credit note (money back for a returned item) is not a purchase: no warranty entry for it.
+    const priceNum = v => { const n = parseFloat(String(v??'').replace(/\s/g,'').replace(',', '.').replace(/[^0-9.\-]/g,'')); return isNaN(n) ? null : n; };
+    const isCredit = items.length>0 && items.every(it => { const n = priceNum(it.price); return n!==null && n<0; });
+    if(isCredit){
+      state.form = emptyForm(); state.docError=''; state.addMode=null; state.view='list';
+      state.multiItemReceipt = null;
+      showAppDialog('Kreditinė sąskaita', 'Šis dokumentas – kreditinė sąskaita, t. y. pinigų grąžinimas už prekę. Garantijos įrašas jam nekuriamas. Jei prekę grąžinote, jos įrašą sąraše galite ištrinti.', '', {hideSupport:true});
+      return;
+    }
+
     if(items.length===0){
       // Nothing usable was recognized — don't silently fabricate a name.
       toast('AI nerado atpažįstamos prekės šiame dokumente. Įveskite duomenis rankiniu būdu.');
@@ -5436,7 +5490,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
       state.multiItemReceipt = {
         items: items.map(it=>({...it, _shop:p.shop, _purchaseDate:p.purchaseDate, _returnDays:normalizeReturnDays(p.returnDays, p.shop), _docType:p.docType, _docNumber:p.docNumber, selected:it.warrantyApplies!==false})),
         shop: p.shop, purchaseDate: p.purchaseDate, returnDays: normalizeReturnDays(p.returnDays, p.shop), docType: p.docType, docNumber: p.docNumber,
-        docData: state.form.docData, docMime: state.form.docMime, docFileName: state.form.docFileName,
+        docData: state.form.docData, docMime: state.form.docMime, docFileName: state.form.docFileName, docThumb: state.form.docThumb||null,
         warrantyCount,
         confirmed: false,
       };
