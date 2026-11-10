@@ -1,4 +1,4 @@
-const CACHE = 'galio-v68';
+const CACHE = 'galio-v69';
 const BASE = '/Galio';
 const ASSETS = [
   BASE + '/icon-192.png',
@@ -23,14 +23,38 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE && k !== SHARE_CACHE).map(k => caches.delete(k))))
   );
   self.clients.claim();
 });
 
+// "Share → Galio": the phone posts the file here. Keep it until the app picks it up.
+const SHARE_CACHE = 'galio-share';
+async function receiveShare(request) {
+  try {
+    const form = await request.formData();
+    const file = form.getAll('file').find(f => f && typeof f === 'object' && f.size > 0);
+    const cache = await caches.open(SHARE_CACHE);
+    await cache.delete(BASE + '/__shared');
+    if (file) {
+      await cache.put(BASE + '/__shared', new Response(file, { headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-File-Name': encodeURIComponent(file.name || 'dokumentas'),
+      } }));
+    }
+    return Response.redirect(BASE + '/?shared=' + (file ? '1' : '0'), 303);
+  } catch (err) {
+    return Response.redirect(BASE + '/?shared=0', 303);
+  }
+}
+
 self.addEventListener('fetch', e => {
   const reqUrl = new URL(e.request.url);
   const url = reqUrl.href;
+  if (e.request.method === 'POST' && reqUrl.pathname === BASE + '/share-target') {
+    e.respondWith(receiveShare(e.request));
+    return;
+  }
   if (url.includes('googleapis.com') || url.includes('firebaseapp.com') ||
       url.includes('firebasestorage') || url.includes('gstatic.com') ||
       url.includes('api.anthropic.com') || url.includes('workers.dev')) {

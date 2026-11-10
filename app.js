@@ -665,7 +665,41 @@ onAuthStateChanged(auth, async (user)=>{
   if(user){ clearTimeout(_bootWatchdog); window.__galioBootStep = 'paruošta'; }
   render();
   if(user) render();
+  if(user) consumeSharedFile();
 });
+
+// A photo or PDF shared from another app ("Bendrinti → Galio") is kept by the service
+// worker; here it becomes a new entry exactly as if it was picked with "Nuskenuoti".
+async function consumeSharedFile(){
+  const params = new URLSearchParams(location.search);
+  if(!params.has('shared')) return;
+  params.delete('shared');
+  history.replaceState(history.state, '', location.pathname + (params.toString() ? '?' + params : '') + location.hash);
+  let file = null;
+  try{
+    const cache = await caches.open('galio-share');
+    const res = await cache.match('/Galio/__shared');
+    if(res){
+      const blob = await res.blob();
+      const name = decodeURIComponent(res.headers.get('X-File-Name') || 'dokumentas');
+      file = new File([blob], name, { type: blob.type || res.headers.get('Content-Type') || '' });
+      await cache.delete('/Galio/__shared');
+    }
+  }catch(e){}
+  if(!file){ toast('Galio gali priimti čekio nuotrauką arba PDF', 5000); return; }
+  if(state.analyzing){ toast('Palaukite, ankstesnis failas dar apdorojamas'); return; }
+  if(!state.online){
+    offlineDialog('Nuskaitymui reikia interneto', 'Dokumento nuskaitymas veikia su AI, todėl jam reikia interneto. Pasidalinkite dar kartą, kai būsite prisijungę.');
+    return;
+  }
+  if(!canAttachNewDoc()){
+    showAppDialog('Dokumentų limitas pasiektas', `Nemokamame plane galima turėti iki ${FREE_DOC_LIMIT} dokumentų. Su Premium galėsite prisegti ir matyti visus čekius.`, '', {hideSupport:true});
+    return;
+  }
+  startNewItem('photo');
+  renderSync();
+  handleDoc({ target: { files: [file], value: '' } });
+}
 
 let verifyPollTimer=null;
 function startEmailVerifyPoll(user){
