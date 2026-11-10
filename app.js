@@ -572,8 +572,8 @@ function maybeShowShareIntro(existingUserDoc=false){
     localStorage.setItem(seenKey,'1');
   }catch(e){ return; }
   state.appDialog = {
-    title: 'Nauja: bendrinkite į Galio',
-    message: 'Gavote sąskaitą el. paštu ar nuotrauką galerijoje? Telefone paspauskite „Bendrinti“ ir pasirinkite Galio – AI pats sukurs įrašą, fotografuoti nereikės.',
+    title: 'Dokumentų bendrinimas',
+    message: 'Sąskaitas iš el. pašto, PDF failus ir nuotraukas galite perduoti į Galio per „Bendrinti“. Įrašas bus užpildytas automatiškai.',
     supportDraft: '',
     hideSupport: true,
     align: 'center',
@@ -588,7 +588,7 @@ function maybeShareTip(){
     localStorage.setItem('galio_scan_count', String(scans));
     if(shown >= 3 || scans % 3 !== 1) return;
     localStorage.setItem('galio_share_tips', String(shown + 1));
-    setTimeout(()=>toast('Patarimas: el. laiško sąskaitą ar PDF galite tiesiog „Bendrinti“ į Galio', 7000), 1500);
+    setTimeout(()=>toast('Sąskaitas iš el. pašto ir PDF galite perduoti per „Bendrinti“ → Galio', 7000), 1500);
   }catch(e){}
 }
 function maybeShowReturnFeatureIntro(existingUserDoc=false){
@@ -1160,7 +1160,7 @@ function onboardSlides(){
   return [
     { ...ic, icon:'ti-scan', title:'Nufotografuok čekį', text:'AI pats atpažįsta prekę, parduotuvę ir datas iš nuotraukos ar PDF – per kelias sekundes.' },
     share
-      ? { ...ic, icon:'ti-share', title:'Sąskaita el. pašte?', text:'Gmail’e ar galerijoje paspausk „Bendrinti“ → Galio. AI sukurs įrašą, fotografuoti nereikia.' }
+      ? { ...ic, icon:'ti-share', title:'Sąskaitos iš el. pašto', text:'Laiške ar galerijoje pasirink „Bendrinti“ → Galio – įrašas bus užpildytas automatiškai.' }
       : { ...ic, icon:'ti-device-laptop', title:'Sąskaita kompiuteryje?', text:'Atidaryk ją ekrane ir nufotografuok telefonu – AI perskaito ir ekrano nuotrauką.' },
     { ...ic, icon:'ti-rotate-2', title:'Nepražiopsok grąžinimo', text:'Galio parodo tikslią datą, iki kada gali grąžinti prekę, ir primena prieš terminą.' },
     { ...ic, icon:'ti-shield-check', title:'Garantija po ranka', text:'Visi čekiai vienoje vietoje. Priminsime ir prieš baigiantis garantijai.' },
@@ -1542,7 +1542,7 @@ function renderPicker(){
         <div><h3>Įvesti rankiniu būdu</h3><p>Patys įrašykite prekę, garantijos pabaigą ir grąžinimo datą.</p></div>
       </button>
     </div>
-    ${canShareToGalio() && !offline ? `<p class="picker-share-tip"><i class="ti ti-share"></i>Sąskaitą iš el. pašto ar PDF galite tiesiog <b>„Bendrinti“ → Galio</b></p>` : ''}
+    ${canShareToGalio() && !offline ? `<p class="picker-share-tip"><i class="ti ti-share"></i>Sąskaitas iš el. pašto ir PDF galite perduoti per <b>„Bendrinti“ → Galio</b></p>` : ''}
     ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
   </div>`;
 }
