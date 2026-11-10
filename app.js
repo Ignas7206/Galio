@@ -27,6 +27,7 @@ const RETURN_DAY_OPTS = [7,14,30,45,60,90];
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
 const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos; compression brings this down before upload
 const MAX_PDF       = 5*1024*1024;
+const MAX_PDF_AI_B64 = 4_700_000; // AI server body limit is 5 MB
 // Must equal the value Firestore rules require on user creation (users/{id} create: aiUsesRemaining == 5),
 // otherwise sign-up is rejected with "Missing or insufficient permissions".
 const AI_FREE_USES  = 5; // lifetime AI document-analysis uses before Premium is required
@@ -4751,7 +4752,23 @@ function proceedWithFile(file, isPdf){
     const dataUrl=ev.target.result;
     if(isPdf){
       const b64=dataUrl.split(',')[1];
-      state.form.docData=b64;state.form.docMime='application/pdf';state.form.docFileName=file.name;render();
+      state.form.docData=b64;state.form.docMime='application/pdf';state.form.docFileName=file.name;
+      // AI reads PDFs too; the AI server accepts up to 5 MB per request (base64 included)
+      if(state.addMode==='photo' && b64.length <= MAX_PDF_AI_B64){
+        state.analyzing=true;
+        startAnalyzeWatchdog();
+        render();
+        try{
+          const runId = ++state.analysisRunId;
+          await analyzeDoc(b64,'application/pdf', runId);
+        }finally{
+          clearAnalyzeWatchdog();
+          state.analyzing=false;
+        }
+      }else if(state.addMode==='photo'){
+        toast('PDF prisegtas, bet per didelis automatiniam nuskaitymui – užpildykite laukus ranka', 6000);
+      }
+      render();
     }else{
       try{
         // Verify it's a real loadable image first
@@ -5309,7 +5326,9 @@ async function analyzeDoc(b64,mime, runId=state.analysisRunId){
     const idToken = await state.user.getIdToken();
     const res=await fetch(WORKER_URL,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${idToken}`},
       body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1500,messages:[{role:'user',content:[
-        {type:'image',source:{type:'base64',media_type:mime,data:b64}},
+        mime==='application/pdf'
+          ? {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}
+          : {type:'image',source:{type:'base64',media_type:mime,data:b64}},
         {type:'text',text:`Tai pirkimo dokumentas (čekis, sąskaita-faktūra ar banko išrašas). Atidžiai išanalizuok TIK tai, kas faktiškai matoma dokumente.
 
 GRIEŽTOS TAISYKLĖS (svarbiausia):
