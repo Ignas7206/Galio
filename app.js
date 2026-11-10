@@ -1966,7 +1966,7 @@ function renderSettings(){
 
 // Bottom sheets opened from the settings rows. Anything marked data-close shuts the
 // sheet before its own action runs (see attach code).
-const APP_VERSION_NAME = '1.4';
+const APP_VERSION_NAME = canShareToGalio() ? '1.5' : '1.4';
 function renderSettingsSheet(o){
   const k = state.settingsSheet;
   if(!k) return '';
