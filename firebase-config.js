@@ -18,6 +18,8 @@ export const VAPID_KEY = "BOQH_YMvcD5Yc6ziqPno_Y2g0SkQBpuJuLKdNjS01VG4H8Q6YgJKeD
 
 export const firebaseApp = initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
+// Password reset / verification emails in Lithuanian
+auth.languageCode = 'lt';
 
 export const db = initializeFirestore(firebaseApp, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
