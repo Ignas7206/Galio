@@ -1972,7 +1972,7 @@ function renderSettings(){
         <i class="ti ti-sparkles row-icon"></i><span class="settings-row-label">AI analizių limitai</span>
         <span class="settings-row-val">${aiVal}</span>${chev}
       </button>
-      <div class="settings-row" style="${!isCloud?'opacity:0.65':''}">
+      <div class="settings-row" style="border-bottom:none;${!isCloud?'opacity:0.65':''}">
         <i class="ti ti-bell row-icon"></i>
         <div class="settings-row-label">Pranešimai${!isCloud?'<small>Tik su Galio saugykla</small>':''}</div>
         <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
