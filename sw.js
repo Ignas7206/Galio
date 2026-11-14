@@ -1,4 +1,4 @@
-const CACHE = 'galio-v78';
+const CACHE = 'galio-v79';
 const BASE = '/Galio';
 const ASSETS = [
   BASE + '/icon-192.png',
