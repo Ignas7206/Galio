@@ -1138,7 +1138,11 @@ function _doRender(){
   if(!state.booted){ scr.innerHTML='<div class="center-loader"><div class="spinner"></div></div>'; nav.style.display='none'; return; }
   if(state.qrScanning){ scr.innerHTML=renderQrScanner(); nav.style.display='none'; document.getElementById('qrCloseBtn')?.addEventListener('click',stopQrScanner); pushHistoryIfNeeded('qr'); return; }
   if(state.lightbox){scr.innerHTML=renderLightbox();nav.style.display='none';attachLightboxEvents();pushHistoryIfNeeded('lightbox');return;}
+  // Chrome sometimes leaves stale pixels of the login screen after sign-in; force one full repaint
+  if(state.user && state._wasAuth){ state._wasAuth=false; const ap=document.getElementById('app');
+    if(ap){ ap.style.opacity='0.99'; requestAnimationFrame(()=>requestAnimationFrame(()=>{ ap.style.opacity=''; })); } }
   if(!state.user){
+    state._wasAuth=true;
     if(state.showOnboarding){ scr.innerHTML=renderOnboarding(); nav.style.display='none'; attachOnboardingEvents(); return; }
     scr.innerHTML=renderAuth();nav.style.display='none';attachAuthEvents();return;
   }
