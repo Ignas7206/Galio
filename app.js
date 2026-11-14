@@ -1414,7 +1414,8 @@ function renderList(){
 
   return`<div>
     <div class="page-header">
-      <span class="page-title" style="display:flex;align-items:center;gap:10px"><img src="icon-192.png" alt="" width="32" height="32" style="display:block;flex-shrink:0">Galio</span>
+      <span class="page-title">Garantijos</span>
+      <img src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
     </div>
     <div style="height:14px"></div>
     ${statsHtml}
@@ -1936,6 +1937,7 @@ function renderSettings(){
   return `<div>
     <div class="page-header">
       <span class="page-title">Nustatymai</span>
+      <img src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
     </div>
 
     <button class="settings-profile tappable" id="settingsAccountBtn" style="width:calc(100% - 32px);border:none;text-align:left;color:inherit;padding:14px 16px">
@@ -1996,7 +1998,6 @@ function renderSettings(){
         <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Teisinė informacija</span>${chev}
       </button>
     </div>
-    <img src="icon-192.png" alt="" width="40" height="40" style="display:block;margin:4px auto 6px">
     <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 12px">Galio ${APP_VERSION_NAME}</p>
     ${renderSettingsSheet({isPremium, isCloud, canChangePassword, accountEmail, providerLabel, uidShort, keepM, themeOpts, appVersion, aiLeft, aiMonthUsed, aiDayUsed})}
   </div>`;
