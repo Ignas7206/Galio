@@ -1,4 +1,4 @@
-const CACHE = 'galio-v79';
+const CACHE = 'galio-v80';
 const BASE = '/Galio';
 const ASSETS = [
   BASE + '/icon-192.png',
@@ -102,7 +102,7 @@ messagingSW.onBackgroundMessage(payload => {
   self.registration.showNotification(title || 'Galio', {
     body: body || '',
     icon: BASE + '/icon-192.png',
-    badge: BASE + '/icon-192.png',
+    badge: BASE + '/badge-96.png',
     tag: payload.data?.tag || 'galio-notif',
     requireInteraction: true,
     data: { url: 'https://ignas7206.github.io/Galio/' },

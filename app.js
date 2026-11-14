@@ -3859,7 +3859,7 @@ async function setupForegroundPush(){
       try{
         const reg = await navigator.serviceWorker.ready;
         await reg.showNotification(title, {
-          body, icon: 'icon-192.png', badge: 'icon-192.png',
+          body, icon: 'icon-192.png', badge: 'badge-96.png',
           tag: payload.data?.tag || 'galio-notif',
           data: { url: 'https://ignas7206.github.io/Galio/' },
         });
