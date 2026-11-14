@@ -1429,12 +1429,12 @@ function renderList(){
       <button id="searchCloseBtn" aria-label="Uždaryti paiešką" style="width:38px;height:38px;flex-shrink:0;background:var(--bg2);border:none;border-radius:50%;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer"><i class="ti ti-x" style="font-size:18px"></i></button>
     </div>` : `<div style="padding:0 16px 10px;display:flex;align-items:center;gap:8px">
       <button id="searchOpenBtn" aria-label="Ieškoti" style="width:38px;height:38px;flex-shrink:0;background:none;border:1px solid var(--border2);border-radius:50%;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer"><i class="ti ti-search" style="font-size:17px"></i></button>
-      <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
+      <button id="catDropBtn" style="flex:1;background:none;border:1px solid var(--border2);height:38px;box-sizing:border-box;border-radius:19px;padding:0 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
         <i class="ti ti-filter" style="font-size:15px;flex-shrink:0"></i>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${filterCat}</span>
         <i class="ti ti-chevron-down" style="font-size:15px;flex-shrink:0"></i>
       </button>
-      <button id="sortDropBtn" style="flex:1;background:none;border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
+      <button id="sortDropBtn" style="flex:1;background:none;border:1px solid var(--border2);height:38px;box-sizing:border-box;border-radius:19px;padding:0 14px;font-size:14px;font-weight:500;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
         <i class="ti ti-arrows-sort" style="font-size:15px;flex-shrink:0"></i>
         <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sortBy==='newest'?'Naujausi':sortBy==='expiring'?'Baigiasi':'A–Z'}</span>
         <i class="ti ti-chevron-down" style="font-size:15px;flex-shrink:0"></i>
