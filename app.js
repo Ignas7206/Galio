@@ -4706,18 +4706,37 @@ async function openPhotoEditor(dataUrl, onDone){
     <div style="display:flex;gap:10px;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:#111">
       <button id="peCancel" style="flex:1;padding:14px;border-radius:12px;border:1px solid #444;background:none;color:#ddd;font-size:15px">Atšaukti</button>
       <button id="peRotate" style="padding:14px 18px;border-radius:12px;border:none;background:#222;color:#fff;font-size:20px" aria-label="Pasukti"><i class="ti ti-rotate-clockwise"></i></button>
+      <button id="peFit" style="padding:14px 18px;border-radius:12px;border:none;background:#222;color:#fff;font-size:20px" aria-label="Sutalpinti visą nuotrauką" title="Sutalpinti visą nuotrauką"><i class="ti ti-arrows-minimize"></i></button>
       <button id="peSave" style="flex:1;padding:14px;border-radius:12px;border:none;background:var(--accent,#2f6bff);color:#fff;font-size:15px;font-weight:600">Išsaugoti</button>
     </div>`;
   document.body.appendChild(wrap);
   const img = wrap.querySelector('#photoEditorImg');
   img.src = dataUrl;
-  const cropper = new window.Cropper(img, { aspectRatio: 1, viewMode: 1, autoCropArea: 0.9, background: false, dragMode: 'move' });
+  // viewMode 0: the photo can be made smaller than the square; empty edges are filled with the photo's background colour
+  const cropper = new window.Cropper(img, { aspectRatio: 1, viewMode: 0, autoCropArea: 0.9, background: false, dragMode: 'move' });
+  let fill = '#ffffff', fitted = false;
+  img.addEventListener('load', ()=>{ try{
+    const c=document.createElement('canvas'); c.width=c.height=24; const x=c.getContext('2d'); x.drawImage(img,0,0,24,24);
+    const px=[[0,0],[23,0],[0,23],[23,23],[12,0],[12,23],[0,12],[23,12]].map(([a,b])=>x.getImageData(a,b,1,1).data);
+    const avg=i=>Math.round(px.reduce((t,p)=>t+p[i],0)/px.length);
+    fill=`rgb(${avg(0)},${avg(1)},${avg(2)})`;
+  }catch(e){} }, { once:true });
+  const fitWhole = ()=>{
+    const cb=cropper.getCropBoxData(), cd=cropper.getCanvasData(); if(!cb.width||!cd.width) return;
+    const r=cd.width/cd.height, w=r>=1?cb.width:cb.height*r, h=w/r;
+    cropper.setCanvasData({ left: cb.left+(cb.width-w)/2, top: cb.top+(cb.height-h)/2, width: w, height: h });
+  };
   const close = ()=>{ try{ cropper.destroy(); }catch(e){} wrap.remove(); };
   wrap.querySelector('#peCancel').onclick = close;
-  wrap.querySelector('#peRotate').onclick = ()=>cropper.rotate(90);
+  wrap.querySelector('#peRotate').onclick = ()=>{ cropper.rotate(90); if(fitted) fitWhole(); };
+  wrap.querySelector('#peFit').onclick = e=>{
+    fitted=!fitted;
+    if(fitted) fitWhole(); else { const rot=cropper.getData().rotate||0; cropper.reset(); if(rot) cropper.rotateTo(rot); }
+    e.currentTarget.style.background = fitted ? 'var(--accent,#2f6bff)' : '#222';
+  };
   wrap.querySelector('#peSave').onclick = ()=>{
     // 800 px square at JPEG 0.75 ≈ 60–120 KB: sharp enough for list and detail, light on storage.
-    const canvas = cropper.getCroppedCanvas({ width: 800, height: 800, imageSmoothingQuality: 'high' });
+    const canvas = cropper.getCroppedCanvas({ width: 800, height: 800, fillColor: fill, imageSmoothingQuality: 'high' });
     const out = canvas ? canvas.toDataURL('image/jpeg', 0.75) : dataUrl;
     close();
     onDone(out);
