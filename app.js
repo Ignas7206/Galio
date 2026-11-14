@@ -1240,10 +1240,35 @@ function attachOnboardingEvents(){
 }
 
 // ── Lightbox ───────────────────────────────────────────────────────────────
-function renderLightbox(){return`<div class="lightbox" id="lbOverlay"><div class="lightbox-bar"><button class="lightbox-close" id="lbClose"><i class="ti ti-x"></i></button></div><div class="lightbox-img"><img src="${esc(state.lightbox)}" /></div></div>`;}
+function renderLightbox(){return`<div class="lightbox" id="lbOverlay"><div class="lightbox-bar"><span class="lightbox-hint">Suimkite pirštais arba bakstelėkite du kartus, kad priartintumėte</span><button class="lightbox-close" id="lbClose"><i class="ti ti-x"></i></button></div><div class="lightbox-img" id="lbBox"><img src="${esc(state.lightbox)}" draggable="false" /></div></div>`;}
 function attachLightboxEvents(){
   document.getElementById('lbClose')?.addEventListener('click',()=>{state.lightbox=null;render();});
   document.getElementById('lbOverlay')?.addEventListener('click',e=>{if(e.target.id==='lbOverlay'){state.lightbox=null;render();}});
+  // Zoom: pinch, double tap / double click, mouse wheel; drag to move when zoomed
+  const box=document.getElementById('lbBox'), img=box?.querySelector('img'); if(!img) return;
+  const MAX=6; let s=1,x=0,y=0,start=null,moved=false,lastTap=0; const pts=new Map();
+  const k=()=>(box.getBoundingClientRect().width/box.offsetWidth)||1; // desktop CSS zoom
+  const rel=(cx,cy)=>{const r=box.getBoundingClientRect(),q=k();return{x:(cx-r.left)/q-box.clientWidth/2,y:(cy-r.top)/q-box.clientHeight/2};};
+  const clamp=()=>{ if(s<=1.01){s=1;x=0;y=0;return;} s=Math.min(s,MAX);
+    const mx=Math.max(0,(img.offsetWidth*s-box.clientWidth)/2), my=Math.max(0,(img.offsetHeight*s-box.clientHeight)/2);
+    x=Math.max(-mx,Math.min(mx,x)); y=Math.max(-my,Math.min(my,y)); };
+  const apply=anim=>{ img.style.transition=anim?'transform .2s ease':'none'; img.style.transform=`translate(${x}px,${y}px) scale(${s})`; box.classList.toggle('zoomed',s>1); };
+  const zoomAt=(ns,p)=>{ ns=Math.max(1,Math.min(MAX,ns)); x=p.x-(p.x-x)*ns/s; y=p.y-(p.y-y)*ns/s; s=ns; };
+  const two=()=>{const [a,b]=[...pts.values()];return{d:Math.hypot(a.x-b.x,a.y-b.y)||1,c:rel((a.x+b.x)/2,(a.y+b.y)/2)};};
+  const begin=()=>{ if(pts.size>=2){const t=two();start={pinch:true,d:t.d,c:t.c,s,x,y};moved=true;}
+    else if(pts.size===1){const p=[...pts.values()][0];start={px:p.x,py:p.y,x,y};} else start=null; };
+  box.addEventListener('pointerdown',e=>{ box.setPointerCapture?.(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); if(pts.size===1) moved=false; begin(); });
+  box.addEventListener('pointermove',e=>{ if(!pts.has(e.pointerId)||!start) return; pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(start.pinch&&pts.size>=2){ const t=two(), ns=Math.max(0.8,Math.min(MAX,start.s*t.d/start.d));
+      x=t.c.x-(start.c.x-start.x)*ns/start.s; y=t.c.y-(start.c.y-start.y)*ns/start.s; s=ns; apply(false); }
+    else if(!start.pinch){ const dx=e.clientX-start.px, dy=e.clientY-start.py; if(Math.hypot(dx,dy)>6) moved=true;
+      if(s>1&&moved){ const q=k(); x=start.x+dx/q; y=start.y+dy/q; apply(false); } } });
+  const end=e=>{ if(!pts.has(e.pointerId)) return; const p=pts.get(e.pointerId); pts.delete(e.pointerId);
+    if(pts.size===0){ if(!moved&&e.type==='pointerup'){ const now=Date.now();
+        if(now-lastTap<320){ lastTap=0; if(s>1){s=1;x=0;y=0;} else zoomAt(2.5,rel(p.x,p.y)); } else lastTap=now; }
+      clamp(); apply(true); start=null; } else begin(); };
+  box.addEventListener('pointerup',end); box.addEventListener('pointercancel',end);
+  box.addEventListener('wheel',e=>{ e.preventDefault(); zoomAt(s*Math.exp(-e.deltaY*0.0015),rel(e.clientX,e.clientY)); clamp(); apply(false); },{passive:false});
 }
 
 // ── Auth screen ────────────────────────────────────────────────────────────
