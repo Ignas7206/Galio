@@ -4725,6 +4725,7 @@ async function openPhotoEditor(dataUrl, onDone){
     const cb=cropper.getCropBoxData(), cd=cropper.getCanvasData(); if(!cb.width||!cd.width) return;
     const r=cd.width/cd.height, w=r>=1?cb.width:cb.height*r, h=w/r;
     cropper.setCanvasData({ left: cb.left+(cb.width-w)/2, top: cb.top+(cb.height-h)/2, width: w, height: h });
+    const vb=wrap.querySelector('.cropper-view-box'); if(vb) vb.style.background=fill; // preview the filled edges
   };
   const close = ()=>{ try{ cropper.destroy(); }catch(e){} wrap.remove(); };
   wrap.querySelector('#peCancel').onclick = close;
