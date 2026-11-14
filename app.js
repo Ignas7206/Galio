@@ -1414,7 +1414,7 @@ function renderList(){
 
   return`<div>
     <div class="page-header">
-      <span class="page-title" style="display:flex;align-items:center;gap:10px"><img src="icon-192.png" alt="" width="32" height="32" style="display:block;flex-shrink:0">Garantijos</span>
+      <span class="page-title" style="display:flex;align-items:center;gap:10px"><img src="icon-192.png" alt="" width="32" height="32" style="display:block;flex-shrink:0">Galio</span>
     </div>
     <div style="height:14px"></div>
     ${statsHtml}
