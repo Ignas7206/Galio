@@ -1412,10 +1412,10 @@ function renderList(){
     <p>Nuskenuokite dokumentą. Galio parodys garantijos pabaigą ir iki kada prekę dar galima grąžinti.</p>
   </div>`:filtered.length===0?`<div class="empty-state"><div class="empty-icon"><i class="ti ti-filter-off"></i></div><h3>Nieko nerasta</h3><p>${query.length?'Pabandykite kitą žodį':'Pabandykite kitą kategoriją'}</p></div>`:'';
 
-  return`<div>
+  return`<div class="list-root">
     <div class="page-header">
       <span class="page-title">Garantijos</span>
-      <img src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
+      <img class="hdr-logo" src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
     </div>
     <div style="height:14px"></div>
     ${statsHtml}
@@ -1441,11 +1441,11 @@ function renderList(){
       </button>
     </div>`}
     ${state.catDropOpen ? `<div id="catDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
-    <div style="position:fixed;left:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
+    <div class="drop-menu" style="position:fixed;left:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       ${['Visos',...CATEGORIES].map(c=>`<button class="sort-drop-item${filterCat===c?' active':''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
     </div>` : ''}
     ${state.sortDropOpen ? `<div id="sortDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
-    <div style="position:fixed;right:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
+    <div class="drop-menu" style="position:fixed;right:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       <button class="sort-drop-item${sortBy==='newest'?' active':''}" data-sort="newest"><i class="ti ti-clock" style="font-size:14px"></i>Naujausi</button>
       <button class="sort-drop-item${sortBy==='expiring'?' active':''}" data-sort="expiring"><i class="ti ti-hourglass" style="font-size:14px"></i>Baigiasi pirmi</button>
       <button class="sort-drop-item${sortBy==='name'?' active':''}" data-sort="name"><i class="ti ti-sort-a-z" style="font-size:14px"></i>A–Z</button>
@@ -1769,7 +1769,7 @@ function renderAdd(){
     ${warrantySheet}
     ${returnDaysSheet}
     ${nameReviewModal}
-    <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
+    <div class="fixed-bar" style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50">
       <button class="save-btn" id="saveBtn" ${canSaveForm?'':'disabled'}>${state.uploadPct!==null?'Saugoma...':'Išsaugoti'}</button>
     </div>
   </div>`;
@@ -1937,7 +1937,7 @@ function renderSettings(){
   return `<div>
     <div class="page-header">
       <span class="page-title">Nustatymai</span>
-      <img src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
+      <img class="hdr-logo" src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
     </div>
 
     <button class="settings-profile tappable" id="settingsAccountBtn" style="width:calc(100% - 32px);border:none;text-align:left;color:inherit;padding:14px 16px">
@@ -2520,7 +2520,7 @@ function renderMultiSelect(){
         <div style="font-size:13px;color:var(--text2);line-height:1.4">Išsaugoję atidarykite daiktą ir paspauskite <b style="color:var(--text)">„Pridėti daikto nuotrauką“</b> – ji bus rodoma sąraše, kad daiktą atpažintumėte iš karto.</div>
       </div>
     </div>
-    <div style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:10px;align-items:center">
+    <div class="fixed-bar" style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:10px;align-items:center">
       <button id="multiCancelBtn" style="background:none;border:1px solid var(--border2);color:var(--text3);font-size:14px;padding:10px 16px;border-radius:12px;cursor:pointer;flex-shrink:0">Atšaukti</button>
       <button id="multiSaveBtn" ${selectedCount===0||state.multiSaving?'disabled':''} class="save-btn" style="flex:1;opacity:${selectedCount===0?'0.4':'1'}">
         ${state.multiSaving?'Saugoma...':`Išsaugoti${selectedCount>0?` (${selectedCount})`:''}`}
