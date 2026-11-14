@@ -595,7 +595,7 @@ function maybeShowShareIntro(existingUserDoc=false){
   }catch(e){ return; }
   state.appDialog = {
     title: 'Dokumentų bendrinimas',
-    message: 'Sąskaitas iš el. pašto, PDF failus ir nuotraukas galite perduoti į Galio per „Bendrinti“. Įrašas bus užpildytas automatiškai.',
+    message: 'Dokumentus iš el. pašto ar kitų programėlių – PDF failus ir nuotraukas – galite perduoti į Galio per „Bendrinti“. Įrašas bus užpildytas automatiškai.',
     supportDraft: '',
     hideSupport: true,
     align: 'center',
@@ -610,7 +610,7 @@ function maybeShareTip(){
     localStorage.setItem('galio_scan_count', String(scans));
     if(shown >= 3 || scans % 3 !== 1) return;
     localStorage.setItem('galio_share_tips', String(shown + 1));
-    setTimeout(()=>toast('Sąskaitas iš el. pašto ir PDF galite perduoti per „Bendrinti“ → Galio', 7000), 1500);
+    setTimeout(()=>toast('Dokumentus iš el. pašto ar kitų programėlių galite perduoti per „Bendrinti“ → Galio', 7000), 1500);
   }catch(e){}
 }
 function maybeShowReturnFeatureIntro(existingUserDoc=false){
@@ -1595,7 +1595,7 @@ function renderPicker(){
         <div><h3>Įvesti rankiniu būdu</h3><p>Patys įrašykite prekę, garantijos pabaigą ir grąžinimo datą.</p></div>
       </button>
     </div>
-    ${canShareToGalio() && !offline ? `<p class="picker-share-tip"><i class="ti ti-share"></i>Sąskaitas iš el. pašto ir PDF galite perduoti per <b>„Bendrinti“ → Galio</b></p>` : ''}
+    ${canShareToGalio() && !offline ? `<p class="picker-share-tip"><i class="ti ti-share"></i>Dokumentus iš el. pašto ar kitų programėlių galite perduoti per <b>„Bendrinti“ → Galio</b></p>` : ''}
     ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
   </div>`;
 }
