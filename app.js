@@ -1856,7 +1856,7 @@ function renderDetail(){
   const reminderText = !hasReminderTarget
     ? 'Aktyvių terminų nėra'
     : globalNotifyOff && item.notifyEnabled !== false && itemHasNotifDays
-    ? 'Priminimai išjungti visiems įrašams — įjunkite Nustatymuose'
+    ? 'Pranešimai išjungti — įjunkite Nustatymuose'
     : remindersOn
     ? [
         warrantyNotifs.length ? `Garantija: ${warrantyNotifs.map(d=>d===1?'1 d.':d===7?'1 sav.':d===30?'1 mėn.':d+' d.').join(', ')}` : '',
@@ -1972,7 +1972,7 @@ function renderSettings(){
       </button>
       <div class="settings-row" style="${!isCloud?'opacity:0.65':''}">
         <i class="ti ti-bell row-icon"></i>
-        <div class="settings-row-label">Priminimai${!isCloud?'<small>Tik su Galio saugykla</small>':''}</div>
+        <div class="settings-row-label">Pranešimai${!isCloud?'<small>Tik su Galio saugykla</small>':''}</div>
         <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
       </div>
       <button class="settings-row tappable" id="settingsExpiredBtn" style="${rowBtn}">
@@ -4956,13 +4956,13 @@ async function toggleNotify(){
   if(!state.user)return;
   if(!state.online){
     offlineDialog(
-      'Priminimams reikia interneto',
-      'Priminimų nustatymus galėsime pakeisti, kai vėl bus interneto ryšys.'
+      'Pranešimams reikia interneto',
+      'Pranešimų nustatymą galėsite pakeisti, kai vėl bus interneto ryšys.'
     );
     return;
   }
   if(state.storageMode!=='cloud'){
-    showAppDialog('Priminimai neįjungti', 'Automatiniai priminimai veikia tik su Galio saugykloje esančiais įrašais. Jei įrašai laikomi tik šiame įrenginyje, terminus matysite programėlėje, bet priminimų negausite.', '', {hideSupport:true});
+    showAppDialog('Pranešimai neįjungti', 'Automatiniai priminimai veikia tik su Galio saugykloje esančiais įrašais. Jei įrašai laikomi tik šiame įrenginyje, terminus matysite programėlėje, bet priminimų negausite.', '', {hideSupport:true});
     return;
   }
   const current = state.userDoc?.notifyEnabled !== false;
