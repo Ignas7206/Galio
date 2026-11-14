@@ -1414,7 +1414,7 @@ function renderList(){
 
   return`<div>
     <div class="page-header">
-      <span class="page-title">Garantijos</span>
+      <span class="page-title" style="display:flex;align-items:center;gap:10px"><img src="icon-192.png" alt="" width="32" height="32" style="display:block;flex-shrink:0">Garantijos</span>
     </div>
     <div style="height:14px"></div>
     ${statsHtml}
@@ -1996,6 +1996,7 @@ function renderSettings(){
         <i class="ti ti-file-text row-icon"></i><span class="settings-row-label">Teisinė informacija</span>${chev}
       </button>
     </div>
+    <img src="icon-192.png" alt="" width="40" height="40" style="display:block;margin:4px auto 6px">
     <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 12px">Galio ${APP_VERSION_NAME}</p>
     ${renderSettingsSheet({isPremium, isCloud, canChangePassword, accountEmail, providerLabel, uidShort, keepM, themeOpts, appVersion, aiLeft, aiMonthUsed, aiDayUsed})}
   </div>`;
