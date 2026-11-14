@@ -1244,7 +1244,7 @@ function attachOnboardingEvents(){
 }
 
 // ── Lightbox ───────────────────────────────────────────────────────────────
-function renderLightbox(){return`<div class="lightbox" id="lbOverlay"><div class="lightbox-bar"><span class="lightbox-hint">Suimkite pirštais arba bakstelėkite du kartus, kad priartintumėte</span><button class="lightbox-close" id="lbClose"><i class="ti ti-x"></i></button></div><div class="lightbox-img" id="lbBox"><img src="${esc(state.lightbox)}" draggable="false" /></div></div>`;}
+function renderLightbox(){return`<div class="lightbox" id="lbOverlay"><div class="lightbox-bar"><span class="lightbox-hint">${matchMedia('(pointer:fine)').matches?'Sukite pelės ratuką arba spustelėkite du kartus, kad priartintumėte':'Suimkite pirštais arba bakstelėkite du kartus, kad priartintumėte'}</span><button class="lightbox-close" id="lbClose"><i class="ti ti-x"></i></button></div><div class="lightbox-img" id="lbBox"><img src="${esc(state.lightbox)}" draggable="false" /></div></div>`;}
 function attachLightboxEvents(){
   document.getElementById('lbClose')?.addEventListener('click',()=>{state.lightbox=null;render();});
   document.getElementById('lbOverlay')?.addEventListener('click',e=>{if(e.target.id==='lbOverlay'){state.lightbox=null;render();}});
