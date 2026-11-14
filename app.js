@@ -567,6 +567,25 @@ function canShareToGalio(){
   try{ return (parseInt(localStorage.getItem('galio_app_build') || '0', 10) || 0) >= 6; }catch(e){ return false; }
 }
 function shareUsed(){ try{ return localStorage.getItem('galio_share_used') === '1'; }catch(e){ return false; } }
+// Shown once after the admin grants Premium (the server stamps premiumGrantedAt).
+function maybeShowPremiumWelcome(){
+  const d = state.userDoc;
+  if(!d || !state.user || d.plan!=='premium' || d.planSource!=='manual' || !d.premiumGrantedAt) return;
+  const ms = d.premiumGrantedAt.toMillis ? d.premiumGrantedAt.toMillis() : 0;
+  if(!ms || state.appDialog) return;
+  const key = 'galio_premium_welcome_' + state.user.uid;
+  try{
+    if(Number(localStorage.getItem(key) || 0) >= ms) return;
+    localStorage.setItem(key, String(ms));
+  }catch(e){ return; }
+  state.appDialog = {
+    title: 'Jums suteiktas Galio Premium',
+    message: 'Galio saugykla, automatiniai priminimai ir daugiau AI analizių jau įjungti jūsų paskyroje.',
+    supportDraft: '',
+    hideSupport: true,
+    align: 'center',
+  };
+}
 function maybeShowShareIntro(existingUserDoc=false){
   const seenKey = 'galio_share_intro_v1';
   try{
@@ -844,6 +863,7 @@ async function ensureUserDoc(user){
       if(prevMode !== state.storageMode && !state.migratingStorage){
         attachItemsListener(state.user.uid);
       }
+      maybeShowPremiumWelcome();
       render();
       if(!s.metadata.fromCache) autoMoveToCloud();
     }
