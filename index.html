@@ -448,6 +448,8 @@
       #screen > div.list-root { max-width: 1040px; position: relative; }
       .hdr-logo { display: none !important; }
       .list-root .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .list-root .swipe-wrap .card { height: 100%; }
+      .list-root .swipe-delete-bg { display: none; }
       .list-root .drop-menu { position: absolute !important; }
       .card:hover { filter: brightness(0.97); }
       .fixed-bar { left: 240px !important; bottom: 0 !important; padding-left: calc((100% - 240px - 720px) / 2 + 16px) !important; padding-right: calc((100% - 240px - 720px) / 2 + 16px) !important; }
@@ -493,12 +495,12 @@
     document.body.innerHTML = '<div style="font-family:sans-serif;padding:32px;text-align:center"><p style="font-size:16px;font-weight:600">Galio nepasikrovė</p><p style="font-size:12px;color:#888;word-break:break-word">' + (window.__galioErrors.join('<br>') || 'app.js nepaleistas') + '</p><button onclick="__galioResetCache()" style="margin-top:16px;padding:12px 24px;border:none;border-radius:12px;background:#2f6bff;color:#fff;font-size:15px">Išvalyti talpyklą ir perkrauti</button></div>';
   }, 20000);
 </script>
-<script type="module" src="firebase-config.js?v=20261114-1620"></script>
-<script type="module" src="app.js?v=20261114-1620"></script>
+<script type="module" src="firebase-config.js?v=20261114-1630"></script>
+<script type="module" src="app.js?v=20261114-1630"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20261114-1620').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20261114-1630').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
