@@ -1444,7 +1444,7 @@ function renderList(){
   return`<div class="list-root">
     <div class="page-header">
       <span class="page-title">Garantijos</span>
-      <img class="hdr-logo" src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
+      <img class="hdr-logo" src="logo-mark.png" alt="Galio" width="26" height="26">
     </div>
     <div style="height:14px"></div>
     ${statsHtml}
@@ -1966,7 +1966,7 @@ function renderSettings(){
   return `<div>
     <div class="page-header">
       <span class="page-title">Nustatymai</span>
-      <img class="hdr-logo" src="logo-mark.png" alt="Galio" width="30" height="30" style="display:block;flex-shrink:0">
+      <img class="hdr-logo" src="logo-mark.png" alt="Galio" width="26" height="26">
     </div>
 
     <button class="settings-profile tappable" id="settingsAccountBtn" style="width:calc(100% - 32px);border:none;text-align:left;color:inherit;padding:14px 16px">
