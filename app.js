@@ -120,6 +120,15 @@ function premiumKind(user){
 function needsCloudDowngrade(){
   return !!state.user && !isPremiumUser() && state.storageMode==='cloud';
 }
+// 30 days after Premium ended without moving entries, the server hides them (cloudHidden).
+function cloudEntriesHidden(){
+  return needsCloudDowngrade() && state.userDoc?.cloudHidden === true;
+}
+// Last day to move entries to the phone (null until the server starts the clock).
+function cloudMoveDeadline(){
+  const t = state.userDoc?.cloudLapseAt?.toDate?.();
+  return t ? new Date(t.getTime() + 30*86400000) : null;
+}
 
 // Resets everything tied to "adding one new item" — the form fields plus
 // the per-item AI retry counter and pending-charge flag. Centralized here
@@ -880,8 +889,12 @@ async function ensureUserDoc(user){
   state.userDocUnsub = onSnapshot(ref_, s=>{
     if(s.exists()){
       const prevMode = state.storageMode;
+      const prevHidden = cloudEntriesHidden();
       state.userDoc = s.data();
       state.storageMode = state.userDoc.storageMode || 'local';
+      if(prevHidden !== cloudEntriesHidden() && prevMode === state.storageMode && !state.migratingStorage){
+        attachItemsListener(state.user.uid);
+      }
       // If storage mode changed (e.g. user toggled it in Settings), re-attach
       // the items listener pointed at the correct source — but not while
       // toggleStorageMode() is mid-migration, since it manages the listener
@@ -907,7 +920,9 @@ function attachItemsListener(uid, retryCount=0){
   if(state.itemsUnsub){ state.itemsUnsub(); state.itemsUnsub=null; }
   state.loadingItems = true;
 
-  if(state.storageMode === 'cloud'){
+  if(state.storageMode === 'cloud' && cloudEntriesHidden()){
+    state.items = []; state.loadingItems = false; render();
+  }else if(state.storageMode === 'cloud'){
     // IMPORTANT: we intentionally do NOT use orderBy('createdAtMs') in the
     // query itself. Per Firestore's documented behavior, an orderBy()
     // clause also filters for existence of that field — any document
@@ -1452,9 +1467,14 @@ function renderList(){
     <div class="pb-text">Nemokamas Premium baigiasi ${promoLeftDays<=1?'rytoj':`po ${promoLeftDays} ${promoLeftDays%10===1&&promoLeftDays%100!==11?'dienos':'dienų'}`}. Po to įrašus reikės perkelti į telefoną, priminimai el. paštu nebebus siunčiami.</div>
     <button id="promoEndBtn" style="background:var(--orange)">Premium</button>
   </div>` : '';
-  const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
+  const moveBy = cloudMoveDeadline();
+  const downgradeBanner = cloudEntriesHidden() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Premium nepratęstas. Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio saugykloje ir veiktų priminimai.</div>
+    <div class="pb-text" style="color:var(--text)">Premium nepratęstas, todėl įrašai Galio saugykloje nebepasiekiami.</div>
+    <button id="upgradeBtnHidden" style="background:var(--orange)">Premium</button>
+  </div>` : needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
+    <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
+    <div class="pb-text" style="color:var(--text)">Premium nepratęstas. ${moveBy ? `Perkelkite įrašus į šį įrenginį iki <b>${moveBy.toLocaleDateString('lt-LT')}</b>, kitaip jie nebebus pasiekiami. Arba atnaujinkite Premium.` : 'Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio saugykloje ir veiktų priminimai.'}</div>
     <button id="downgradeStorageBtn" style="background:var(--orange)">Perkelti</button>
   </div>` : '';
 
@@ -2062,7 +2082,7 @@ function renderSettings(){
       ${chev}
     </button>
 
-    ${needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
+    ${needsCloudDowngrade() && !cloudEntriesHidden() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
       <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
       <div class="pb-text" style="color:var(--text)">Premium nepratęstas. Perkelkite įrašus į šį įrenginį.</div>
       <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
@@ -3267,6 +3287,7 @@ function attachEvents(){
   on('resendVerifyBtn','click',resendVerification);
   on('notifPromoBanner','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   on('upgradeBtn','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
+  on('upgradeBtnHidden','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   on('promoEndBanner','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   on('upgradeBtn3','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});  on('catDropBtn','click',e=>{ e.stopPropagation(); state.catDropOpen=!state.catDropOpen; state.sortDropOpen=false; render(); });
@@ -5382,6 +5403,8 @@ async function saveMarketingEmails(next){
 async function toggleStorageMode(){
   if(!state.user) return;
   if(state.migratingStorage) return;
+  // Hidden entries can't be moved (the list is empty here): switching would just drop them.
+  if(cloudEntriesHidden()){ toast('Įrašai Galio saugykloje nebepasiekiami. Atnaujinkite Premium.', 5000); return; }
   if(!state.online){
     offlineDialog(
       'Saugojimo keitimui reikia interneto',
