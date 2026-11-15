@@ -2617,6 +2617,9 @@ function renderMultiSelect(){
           ${item.price?`<span>${esc(String(item.price))} €</span>`:''}
         </div>
       </div>
+      <button class="multi-photo-btn" data-midx="${idx}" aria-label="${item.photoData?'Pakeisti daikto nuotrauką':'Pridėti daikto nuotrauką'}" title="${item.photoData?'Pakeisti daikto nuotrauką':'Pridėti daikto nuotrauką'}" style="width:40px;height:40px;border-radius:10px;border:1px ${item.photoData?'solid var(--border)':'dashed var(--border2)'};background:var(--bg2);padding:0;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--accent);cursor:pointer;flex-shrink:0" onclick="event.stopPropagation()">
+        ${item.photoData?`<img src="${item.photoData}" alt="" style="width:100%;height:100%;object-fit:cover;display:block">`:'<i class="ti ti-camera-plus" style="font-size:19px"></i>'}
+      </button>
       <button class="multi-edit-btn" data-midx="${idx}" style="background:none;border:none;padding:6px;color:var(--text3);cursor:pointer;flex-shrink:0" onclick="event.stopPropagation()">
         <i class="ti ti-pencil" style="font-size:17px"></i>
       </button>
@@ -2634,8 +2637,9 @@ function renderMultiSelect(){
       </div>
       <div style="display:flex;gap:12px;align-items:flex-start;margin:4px 16px 0;padding:12px 14px;border-radius:var(--radius);background:var(--bg2)">
         <i class="ti ti-camera" style="font-size:20px;color:var(--accent);flex-shrink:0;margin-top:1px"></i>
-        <div style="font-size:13px;color:var(--text2);line-height:1.4">Išsaugoję atidarykite daiktą ir paspauskite <b style="color:var(--text)">„Pridėti daikto nuotrauką“</b> – ji bus rodoma sąraše, kad daiktą atpažintumėte iš karto.</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.4">Paspauskite <i class="ti ti-camera-plus" style="color:var(--accent)"></i> prie prekės ir pridėkite jos nuotrauką – ji bus rodoma sąraše, kad daiktą atpažintumėte iš karto.</div>
       </div>
+      <input type="file" id="multiPhotoInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" style="display:none" />
     </div>
     <div class="fixed-bar" style="position:fixed;bottom:65px;left:0;right:0;padding:10px 16px;background:var(--bg);border-top:0.5px solid var(--border);z-index:50;display:flex;gap:10px;align-items:center">
       <button id="multiCancelBtn" style="background:none;border:1px solid var(--border2);color:var(--text3);font-size:14px;padding:10px 16px;border-radius:12px;cursor:pointer;flex-shrink:0">Atšaukti</button>
@@ -3436,9 +3440,14 @@ function attachEvents(){
   onAll('.keep-opt','click',e=>{ const m=parseInt(e.currentTarget.dataset.keep,10)||0; if(m!==keepExpiredMonths()) changeKeepExpired(m); });
   on('settingsLogoutRow','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   on('deleteAccountBtn','click',confirmDeleteAccount);
+  onAll('.multi-photo-btn','click',e=>{
+    state._photoMultiIdx = parseInt(e.currentTarget.dataset.midx, 10);
+    document.getElementById('multiPhotoInput')?.click();
+  });
+  on('multiPhotoInput','change',handleItemPhoto);
   on('multiCancelBtn','click',()=>{ if(requestUnsavedAddExit('list')) return; discardPendingAdd(); state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
-    if(e.target.closest('.multi-edit-btn') || e.target.closest('.multi-name-input')) return;
+    if(e.target.closest('.multi-edit-btn') || e.target.closest('.multi-photo-btn') || e.target.closest('.multi-name-input')) return;
     const idx=parseInt(e.currentTarget.dataset.midx);
     const r=state.multiItemReceipt;
     if(!r) return;
@@ -4534,9 +4543,19 @@ async function finishSaveMultiItems(){
         createdAtMs: Date.now(),
       };
 
+      if(!isCloud && item.photoData){
+        Object.assign(payload, { itemPhotoUrl:item.photoData, itemPhotoMime:'image/jpeg', itemPhotoFileName:'daiktas.jpg' });
+      }
       if(isCloud){
         const docRef = await addDoc(collection(db,'users',state.user.uid,'warranties'),{...payload,...(sharedDocMeta||{}),createdAt:serverTimestamp()});
         savedIds.push(docRef.id);
+        if(item.photoData){
+          try{
+            const path = `users/${state.user.uid}/item-photos/${docRef.id}.jpg`;
+            const url = await uploadDataUrlToStorage(path, item.photoData, 'image/jpeg');
+            await updateDoc(docRef, { itemPhotoUrl:url, itemPhotoMime:'image/jpeg', itemPhotoFileName:'daiktas.jpg', itemPhotoStoragePath:path });
+          }catch(e){ console.warn('Item photo upload failed:', e); }
+        }
         await updateDoc(doc(db,'users',state.user.uid),{itemCount:increment(1)});
       }else{
         const localItem={
@@ -4828,8 +4847,14 @@ function handleItemPhoto(e){
           return;
         }
         const targetItemId = state._photoTargetItemId; state._photoTargetItemId = null;
+        const multiIdx = state._photoMultiIdx; state._photoMultiIdx = null;
         openPhotoEditor(compressed, edited => {
           if(targetItemId){ saveDetailItemPhoto(targetItemId, edited); return; }
+          if(multiIdx != null){
+            const it = state.multiItemReceipt?.items?.[multiIdx];
+            if(it){ it.photoData = edited; it.selected = true; }
+            render(); return;
+          }
           state.form.itemPhotoData = edited;
           state.form.itemPhotoMime = 'image/jpeg';
           state.form.itemPhotoFileName = file.name.replace(/\.[^.]+$/,'.jpg');
