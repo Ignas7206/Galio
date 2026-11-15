@@ -1894,11 +1894,18 @@ function renderDetail(){
 
   let docHtml='';
   if(doc.docUrl&&!canViewDoc(item)){
-    docHtml=`<div class="detail-section"><div class="media-label">Dokumentas</div>${lockedDocHtml(false)}</div>`;
-  }else if(doc.docUrl&&doc.docMime==='application/pdf'){
-    docHtml=`<div class="detail-section"><div class="media-label">Dokumentas</div><a class="doc-preview-pdf" href="${esc(doc.docUrl)}" target="_blank"><i class="ti ti-file-type-pdf"></i><div><div class="pdf-name">${esc(doc.docFileName||'dokumentas.pdf')}</div><div class="pdf-hint">Spustelkite peržiūrėti</div></div><i class="ti ti-external-link" style="font-size:18px;color:var(--red);flex-shrink:0"></i></a></div>`;
+    docHtml=`<div class="detail-section" style="margin-top:14px"><div class="media-label">Dokumentas</div>${lockedDocHtml(false)}</div>`;
   }else if(doc.docUrl){
-    docHtml=`<div class="detail-section"><div class="media-label">Dokumentas</div><img src="${esc(doc.docUrl)}" id="docImg" class="detail-media-img" /></div>`;
+    // One compact row for both PDF and photo: opens on tap, takes little space at the top.
+    const isPdf = doc.docMime==='application/pdf';
+    const inner = `<i class="ti ${isPdf?'ti-file-type-pdf':'ti-receipt'}" style="font-size:26px;color:var(--accent);flex-shrink:0"></i>
+      <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.docType||doc.docType||'Pirkimo dokumentas')}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">${isPdf?'PDF · ':''}Atidaryti dokumentą</div></div>
+      <i class="ti ${isPdf?'ti-external-link':'ti-chevron-right'}" style="font-size:18px;color:var(--text3);flex-shrink:0"></i>`;
+    const style = 'display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-decoration:none;text-align:left;cursor:pointer';
+    docHtml = `<div class="detail-section" style="margin-top:14px">${isPdf
+      ? `<a href="${esc(doc.docUrl)}" target="_blank" rel="noopener" style="${style}">${inner}</a>`
+      : `<button type="button" id="docImg" style="${style}">${inner}</button>`}</div>`;
   }
   const itemPhotoHtml = itemPhoto.itemPhotoUrl
     ? `<div class="detail-section" style="margin-top:14px"><div class="media-label">Daikto nuotrauka</div><img src="${esc(itemPhoto.itemPhotoUrl)}" id="itemPhotoImg" class="detail-media-img item-photo-main" /></div>`
@@ -1969,10 +1976,10 @@ function renderDetail(){
     </div>
     ${statusHtml}
     ${itemPhoto.itemPhotoUrl ? '' : itemPhotoHtml /* missing photo: ask for it up front */}
+    ${docHtml /* the receipt is what people open in a shop */}
     <div class="detail-section" style="margin-top:14px"><div class="detail-rows">${rows}</div></div>
     ${remindersSection}
     ${visibleNotes?`<div class="detail-section"><div class="notes-card"><div class="nc-label">Pastabos</div><p>${esc(visibleNotes)}</p></div></div>`:''}
-    ${docHtml}
     ${itemPhoto.itemPhotoUrl ? itemPhotoHtml : '' /* the photo was already seen in the list, so it goes last */}
     ${policySection}
     <div class="detail-section"><button class="delete-btn" id="deleteBtn2"><i class="ti ti-trash"></i>Ištrinti įrašą</button></div>
