@@ -2104,7 +2104,7 @@ function renderSettingsSheet(o){
     const remDesc = !remAvail ? 'Laiškas prieš garantijos ar grąžinimo termino pabaigą. Įeina į Premium planą.'
       : !o.notifyOn ? 'Pirmiausia įjunkite pranešimus.'
       : !o.emailVerified ? 'Pirmiausia patvirtinkite savo el. pašto adresą.'
-      : `Laiškas prieš garantijos ar grąžinimo termino pabaigą. Siunčiama adresu ${esc(o.accountEmail)}.`;
+      : 'Laiškas prieš garantijos ar grąžinimo termino pabaigą.';
     body = row('emailRemToggle', remAvail && o.emailRemOn && o.notifyOn, !remAvail || !o.notifyOn, 'Priminimai apie terminus', remDesc)
       + row('marketingToggle', o.marketingOn, false, 'Galio naujienos ir pasiūlymai',
         'Laiškai apie Galio naujoves ir pasiūlymus.')
