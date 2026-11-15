@@ -5781,7 +5781,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     if(p.isPurchaseDocument===false){
       state.form.docData=null; state.form.docMime=null; state.form.docFileName=null;
       state.form.qualityWarning=null;
-      state.docError='Pirkimo dokumentas nerastas';
+      state.docError='Šis failas nepanašus į pirkimo dokumentą. Įkelkite čekį, sąskaitą faktūrą ar užsakymo patvirtinimą.';
       return;
     }
 
