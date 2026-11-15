@@ -824,6 +824,9 @@ async function ensureUserDoc(user){
       createdAt: serverTimestamp(),
       // Proof of consent: sign-up (checkbox) and Google sign-in both require accepting the Terms.
       termsAcceptedAt: serverTimestamp(), termsVersion: TERMS_VERSION,
+      // Marketing emails only with a separate, unticked opt-in (Google sign-in: off until enabled in settings).
+      marketingEmails: !!state.authMarketing,
+      ...(state.authMarketing ? { marketingConsentAt: serverTimestamp(), marketingConsentSource: 'signup' } : {}),
     };
     window.__galioBootStep = 'naujos paskyros kūrimas (setDoc)';
     await setDoc(ref_, initial);
@@ -1295,6 +1298,10 @@ function renderAuth(){
     ${m==='register'?`<label class="consent-row">
       <input type="checkbox" id="consentCheck" />
       <span>Sutinku su <a href="terms.html" target="_blank">Naudojimo sąlygomis</a> ir <a href="privacy.html" target="_blank">Privatumo politika</a> ir patvirtinu, kad man yra bent 14 metų</span>
+    </label>
+    <label class="consent-row">
+      <input type="checkbox" id="marketingCheck" ${state.authMarketing?'checked':''} />
+      <span>Noriu el. paštu gauti Galio naujienas ir pasiūlymus (neprivaloma, atsisakyti galima bet kada)</span>
     </label>`:''}
 
     ${state.authError?`<p class="login-error">${esc(state.authError)}</p>`:''}
@@ -1325,6 +1332,7 @@ function attachAuthEvents(){
     state.authEmail=email;
     if(state.authMode==='register'){
       const consent = document.getElementById('consentCheck');
+      state.authMarketing = !!document.getElementById('marketingCheck')?.checked;
       if(!consent?.checked){
         state.authPwd=pwd; state.authPwd2=pwd2;
         state.authError='Turite sutikti su Naudojimo sąlygomis ir Privatumo politika';
@@ -1935,6 +1943,7 @@ function renderSettings(){
   const isAdmin = state.userDoc?.role==='admin';
   const notifyOn = state.userDoc?.notifyEnabled !== false; // default true
   const emailRemOn = state.userDoc?.emailReminders !== false; // default true
+  const marketingOn = state.userDoc?.marketingEmails === true; // default false: needs opt-in
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const isCloud = state.storageMode==='cloud';
   const initials = (u.displayName||u.email||'?').trim().charAt(0).toUpperCase();
@@ -2012,6 +2021,11 @@ function renderSettings(){
         <div class="settings-row-label">Priminimai el. paštu<small>${u.emailVerified?esc(accountEmail):'Pirmiausia patvirtinkite el. paštą'}</small></div>
         <button class="toggle-switch${emailRemOn&&notifyOn?' on':''}" id="emailRemToggle" ${!notifyOn?'disabled':''}><div class="knob"></div></button>
       </div>`:''}
+      <div class="settings-row" style="border-bottom:none">
+        <i class="ti ti-speakerphone row-icon"></i>
+        <div class="settings-row-label">Naujienos ir pasiūlymai<small>Retkarčiais el. paštu, atsisakyti galima bet kada</small></div>
+        <button class="toggle-switch${marketingOn?' on':''}" id="marketingToggle"><div class="knob"></div></button>
+      </div>
       <button class="settings-row tappable" id="settingsExpiredBtn" style="${rowBtn}">
         <i class="ti ti-archive row-icon"></i><span class="settings-row-label">Seni įrašai</span>
         <span class="settings-row-val">${keepM?`trinti po ${esc(keepLabel)}`:'saugoti visada'}</span>${chev}
@@ -3318,6 +3332,7 @@ function attachEvents(){
   });
   on('notifyToggle','click',toggleNotify);
   on('emailRemToggle','click',toggleEmailReminders);
+  on('marketingToggle','click',toggleMarketingEmails);
   on('storageModeToggle','click',toggleStorageMode);
   on('downgradeStorageBtn','click',toggleStorageMode);
   on('downgradeStorageBtn2','click',toggleStorageMode);
@@ -5046,6 +5061,21 @@ async function toggleEmailReminders(){
   try{
     await updateDoc(doc(db,'users',state.user.uid), { emailReminders: next });
     toast(next ? 'Priminimai el. paštu įjungti' : 'Priminimai el. paštu išjungti');
+  }catch(e){
+    toast('Nepavyko išsaugoti nustatymo');
+  }
+}
+
+async function toggleMarketingEmails(){
+  if(!state.user) return;
+  if(!state.online){ toast('Nustatymui pakeisti reikia interneto'); return; }
+  const next = state.userDoc?.marketingEmails !== true;
+  const upd = next
+    ? { marketingEmails: true, marketingConsentAt: serverTimestamp(), marketingConsentSource: 'settings' }
+    : { marketingEmails: false, marketingOptOutAt: serverTimestamp() };
+  try{
+    await updateDoc(doc(db,'users',state.user.uid), upd);
+    toast(next ? 'Naujienos el. paštu užsakytos' : 'Naujienų el. paštu atsisakyta');
   }catch(e){
     toast('Nepavyko išsaugoti nustatymo');
   }
