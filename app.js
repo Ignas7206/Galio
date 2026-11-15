@@ -2156,7 +2156,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 154;
+const WEB_RELEASE = 155;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -3383,7 +3383,6 @@ function attachEvents(){
     const k=e.currentTarget.dataset.status;
     state.statusTop = state.statusTop===k ? null : k;
     render();
-    document.querySelector('.cards')?.scrollIntoView({block:'nearest'});
   });
   // Dropdowns open right under their own button (on a wide screen the window edge is far away).
   [['catDropMenu','catDropBtn','left'],['sortDropMenu','sortDropBtn','right']].forEach(([menuId,btnId,side])=>{
