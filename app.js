@@ -1301,7 +1301,7 @@ function renderAuth(){
     </label>
     <label class="consent-row">
       <input type="checkbox" id="marketingCheck" ${state.authMarketing?'checked':''} />
-      <span>Sutinku el. paštu gauti Galio naujienas, specialius pasiūlymus ir nuolaidas. Sutikimą galiu bet kada atšaukti</span>
+      <span>Sutinku el. paštu gauti Galio naujienas ir pasiūlymus. Sutikimą galiu bet kada atšaukti</span>
     </label>`:''}
 
     ${state.authError?`<p class="login-error">${esc(state.authError)}</p>`:''}
@@ -2107,7 +2107,7 @@ function renderSettingsSheet(o){
       : `Laiškas prieš garantijos ar grąžinimo termino pabaigą. Siunčiama adresu ${esc(o.accountEmail)}.`;
     body = row('emailRemToggle', remAvail && o.emailRemOn && o.notifyOn, !remAvail || !o.notifyOn, 'Priminimai apie terminus', remDesc)
       + row('marketingToggle', o.marketingOn, false, 'Galio naujienos ir pasiūlymai',
-        'Specialūs Premium pasiūlymai ir nuolaidos, naujos funkcijos bei patarimai, kaip pasinaudoti garantija. Ne dažniau kaip 2 kartus per mėnesį.')
+        'Laiškai apie Galio naujoves ir pasiūlymus.')
       + `<div style="height:10px"></div>`;
   }else if(k==='legal'){
     title = 'Teisinė informacija';
@@ -5099,7 +5099,7 @@ async function toggleMarketingEmails(){
   const next = state.userDoc?.marketingEmails !== true;
   if(!next){
     return confirmEmailOff('Atsisakyti naujienų?',
-      'Nebegausite specialių Premium pasiūlymų, nuolaidų ir žinių apie naujas Galio funkcijas.',
+      'Nebegausite laiškų apie Galio naujoves ir pasiūlymus.',
       'Atsisakyti', ()=>saveMarketingEmails(false));
   }
   return saveMarketingEmails(true);
