@@ -970,8 +970,16 @@ function attachItemsListener(uid, retryCount=0){
         setTimeout(()=>{ if(auth.currentUser?.uid === uid) attachItemsListener(uid, retryCount+1); }, 800);
         return;
       }
+      // The page is being closed or reloaded: the listener dies with it, nothing to show.
+      if(window._galioUnloading) return;
+      // A dropped connection ends the listener for good, so start it again a few times
+      // (the list on screen stays as it was) before telling the user.
+      if(err.code!=='permission-denied' && retryCount<4){
+        setTimeout(()=>{ if(auth.currentUser?.uid === uid && !window._galioUnloading) attachItemsListener(uid, retryCount+1); }, [1500,4000,10000,20000][retryCount]);
+        return;
+      }
       state.loadingItems = false;
-      toast('Nepavyko įkelti sąrašo. Patikrinkite interneto ryšį.');
+      toast(`Nepavyko įkelti sąrašo. Patikrinkite interneto ryšį.${err.code?` (${err.code})`:''}`);
       render();
     });
   }else{
@@ -1128,6 +1136,8 @@ window.__galioSafeReload = () => {
 };
 setInterval(()=>{ if(_reloadPending && appIsIdle()) location.reload(); }, 3000);
 
+window.addEventListener('pagehide', ()=>{ window._galioUnloading = true; });
+window.addEventListener('pageshow', ()=>{ window._galioUnloading = false; });
 window.addEventListener('beforeunload', e=>{
   if(scannedThisItem() && hasUnsavedAddWork()){ e.preventDefault(); e.returnValue=''; }
 });
