@@ -3277,7 +3277,7 @@ function renderAdminPromo(){
           <div style="font-size:12px;color:var(--text3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${promoMonthsLabel(c.months)} Premium${uses}${until} · sukurtas ${fmt(c.createdAt)}${c.note?` · ${esc(c.note)}`:''}</div>
           ${who}
           ${!multi&&(c.usedBy||c.usedByEmail)?`<div style="font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.usedByEmail||'')} · ${fmt(c.usedAt)}</div>`:''}
-          ${c.revokedAt?'':`<div style="text-align:right;margin-top:2px"><button class="promo-revoke" data-code="${esc(c.code)}" style="background:none;border:none;padding:4px 0;color:var(--red);font-size:13px;font-weight:600;cursor:pointer">Deaktyvuoti</button></div>`}
+          ${c.revokedAt?`<div style="text-align:right;margin-top:2px"><button class="promo-delete" data-code="${esc(c.code)}" style="background:none;border:none;padding:4px 0;color:var(--text3);font-size:13px;font-weight:600;cursor:pointer">Ištrinti iš sąrašo</button></div>`:`<div style="text-align:right;margin-top:2px"><button class="promo-revoke" data-code="${esc(c.code)}" style="background:none;border:none;padding:4px 0;color:var(--red);font-size:13px;font-weight:600;cursor:pointer">Deaktyvuoti</button></div>`}
         </div>`;
       }).join('')}
     </div>`:''}
@@ -3298,6 +3298,16 @@ function revokePromoCode(code){
       else toast(data.error||'Nepavyko deaktyvuoti');
     }catch(e){ toast('Nepavyko deaktyvuoti'); }
   }, {okText:'Deaktyvuoti', align:'center'});
+}
+
+function deletePromoCode(code){
+  showConfirmDialog('Ištrinti kodą?', `${code} dings iš sąrašo. Vartotojų kortelėse liks, su kokiu kodu jie atėjo.`, async ()=>{
+    try{
+      const {ok, data} = await callFunction('deletePromoCode', {code});
+      if(ok){ toast('Kodas ištrintas'); await loadPromoCodes(); }
+      else toast(data.error||'Nepavyko ištrinti');
+    }catch(e){ toast('Nepavyko ištrinti'); }
+  }, {okText:'Ištrinti', align:'center'});
 }
 
 async function createPromoCode(){
@@ -3618,6 +3628,7 @@ function attachEvents(){
   on('promoRedeemBtn','click',redeemPromoCode);
   on('promoCreateBtn','click',createPromoCode);
   document.querySelectorAll('.promo-revoke').forEach(b=>b.addEventListener('click',()=>revokePromoCode(b.dataset.code)));
+  document.querySelectorAll('.promo-delete').forEach(b=>b.addEventListener('click',()=>deletePromoCode(b.dataset.code)));
   on('promoCopyBtn','click',()=>{
     const c = state.promoLastCode; if(!c) return;
     (navigator.clipboard?.writeText(c)||Promise.reject()).then(()=>toast('Nukopijuota')).catch(()=>toast(c, 8000));
