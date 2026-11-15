@@ -1549,11 +1549,11 @@ function renderList(){
       </button>
     </div>`}
     ${state.catDropOpen ? `<div id="catDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
-    <div class="drop-menu" style="position:fixed;left:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
+    <div class="drop-menu" id="catDropMenu" style="position:fixed;left:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       ${['Visos',...CATEGORIES].map(c=>`<button class="sort-drop-item${filterCat===c?' active':''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
     </div>` : ''}
     ${state.sortDropOpen ? `<div id="sortDropOverlay" style="position:fixed;inset:0;z-index:99"></div>
-    <div class="drop-menu" style="position:fixed;right:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
+    <div class="drop-menu" id="sortDropMenu" style="position:fixed;right:16px;top:auto;z-index:100;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.25);min-width:160px;overflow:hidden">
       <button class="sort-drop-item${sortBy==='newest'?' active':''}" data-sort="newest"><i class="ti ti-clock" style="font-size:14px"></i>Naujausi</button>
       <button class="sort-drop-item${sortBy==='expiring'?' active':''}" data-sort="expiring"><i class="ti ti-hourglass" style="font-size:14px"></i>Baigiasi pirmi</button>
       <button class="sort-drop-item${sortBy==='name'?' active':''}" data-sort="name"><i class="ti ti-sort-a-z" style="font-size:14px"></i>A–Z</button>
@@ -2146,7 +2146,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 148;
+const WEB_RELEASE = 149;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -3369,6 +3369,16 @@ function renderPromoRedeem(){
 function attachEvents(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn);};
   const onAll=(sel,ev,fn)=>document.querySelectorAll(sel).forEach(el=>el.addEventListener(ev,fn));
+  // Dropdowns open right under their own button (on a wide screen the window edge is far away).
+  [['catDropMenu','catDropBtn','left'],['sortDropMenu','sortDropBtn','right']].forEach(([menuId,btnId,side])=>{
+    const menu=document.getElementById(menuId), btn=document.getElementById(btnId);
+    if(!menu||!btn) return;
+    const r=btn.getBoundingClientRect();
+    menu.style.top=`${r.bottom+6}px`;
+    menu.style.minWidth=`${Math.max(160,r.width)}px`;
+    if(side==='left'){ menu.style.left=`${r.left}px`; menu.style.right='auto'; }
+    else{ menu.style.right=`${Math.max(8, window.innerWidth-r.right)}px`; menu.style.left='auto'; }
+  });
 
   // Swipe-to-delete on list cards. Only a clearly sideways swipe counts (a scroll that
   // drifts sideways is ignored), and it must cover ~45% of the card to ask about deleting.
