@@ -710,6 +710,9 @@ onAuthStateChanged(auth, async (user)=>{
   const wasLoggedIn = !!state.user;
   state.user=user;
   if(user){
+    // Leave the login fields before the screen is replaced, otherwise password
+    // managers (Bitwarden etc.) keep their icon floating where the field was.
+    if(document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     await ensureUserDoc(user);
     attachItemsListener(user.uid);
     startEmailVerifyPoll(user);
