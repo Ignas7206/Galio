@@ -1465,17 +1465,17 @@ function renderList(){
   const promoLeftDays = promoDaysLeft();
   const promoEndBanner = promoLeftDays!==null && promoLeftDays<=7 ? `<div class="plan-banner" id="promoEndBanner" style="background:var(--orange-bg);margin:0 16px 14px;cursor:pointer">
     <i class="ti ti-clock-exclamation" style="color:var(--orange)"></i>
-    <div class="pb-text">Nemokamas Premium baigiasi ${promoLeftDays<=1?'rytoj':`po ${promoLeftDays} ${promoLeftDays%10===1&&promoLeftDays%100!==11?'dienos':'dienų'}`}. Po to įrašus su čekiais reikės perkelti į telefoną, o priminimai apie terminus nebebus siunčiami.</div>
+    <div class="pb-text">Nemokamas Premium baigiasi ${promoLeftDays<=1?'rytoj':`po ${promoLeftDays} ${promoLeftDays%10===1&&promoLeftDays%100!==11?'dienos':'dienų'}`}. Po to įrašus reikės perkelti į telefoną, o priminimai apie terminus nebebus siunčiami.</div>
     <button id="promoEndBtn" style="background:var(--orange)">Premium</button>
   </div>` : '';
   const moveBy = cloudMoveDeadline();
   const downgradeBanner = cloudEntriesHidden() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Jūsų įrašus, čekius ir nuotraukas saugome${moveBy ? ` iki <b>${new Date(moveBy.getTime()+60*86400000).toLocaleDateString('lt-LT')}</b>` : ''}. Užsisakius Premium, viskas vėl atsiras čia – nieko nereikės įvesti iš naujo.</div>
-    <button id="upgradeBtnHidden" style="background:var(--orange)">Grąžinti</button>
+    <div class="pb-text" style="color:var(--text)">Jūsų įrašai išsaugoti Galio saugykloje${moveBy ? ` iki <b>${new Date(moveBy.getTime()+60*86400000).toLocaleDateString('lt-LT')}</b>` : ''}. Užsisakius Premium, jie bus atkurti automatiškai.</div>
+    <button id="upgradeBtnHidden" style="background:var(--orange)">Atkurti</button>
   </div>` : needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Premium nepratęstas. ${moveBy ? `Kad įrašai ir čekiai liktų po ranka, perkelkite juos į šį įrenginį iki <b>${moveBy.toLocaleDateString('lt-LT')}</b> arba atnaujinkite Premium.` : 'Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio saugykloje ir veiktų priminimai.'}</div>
+    <div class="pb-text" style="color:var(--text)">Premium nepratęstas. ${moveBy ? `Perkelkite įrašus į šį įrenginį iki <b>${moveBy.toLocaleDateString('lt-LT')}</b> arba užsisakykite Premium.` : 'Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio saugykloje ir veiktų priminimai.'}</div>
     <button id="downgradeStorageBtn" style="background:var(--orange)">Perkelti</button>
   </div>` : '';
 
@@ -2146,7 +2146,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 147;
+const WEB_RELEASE = 148;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -5538,7 +5538,7 @@ async function toggleStorageMode(){
   if(!state.user) return;
   if(state.migratingStorage) return;
   // Hidden entries can't be moved (the list is empty here): switching would just drop them.
-  if(cloudEntriesHidden()){ toast('Įrašai saugomi Galio saugykloje. Užsisakius Premium, jie vėl atsiras čia.', 5000); return; }
+  if(cloudEntriesHidden()){ toast('Įrašai išsaugoti Galio saugykloje. Užsisakius Premium, jie bus atkurti automatiškai.', 5000); return; }
   if(!state.online){
     offlineDialog(
       'Saugojimo keitimui reikia interneto',
