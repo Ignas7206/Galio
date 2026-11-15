@@ -1130,11 +1130,13 @@ function appIsIdle(){
     && document.visibilityState === 'visible'
     && ['list','settings','search'].includes(state.view);
 }
+// Mark the reload first: listeners that die during it must not show or report an error.
+const reloadNow = () => { window._galioUnloading = true; location.reload(); };
 window.__galioSafeReload = () => {
-  if(appIsIdle()) location.reload();
+  if(appIsIdle()) reloadNow();
   else _reloadPending = true;
 };
-setInterval(()=>{ if(_reloadPending && appIsIdle()) location.reload(); }, 3000);
+setInterval(()=>{ if(_reloadPending && appIsIdle()) reloadNow(); }, 3000);
 
 window.addEventListener('pagehide', ()=>{ window._galioUnloading = true; });
 window.addEventListener('pageshow', ()=>{ window._galioUnloading = false; });
@@ -1444,6 +1446,12 @@ function renderList(){
     <div class="pb-text" style="color:var(--text)">Norite priminimo prieš grąžinimo terminą ar garantijos pabaigą? <b style="color:var(--accent)">Sužinokite apie Premium</b></div>
     <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
   </div>` : '';
+  const promoLeftDays = promoDaysLeft();
+  const promoEndBanner = promoLeftDays!==null && promoLeftDays<=7 ? `<div class="plan-banner" id="promoEndBanner" style="background:var(--orange-bg);margin:0 16px 14px;cursor:pointer">
+    <i class="ti ti-clock-exclamation" style="color:var(--orange)"></i>
+    <div class="pb-text">Nemokamas Premium baigiasi ${promoLeftDays<=1?'rytoj':`po ${promoLeftDays} ${promoLeftDays%10===1&&promoLeftDays%100!==11?'dienos':'dienų'}`}. Po to įrašus reikės perkelti į telefoną, priminimai el. paštu nebebus siunčiami.</div>
+    <button id="promoEndBtn" style="background:var(--orange)">Premium</button>
+  </div>` : '';
   const downgradeBanner = needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
     <div class="pb-text" style="color:var(--text)">Premium nepratęstas. Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio saugykloje ir veiktų priminimai.</div>
@@ -1499,7 +1507,7 @@ function renderList(){
     <div style="height:14px"></div>
     ${statsHtml}
     ${verifyBanner}
-    ${downgradeBanner}
+    ${promoEndBanner}${downgradeBanner}
     ${offlineBanner}
     ${planBanner}
     ${notifPromo}
@@ -2462,15 +2470,24 @@ async function loadPlayProducts(){
   if(state.view==='premium') render();
 }
 
+function promoDaysLeft(){
+  if(state.userDoc?.planSource!=='promo' || state.userDoc?.plan!=='premium') return null;
+  const exp = state.userDoc?.premiumExpiresAt?.toDate?.();
+  if(!exp) return null;
+  return Math.max(0, Math.ceil((exp.getTime() - Date.now()) / 86400000));
+}
+
 function renderPremiumBuy(){
-  if(isPremiumUser() && state.userDoc?.planSource==='promo'){
+  const promoLeft = promoDaysLeft();
+  const promoEnding = promoLeft!==null && promoLeft<=7;
+  if(isPremiumUser() && state.userDoc?.planSource==='promo' && !promoEnding){
     const exp = state.userDoc?.premiumExpiresAt?.toDate?.();
     if(!exp) return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Premium neribotai</button>
       <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Premium suteiktas kodu ir nesibaigia.</p>`;
     return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Premium iki ${exp.toLocaleDateString('lt-LT')}</button>
       <p style="font-size:12px;color:var(--text3);text-align:center;margin:10px 0 0">Premium suteiktas kodu. Turite dar vieną kodą? Jis pratęs laiką.</p>${renderPromoRedeem()}`;
   }
-  if(isPremiumUser()){
+  if(isPremiumUser() && !promoEnding){
     const purchased = state.userDoc?.planSource==='purchase';
     return `<button class="save-btn" disabled><i class="ti ti-crown"></i> Jūs jau Premium narys</button>
       ${purchased?`<p style="font-size:13px;text-align:center;margin:10px 0 0"><a href="${PLAY_SUBS_URL}" target="_blank" rel="noopener" style="color:var(--accent)">Valdyti prenumeratą Google Play</a></p>`:''}`;
@@ -2490,7 +2507,8 @@ function renderPremiumBuy(){
       <p style="font-size:10px;color:var(--text3);text-align:center;margin:4px 0 0;opacity:.7">${esc(play.diag||'')}</p>${renderPromoRedeem()}`;
   }
   const busy = play.busy;
-  return play.products.map((p,i)=>`
+  const endNote = promoEnding ? `<p style="font-size:13px;color:var(--text2);text-align:center;margin:0 0 12px;line-height:1.45">Nemokamas Premium baigiasi ${state.userDoc.premiumExpiresAt.toDate().toLocaleDateString('lt-LT')}. Užsisakius dabar, prenumerata pradės galioti iš karto.</p>` : '';
+  return endNote + play.products.map((p,i)=>`
       <button class="save-btn play-buy-btn" data-sku="${p.sku}" ${busy?'disabled':''} style="${i>0?'margin-top:10px;background:var(--bg2);color:var(--text)':''}">
         ${busy?'Vykdoma...':`${p.price} ${playPeriodLabel(p.period)}`}
       </button>`).join('')+`
@@ -3249,6 +3267,7 @@ function attachEvents(){
   on('resendVerifyBtn','click',resendVerification);
   on('notifPromoBanner','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   on('upgradeBtn','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
+  on('promoEndBanner','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   on('upgradeBtn3','click',()=>{state._premiumReturnView='list';state.view='premium';render();});
   onAll('.chip[data-filter]','click',e=>{state.filterCat=e.currentTarget.dataset.filter;render();});  on('catDropBtn','click',e=>{ e.stopPropagation(); state.catDropOpen=!state.catDropOpen; state.sortDropOpen=false; render(); });
   on('catDropOverlay','click',()=>{ state.catDropOpen=false; render(); });
