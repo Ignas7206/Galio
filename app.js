@@ -1416,6 +1416,13 @@ function attachAuthEvents(){
 }
 
 // ── List ───────────────────────────────────────────────────────────────────
+// Which status tile an entry belongs to (same rules as the counts on the tiles).
+function statusMatch(i, key){
+  const d=daysLeft(i.warrantyEnd);
+  if(d===null) return false;
+  return key==='expired' ? d<0 : key==='expiring' ? d>=0&&d<=30 : d>=0;
+}
+
 function renderList(){
   setTimeout(maybeAutoCleanup, 0);
   setTimeout(refreshSearchTags, 1500);
@@ -1430,6 +1437,8 @@ function renderList(){
     .filter(i=>filterCat==='Visos'||i.category===filterCat)
     .filter(i=>!query.length || itemMatches(i, query))
     .sort((a,b)=>{
+      // A tapped status tile brings those entries to the top.
+      if(state.statusTop){ const ta=statusMatch(a,state.statusTop), tb=statusMatch(b,state.statusTop); if(ta!==tb) return ta?-1:1; }
       // Expired warranties always go to the end, whatever the chosen order.
       const ea=(daysLeft(a.warrantyEnd)??0)<0, eb=(daysLeft(b.warrantyEnd)??0)<0;
       if(ea!==eb) return ea?1:-1;
@@ -1438,10 +1447,11 @@ function renderList(){
       return (b.createdAtMs||0)-(a.createdAtMs||0);
     });
 
+  const tile=(key,n,color,label)=>`<button class="stat-tile${state.statusTop===key?' active':''}" data-status="${key}" style="${state.statusTop===key?`box-shadow:inset 0 0 0 2px ${color}`:''}"><div class="n" style="color:${color}">${n}</div><div class="l">${label}</div></button>`;
   const statsHtml=items.length>0?`<div class="stats-row">
-    <div class="stat-tile"><div class="n" style="color:var(--green)">${valid}</div><div class="l">Galioja</div></div>
-    <div class="stat-tile"><div class="n" style="color:var(--orange)">${expiring}</div><div class="l">Baigiasi</div></div>
-    <div class="stat-tile"><div class="n" style="color:var(--red)">${expired}</div><div class="l">Baigėsi</div></div>
+    ${tile('valid',valid,'var(--green)','Galioja')}
+    ${tile('expiring',expiring,'var(--orange)','Baigiasi')}
+    ${tile('expired',expired,'var(--red)','Baigėsi')}
   </div>`:'';
 
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
@@ -2146,7 +2156,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 153;
+const WEB_RELEASE = 154;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -3369,6 +3379,12 @@ function renderPromoRedeem(){
 function attachEvents(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev,fn);};
   const onAll=(sel,ev,fn)=>document.querySelectorAll(sel).forEach(el=>el.addEventListener(ev,fn));
+  onAll('.stat-tile[data-status]','click',e=>{
+    const k=e.currentTarget.dataset.status;
+    state.statusTop = state.statusTop===k ? null : k;
+    render();
+    document.querySelector('.cards')?.scrollIntoView({block:'nearest'});
+  });
   // Dropdowns open right under their own button (on a wide screen the window edge is far away).
   [['catDropMenu','catDropBtn','left'],['sortDropMenu','sortDropBtn','right']].forEach(([menuId,btnId,side])=>{
     const menu=document.getElementById(menuId), btn=document.getElementById(btnId);
