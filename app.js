@@ -1465,7 +1465,7 @@ function renderList(){
   const promoLeftDays = promoDaysLeft();
   const promoEndBanner = promoLeftDays!==null && promoLeftDays<=7 ? `<div class="plan-banner" id="promoEndBanner" style="background:var(--orange-bg);margin:0 16px 14px;cursor:pointer">
     <i class="ti ti-clock-exclamation" style="color:var(--orange)"></i>
-    <div class="pb-text">Nemokamas Premium baigiasi ${promoLeftDays<=1?'rytoj':`po ${promoLeftDays} ${promoLeftDays%10===1&&promoLeftDays%100!==11?'dienos':'dienų'}`}. Po to įrašus reikės perkelti į telefoną, priminimai el. paštu nebebus siunčiami.</div>
+    <div class="pb-text">Nemokamas Premium baigiasi ${promoLeftDays<=1?'rytoj':`po ${promoLeftDays} ${promoLeftDays%10===1&&promoLeftDays%100!==11?'dienos':'dienų'}`}. Po to įrašus su čekiais reikės perkelti į telefoną, o priminimai apie terminus nebebus siunčiami.</div>
     <button id="promoEndBtn" style="background:var(--orange)">Premium</button>
   </div>` : '';
   const moveBy = cloudMoveDeadline();
@@ -2146,7 +2146,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 145;
+const WEB_RELEASE = 146;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
