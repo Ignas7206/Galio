@@ -22,7 +22,15 @@ const CATEGORIES    = ['Elektronika','Buitinė technika','Įrankiai ir sodas','A
 const LEGACY_CATEGORY = { 'Automobiliai': 'Auto prekės' };
 const withCurrentCategory = it => (it && LEGACY_CATEGORY[it.category]) ? { ...it, category: LEGACY_CATEGORY[it.category] } : it;
 const DOC_TYPES     = ['Kvitas / čekis','Sąskaita-faktūra (SF)','Banko išrašas','Kita'];
-const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'5 metai',m:60},{l:'Kita data',m:null}];
+const WARRANTY_OPTS = [{l:'6 mėnesiai',m:6},{l:'1 metai',m:12},{l:'2 metai',m:24},{l:'3 metai',m:36},{l:'4 metai',m:48},{l:'5 metai',m:60},{l:'10 metų',m:120},{l:'Konkreti data',m:null}];
+// "1 metai", "4 metai", "10 metų", "21 metai"; other lengths in months ("18 mėn.").
+function warrantyLabel(m){
+  if(m===null || m===undefined) return 'Konkreti data';
+  const o = WARRANTY_OPTS.find(x=>x.m===m);
+  if(o) return o.l;
+  if(m % 12 === 0){ const y = m/12; return `${y} ${(y%10===0 || (y%100>=11 && y%100<=19)) ? 'metų' : 'metai'}`; }
+  return `${m} mėn.`;
+}
 const RETURN_DAY_OPTS = [7,14,30,45,60,90];
 const ALLOWED_IMG   = ['image/jpeg','image/png','image/webp','image/heic','image/heif'];
 const MAX_IMG       = 10*1024*1024; // phone cameras often produce 6-12MB photos; compression brings this down before upload
@@ -1620,7 +1628,6 @@ function renderPicker(){
 function renderAdd(){
   const f=state.form;
   const isPhoto=state.addMode==='photo';
-  const selOpt=WARRANTY_OPTS.find(o=>o.m===f.warrantyMonths)||WARRANTY_OPTS[WARRANTY_OPTS.length-1];
   const hasPdf=f.docData&&f.docMime==='application/pdf';
   const hasImg=f.docData&&f.docMime!=='application/pdf';
   const docLimitReached = !canAttachNewDoc() && !f.docData;
@@ -1671,7 +1678,19 @@ function renderAdd(){
     <div class="warranty-panel">
       <div class="warranty-handle"></div>
       <div class="warranty-title">Garantijos trukmė</div>
-      ${WARRANTY_OPTS.map(o=>`<button class="warranty-opt warranty-duration-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m??'x'}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
+      ${WARRANTY_OPTS.filter(o=>o.m!==null).map(o=>`<button class="warranty-opt warranty-duration-opt${f.warrantyMonths===o.m?' selected':''}" data-wm="${o.m}">${esc(o.l)}${f.warrantyMonths===o.m?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
+      ${(()=>{ const custom = f.warrantyMonths!==null && !WARRANTY_OPTS.some(o=>o.m===f.warrantyMonths);
+        const inYears = custom && f.warrantyMonths%12===0;
+        const n = custom ? (inYears ? f.warrantyMonths/12 : f.warrantyMonths) : '';
+        return `<div class="warranty-opt${custom?' selected':''}" style="gap:10px;cursor:default">
+          <span style="flex:1">Kita trukmė</span>
+          <input type="number" id="wCustomN" inputmode="numeric" min="1" max="600" value="${n}" placeholder="0" style="width:64px;padding:8px;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:16px;text-align:center">
+          <select id="wCustomU" style="padding:8px;border-radius:10px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:16px">
+            <option value="12"${!custom||inYears?' selected':''}>m.</option><option value="1"${custom&&!inYears?' selected':''}>mėn.</option>
+          </select>
+          <button id="wCustomOk" style="padding:8px 14px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:600">Gerai</button>
+        </div>`; })()}
+      <button class="warranty-opt warranty-duration-opt${f.warrantyMonths===null?' selected':''}" data-wm="x">Konkreti data${f.warrantyMonths===null?`<i class="ti ti-check"></i>`:''}</button>
     </div>
   </div>`:'';
   const isCustomReturnDate = f.returnDays === null;
@@ -1684,7 +1703,7 @@ function renderAdd(){
       <div class="warranty-handle"></div>
       <div class="warranty-title">Grąžinimo terminas</div>
       ${RETURN_DAY_OPTS.map(d=>`<button class="warranty-opt return-days-opt${currentReturnDays===d?' selected':''}" data-days="${d}">${d} d.${currentReturnDays===d?`<i class="ti ti-check"></i>`:''}</button>`).join('')}
-      <button class="warranty-opt return-days-opt${isCustomReturnDate?' selected':''}" data-days="x">Kita data${isCustomReturnDate?`<i class="ti ti-check"></i>`:''}</button>
+      <button class="warranty-opt return-days-opt${isCustomReturnDate?' selected':''}" data-days="x">Konkreti data${isCustomReturnDate?`<i class="ti ti-check"></i>`:''}</button>
     </div>
   </div>`:'';
 
@@ -1760,7 +1779,7 @@ function renderAdd(){
         <div class="form-field" id="warrantyBtn" style="cursor:pointer">
           <label>Garantija</label>
           <span style="font-size:16px;color:${!f.warrantyMonths&&f.warrantyMonths!==0?'var(--text3)':'var(--text)'};display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%">
-            ${esc(selOpt.l)}
+            ${esc(warrantyLabel(f.warrantyMonths))}
             <i class="ti ti-chevron-right" style="font-size:14px;color:var(--text3);flex-shrink:0"></i>
           </span>
         </div>
@@ -1768,7 +1787,7 @@ function renderAdd(){
         <button type="button" class="form-field tappable" id="returnDaysBtn" style="background:none;border:none;text-align:left;width:100%">
           <label>Grąžinimas</label>
           <div class="form-field-row">
-            <div class="fv">${isCustomReturnDate ? 'Kita data' : `${currentReturnDays} d.`}</div>
+            <div class="fv">${isCustomReturnDate ? 'Konkreti data' : `${currentReturnDays} d.`}</div>
             <i class="ti ti-chevron-right form-row-chevron"></i>
           </div>
           ${currentReturnDeadline?`<div style="font-size:13px;color:var(--text2);margin-top:6px;line-height:1.35">Grąžinti iki ${fmtDate(currentReturnDeadline)}</div>`:''}
@@ -3215,6 +3234,17 @@ function attachEvents(){
     state.showWarranty=false;render();
     if(v==='x') openDatePicker('f_warrantyEnd');
   });
+  const applyCustomWarranty = ()=>{
+    const n = parseInt(document.getElementById('wCustomN')?.value, 10);
+    const unit = parseInt(document.getElementById('wCustomU')?.value, 10) || 12;
+    if(!n || n < 1){ document.getElementById('wCustomN')?.focus(); return; }
+    const m = Math.min(n * unit, 1200);
+    state.form.warrantyMonths = m;
+    if(state.form.purchaseDate) state.form.warrantyEnd = addMonths(state.form.purchaseDate, m);
+    state.showWarranty = false; render();
+  };
+  on('wCustomOk','click',applyCustomWarranty);
+  on('wCustomN','keydown',e=>{ if(e.key==='Enter') applyCustomWarranty(); });
   on('returnDaysBtn','click',()=>{state.showReturnDays=true;render();});
   on('returnDaysOverlay','click',()=>{state.showReturnDays=false;render();});
   onAll('.return-days-opt','click',e=>{
@@ -5085,7 +5115,7 @@ async function toggleNotify(){
   }
 }
 
-// After "Kita data" the date field appears below the row: open its calendar right away
+// After "Konkreti data" the date field appears below the row: open its calendar right away
 // (still inside the tap, which browsers require), so the user doesn't have to look for it.
 function openDatePicker(id){
   const el = document.getElementById(id);
@@ -5711,7 +5741,7 @@ function applyAiItemToForm(item, receiptMeta){
     state.form.warrantyEnd='';
     state.form.warrantyAppliesWarning=true;
   }else{
-    const wm=WARRANTY_OPTS.find(o=>o.m===item.warrantyMonths);
+    const wm=Number.isInteger(item.warrantyMonths) && item.warrantyMonths>0 && item.warrantyMonths<=1200;
     if(wm){ state.form.warrantyMonths=item.warrantyMonths; if(state.form.purchaseDate) state.form.warrantyEnd=addMonths(state.form.purchaseDate,item.warrantyMonths); }
   }
 
