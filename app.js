@@ -169,6 +169,9 @@ function scannedThisItem(){
   return state.aiRetriesUsedThisItem > 0 || !!state.multiItemReceipt;
 }
 function requestUnsavedAddExit(targetView='list'){
+  // While the entry is being saved, leaving would ask "leave without saving?" about an entry
+  // that is about to be saved, and that question stayed on screen after the save finished.
+  if(state.savingItem){ toast('Įrašas saugomas, palaukite kelias sekundes…', 2500); return true; }
   if(state.analyzing) return requestAnalysisExit(targetView);
   if(!hasUnsavedAddWork()) return false;
   state.pendingUnsavedExit = { targetView };
@@ -4213,6 +4216,7 @@ async function finishSaveItem(){
   }
   const remindersChosen = !!state._remindersChosen;
   state._remindersChosen = false;
+  state.savingItem = true;
 
   // Charge AI quota now, only if this save includes AI-assisted data the
   // user is actually keeping. Scans that were retried/discarded never
@@ -4318,8 +4322,10 @@ async function finishSaveItem(){
   }
 
   state.uploadPct=null;
+  state.savingItem = false;
+  if(state.appDialog?.supportAction==='discardAdd'){ state.appDialog=null; state.pendingUnsavedExit=null; }
   const savedForm = {...state.form};
-  state.form=emptyForm();state.docError='';state.addMode=null;
+  state.form=emptyForm();state.docError='';state.addMode=null;state.aiRetriesUsedThisItem=0;
 
   // Rodyti priminimų modalą tik jei yra ką priminti (garantija arba grąžinimas)
   const savedOk = state._savedOk; state._savedOk = false;
