@@ -1126,7 +1126,7 @@ window.addEventListener('popstate', () => {
   if(state.view==='add' && state.savingItem){ state.view='list'; render(); return; } // keeps saving in the background
   if(state.view==='add'&&state.addMode){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view==='admin-users' && state.adminUserSheet){ state.adminUserSheet=null; history.pushState({view:'admin-users'},'',location.href); render(); return; }
-  if(state.view==='admin-promo' || state.view==='admin-users'){ state.view='admin-stats'; render(); return; }
+  if(state.view==='admin-promo' || state.view==='admin-users' || state.view==='admin-sim'){ state.view='admin-stats'; render(); return; }
   if(state.view==='contact' || state.view==='admin-stats'){ state.view='settings'; render(); return; }
   if(state.view==='premium'){ state.view=state._premiumReturnView||'list'; render(); return; }
   if(state.view!=='list'){ state.view='list'; render(); return; }
@@ -1225,6 +1225,7 @@ function _doRender(){
   else if(state.view==='multi-select') html=renderMultiSelect();
   else if(state.view==='admin-stats') html=renderAdminStats();
   else if(state.view==='admin-promo') html=renderAdminPromoPage();
+  else if(state.view==='admin-sim') html=renderAdminSimPage();
   else if(state.view==='admin-users') html=renderAdminStats('users');
 
   pushHistoryIfNeeded(viewKey);
@@ -2985,6 +2986,9 @@ function renderAdminStats(mode='stats'){
       <button class="settings-row tappable" id="adminUsersBtn" style="width:100%;background:none;border:none;text-align:left;color:inherit">
         <i class="ti ti-users row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Vartotojai<small>${users.length} paskyros · paieška, filtrai, kortelės</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </button>
+      <button class="settings-row tappable" id="adminSimBtn" style="width:100%;background:none;border:none;text-align:left;color:inherit">
+        <i class="ti ti-flask row-icon" style="color:var(--green)"></i><span class="settings-row-label">Scenarijai ir laiškai<small>Išbandyti Premium pabaigą, saugojimą ir laiškus su bandomąja paskyra</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </button>
       <button class="settings-row tappable" id="adminPromoBtn" style="width:100%;background:none;border:none;text-align:left;color:inherit">
         <i class="ti ti-ticket row-icon" style="color:var(--gold)"></i><span class="settings-row-label">Premium kodai<small>${state.promoCodes ? `${state.promoCodes.filter(c=>['free','active'].includes(promoState(c))).length} galiojantys · ${state.promoCodes.reduce((n,c)=>n+(c.useCount??(c.usedBy?1:0)),0)} panaudojimai` : 'Kurti ir valdyti kodus'}</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </button>
@@ -3034,6 +3038,7 @@ function renderAdminUserSheet(){
           <span style="color:var(--text2);flex-shrink:0">${l}</span><span style="color:var(--text);text-align:right;word-break:break-all">${esc(v)}</span></div>`).join('')}
       </div>
       ${action}
+      ${u.role==='admin' ? '' : `<div style="padding:4px 20px 12px"><button class="save-btn" data-uid="${esc(u.uid)}" data-on="${u.testAccount?'0':'1'}" data-action="markTest" style="margin:0;background:none;border:1px solid var(--border);color:var(--text2)">${u.testAccount ? 'Nebežymėti kaip bandomosios' : 'Pažymėti kaip bandomąją paskyrą'}</button></div>`}
     </div>
   </div>`;
 }
@@ -3106,6 +3111,109 @@ async function loadPromoCodes(){
     state.promoCodes = [];
   }
   if(state.view==='admin-stats' || state.view==='admin-promo') render();
+}
+
+const SIM_SCENARIOS = [
+  ['Kodo Premium', [
+    ['promo_active', 'Premium kodu, liko 30 dienų', 'Premium galioja, jokių įspėjimų.'],
+    ['promo_3d', 'Kodo Premium baigiasi po 3 dienų', 'Siunčiamas pranešimas ir laiškas. Programėlėje oranžinė juosta, galima pirkti Premium.'],
+    ['promo_1d', 'Kodo Premium baigiasi rytoj', 'Siunčiamas pranešimas ir laiškas „baigiasi rytoj“.'],
+    ['promo_ended', 'Kodo Premium ką tik baigėsi', 'Paleidžiama naktinė užduotis: Premium išjungiamas, pradedamos skaičiuoti 30 dienų perkelti.'],
+  ]],
+  ['Saugojimas po Premium pabaigos', [
+    ['day23', '23 diena: liko 7 dienos perkelti', 'Pranešimas ir laiškas „liko 7 dienos“. Juostoje data, iki kada perkelti.'],
+    ['day29', '29 diena: liko 1 diena', 'Pranešimas ir laiškas „liko 1 diena“.'],
+    ['day30', '30 diena: įrašai paslepiami', 'Įrašai dingsta iš sąrašo (serveryje lieka). Pranešimas ir laiškas „galite susigrąžinti“.'],
+    ['day83', '83 diena: paskutinė savaitė', 'Pranešimas ir laiškas „paskutinė savaitė susigrąžinti“.'],
+    ['premium_back', 'Vėl įjungti Premium', 'Įrašai grįžta, skaičiavimas sustabdomas.'],
+    ['day90', '90 diena: IŠTRINTI saugyklos įrašus', 'Bandomosios paskyros įrašai, dokumentai ir nuotraukos saugykloje ištrinami negrįžtamai.', true],
+  ]],
+];
+
+function renderAdminSimPage(){
+  const testers = (state.adminUsers||[]).filter(u=>u.testAccount);
+  if(!state.simUid && testers.length) state.simUid = testers[0].uid;
+  const r = state.simResult;
+  const fmtT = t => t ? new Date(t).toLocaleString('lt-LT',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+  const emails = state.simEmails;
+  return `<div>
+    <div class="page-header-sm">
+      <button class="back-btn" id="adminSimBackBtn"><i class="ti ti-arrow-left"></i></button>
+      <h2>Scenarijai ir laiškai</h2>
+      <div style="width:36px"></div>
+    </div>
+    <div style="height:12px"></div>
+    <div style="margin:0 16px 16px;padding:14px;background:var(--bg2);border-radius:var(--radius)">
+      <div style="font-size:16px;font-weight:600">Bandomoji paskyra</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.45">Scenarijus serveryje nustato tikrą paskyros būseną ir iš karto paleidžia tas pačias naktines užduotis. Pranešimai ir laiškai ateina iš tikrųjų. Prisijunkite ta paskyra kitame naršyklės lange ar telefone ir matysite tai, ką matytų vartotojas. Bandomąja paskyrą pažymite Vartotojų sąraše, jos kortelėje.</div>
+      ${testers.length ? `<select id="simUidSelect" style="${PROMO_FIELD};margin-top:10px">${testers.map(u=>`<option value="${esc(u.uid)}" ${u.uid===state.simUid?'selected':''}>${esc(u.email)}</option>`).join('')}</select>`
+        : `<div style="margin-top:10px;font-size:14px;color:var(--orange)">Dar nėra bandomosios paskyros. Atidarykite Vartotojai → paskyra → „Pažymėti kaip bandomąją paskyrą“.</div>`}
+    </div>
+    ${r ? `<div style="margin:0 16px 16px;padding:14px;background:var(--accent-bg);border-radius:var(--radius);font-size:13px;line-height:1.6">
+      <div style="font-weight:600;font-size:15px;margin-bottom:4px">${esc(r.title)}</div>
+      ${(r.steps||[]).map(x=>`<div>✓ ${esc(x)}</div>`).join('')}
+      ${r.state ? `<div style="margin-top:8px;color:var(--text2)">Planas: <b>${esc(r.state.plan)}</b>${r.state.planSource?` (${esc(r.state.planSource)})`:''} · saugojimas: ${esc(r.state.storageMode)} · įrašų saugykloje: ${r.cloudItems??'—'}<br>
+        Premium iki: ${fmtT(r.state.premiumExpiresAt)} · perkelti reikia: ${r.state.premiumDowngradeRequired?'taip':'ne'}<br>
+        Skaičiavimo pradžia: ${fmtT(r.state.cloudLapseAt)} · paslėpta: ${r.state.cloudHidden?'taip':'ne'}</div>` : ''}
+    </div>` : ''}
+    ${SIM_SCENARIOS.map(([group, list])=>`<div class="form-section-title" style="margin:0 20px 6px">${group}</div>
+    <div class="form-section" style="margin:0 16px 16px;padding:0">
+      ${list.map(([key,label,desc,danger])=>`<button class="settings-row tappable sim-run" data-sc="${key}" ${!testers.length||state.simBusy?'disabled':''} style="width:100%;background:none;border:none;text-align:left;color:inherit">
+        <i class="ti ti-${danger?'trash':'player-play'} row-icon" style="color:var(--${danger?'red':'accent'})"></i><span class="settings-row-label" style="${danger?'color:var(--red)':''}">${label}<small>${desc}</small></span>
+      </button>`).join('')}
+    </div>`).join('')}
+    <div class="form-section-title" style="margin:0 20px 6px">Visi laiškai</div>
+    <div class="form-section" style="margin:0 16px 16px;padding:12px 14px">
+      <div style="font-size:13px;color:var(--text2);line-height:1.45">Kiekvienas programėlės siunčiamas laiškas su pavyzdiniais duomenimis.</div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button id="simEmailsBtn" class="save-btn" style="width:auto;margin:0;padding:10px 16px" ${state.simBusy?'disabled':''}>Rodyti laiškus</button>
+        <button id="simEmailsSendBtn" class="save-btn" style="width:auto;margin:0;padding:10px 16px;background:var(--bg3);color:var(--text)" ${state.simBusy?'disabled':''}>Atsiųsti visus man</button>
+      </div>
+      ${emails ? emails.map(m=>`<div style="margin-top:16px">
+        <div style="font-size:14px;font-weight:600">${esc(m.label)}</div>
+        <div style="font-size:12px;color:var(--text3);margin:2px 0 6px">Kada: ${esc(m.when)} · Tema: ${esc(m.subject)}</div>
+        <iframe sandbox="" srcdoc="${esc(m.html)}" style="width:100%;height:520px;border:0.5px solid var(--border);border-radius:10px;background:#fff"></iframe>
+      </div>`).join('') : ''}
+    </div>
+  </div>`;
+}
+
+async function runSimScenario(key){
+  const sc = SIM_SCENARIOS.flatMap(g=>g[1]).find(x=>x[0]===key);
+  const go = async ()=>{
+    state.simBusy = true; state.simResult = {title:`Vykdoma: ${sc[1]}…`, steps:[]}; render();
+    try{
+      const {ok, data} = await callFunction('adminScenario', {action:'run', uid: state.simUid, scenario:key, confirm: !!sc[3]}, 60000);
+      state.simResult = ok ? {title: sc[1], ...data} : {title:'Nepavyko', steps:[data.error||'Klaida']};
+    }catch(e){ state.simResult = {title:'Nepavyko', steps:[String(e.message||e)]}; }
+    state.simBusy = false; render();
+  };
+  if(sc[3]){
+    const email = (state.adminUsers||[]).find(u=>u.uid===state.simUid)?.email || '';
+    showConfirmDialog('Ištrinti saugyklos įrašus?', `${email} saugykloje esantys įrašai, dokumentai ir nuotraukos bus ištrinti negrįžtamai.`, go, {okText:'Ištrinti', align:'center'});
+  }else go();
+}
+
+async function loadSimEmails(send){
+  state.simBusy = true; render();
+  try{
+    const {ok, data} = await callFunction('adminEmailPreview', {send: !!send}, 60000);
+    if(!ok) toast(data.error||'Nepavyko');
+    else if(send) toast(`Išsiųsta ${data.sent} laiškų adresu ${data.to}`, 5000);
+    else state.simEmails = data.emails;
+  }catch(e){ toast('Nepavyko'); }
+  state.simBusy = false; render();
+}
+
+async function markTestAccount(uid, on){
+  try{
+    const {ok, data} = await callFunction('adminScenario', {action:'mark', uid, on});
+    if(!ok){ toast(data.error||'Nepavyko'); return; }
+    const u = (state.adminUsers||[]).find(x=>x.uid===uid);
+    if(u) u.testAccount = !!on;
+    toast(on ? 'Pažymėta kaip bandomoji paskyra' : 'Nebežymima kaip bandomoji');
+    render();
+  }catch(e){ toast('Nepavyko'); }
 }
 
 function renderAdminPromoPage(){
@@ -3710,6 +3818,13 @@ function attachEvents(){
   on('adminUsersBtn','click',()=>{state.view='admin-users';render();});
   on('adminUsersBackBtn','click',()=>{state.view='admin-stats';render();});
   on('adminPromoBackBtn','click',()=>{state.view='admin-stats';render();});
+  on('adminSimBtn','click',()=>{state.view='admin-sim';render();});
+  on('adminSimBackBtn','click',()=>{state.view='admin-stats';render();});
+  on('simUidSelect','change',e=>{state.simUid=e.currentTarget.value;state.simResult=null;render();});
+  onAll('.sim-run','click',e=>runSimScenario(e.currentTarget.dataset.sc));
+  on('simEmailsBtn','click',()=>loadSimEmails(false));
+  on('simEmailsSendBtn','click',()=>loadSimEmails(true));
+  onAll('[data-action="markTest"]','click',e=>markTestAccount(e.currentTarget.dataset.uid, e.currentTarget.dataset.on==='1'));
   on('adminTestNotifBtn','click', testNotification);
   on('adminUserSearch','input',e=>{
     state.adminSearch = e.currentTarget.value || '';
