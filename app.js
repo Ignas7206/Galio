@@ -1471,7 +1471,7 @@ function renderList(){
   const moveBy = cloudMoveDeadline();
   const downgradeBanner = cloudEntriesHidden() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Jūsų įrašai išsaugoti Galio saugykloje${moveBy ? ` iki <b>${new Date(moveBy.getTime()+60*86400000).toLocaleDateString('lt-LT')}</b>` : ''}. Užsisakius Premium, jie bus atkurti automatiškai.</div>
+    <div class="pb-text" style="color:var(--text)">Jūsų įrašai saugomi Galio saugykloje${moveBy ? ` iki <b>${new Date(moveBy.getTime()+60*86400000).toLocaleDateString('lt-LT')}</b>` : ''}. Užsisakius Premium, jie bus atkurti automatiškai.</div>
     <button id="upgradeBtnHidden" style="background:var(--orange)">Atkurti</button>
   </div>` : needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
@@ -2146,7 +2146,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 150;
+const WEB_RELEASE = 151;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -5551,7 +5551,7 @@ async function toggleStorageMode(){
   if(!state.user) return;
   if(state.migratingStorage) return;
   // Hidden entries can't be moved (the list is empty here): switching would just drop them.
-  if(cloudEntriesHidden()){ toast('Įrašai išsaugoti Galio saugykloje. Užsisakius Premium, jie bus atkurti automatiškai.', 5000); return; }
+  if(cloudEntriesHidden()){ toast('Įrašai saugomi Galio saugykloje. Užsisakius Premium, jie bus atkurti automatiškai.', 5000); return; }
   if(!state.online){
     offlineDialog(
       'Saugojimo keitimui reikia interneto',
