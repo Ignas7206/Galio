@@ -3868,11 +3868,19 @@ async function testNotification(){
     tempId=null;
 
     // Rezultatas
+    const em = data.email;
+    const emailLine = !em ? '' : em.emailed
+      ? `
+
+El. laiškas išsiųstas: ${em.to}. Jei nematote – patikrinkite šlamšto aplanką.`
+      : `
+
+El. laiškas neišsiųstas: ${em.reason}.`;
     if(data.sent>0){
-      showAppDialog('Testas pavyko ✓',`Serveris išsiuntė ${data.sent} pranešimą. Patikrinkite notifikacijų juostą — turėtų pasirodyti "Garantija baigiasi — rytoj". Jei matote — visa grandinė veikia.`,'',{hideSupport:true});
+      showAppDialog('Testas pavyko ✓',`Serveris išsiuntė ${data.sent} pranešimą. Patikrinkite notifikacijų juostą — turėtų pasirodyti "Garantija baigiasi — rytoj". Jei matote — visa grandinė veikia.${emailLine}`,'',{hideSupport:true});
     }else{
       const reason = data.details?.[0]?.reason || data.reason || 'nežinoma priežastis';
-      showAppDialog('Testas neišsiuntė',`Serveris nesiuntė pranešimo. Priežastis: ${reason}. Jei rašo "no fcmToken" — pirma įjunkite pranešimus (bandykite testą dar kartą).`,'',{hideSupport:true});
+      showAppDialog(em?.emailed?'Laiškas išsiųstas ✓':'Testas neišsiuntė',`Push pranešimas neišsiųstas. Priežastis: ${reason}. Jei rašo "no fcmToken" — pirma įjunkite pranešimus (bandykite testą dar kartą).${emailLine}`,'',{hideSupport:true});
     }
   }catch(e){
     console.warn('Test error:', e);
