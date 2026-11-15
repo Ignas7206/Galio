@@ -2144,15 +2144,13 @@ function renderSettings(){
 // Bottom sheets opened from the settings rows. Anything marked data-close shuts the
 // sheet before its own action runs (see attach code).
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
+// Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
+// web update (same number as the service worker cache, galio-vN in sw.js).
+const WEB_RELEASE = 145;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
-  // Short build code instead of a date, so the label doesn't say when the app was updated.
-  const m=/[?&]v=(\d{8})-?(\d{4})/.exec(import.meta.url);
-  const web=m?` · ${parseInt(m[1]+m[2],10).toString(36).toUpperCase().slice(-5)}`:'';
-  if(b>=7) return '1.6'+web;
-  if(b>=6) return '1.5'+web;
-  if(b>0) return '1.4'+web;
-  return 'naršyklėje'+web;
+  const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
+  return `${base}.${WEB_RELEASE}`;
 })();
 function renderSettingsSheet(o){
   const k = state.settingsSheet;
