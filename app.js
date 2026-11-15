@@ -92,7 +92,7 @@ let state = {
   theme: localStorage.getItem('galio_theme') || 'auto',
 };
 try{
-  const savedNotifPrefs = JSON.parse(localStorage.getItem('galio_notif_prefs') || '{}');
+  const savedNotifPrefs = JSON.parse(localStorage.getItem('galio_notif_prefs2') || '{}');
   if(Array.isArray(savedNotifPrefs.warranty)) state._lastNotifDays = savedNotifPrefs.warranty;
   if(Array.isArray(savedNotifPrefs.return)) state._lastReturnNotifDays = savedNotifPrefs.return;
 }catch(e){}
@@ -163,14 +163,19 @@ function hasUnsavedAddWork(){
     || !!state.aiMultiItems?.length
     || !!state.multiItemReceipt;
 }
+// analyzeDoc charges the AI quota as soon as a scan succeeds (and the server counts it too),
+// so leaving afterwards still uses up that scan.
+function scannedThisItem(){
+  return state.aiRetriesUsedThisItem > 0 || !!state.multiItemReceipt;
+}
 function requestUnsavedAddExit(targetView='list'){
   if(state.analyzing) return requestAnalysisExit(targetView);
   if(!hasUnsavedAddWork()) return false;
   state.pendingUnsavedExit = { targetView };
   showAppDialog(
     'Išeiti neišsaugojus?',
-    state.pendingAiCharge
-      ? 'Dokumentas jau nuskaitytas, bet įrašas dar neišsaugotas. Išėjus duomenys bus prarasti, o nuskaitymas vis tiek bus įskaitytas į AI analizių limitą.'
+    scannedThisItem()
+      ? 'Dokumentas jau nuskaitytas, bet įrašas dar neišsaugotas. Išėjus duomenys bus prarasti, o nuskaitymas lieka įskaitytas į AI analizių limitą.'
       : 'Šis įrašas dar neišsaugotas. Išeinant įvesti duomenys ir dokumentas bus prarasti.',
     '',
     {hideSupport:false, supportText:'Išeiti neišsaugojus', okText:'Likti', supportAction:'discardAdd', align:'center'}
@@ -181,8 +186,6 @@ function discardAddAndLeave(){
   const target = state.pendingUnsavedExit?.targetView || 'list';
   state.pendingUnsavedExit=null;
   state.appDialog=null;
-  // A finished scan costs the same whether or not the result is kept.
-  if(state.pendingAiCharge){ state.pendingAiCharge=false; chargeAiUsageNow(); }
   discardPendingAdd();
   state.view=target;
   render();
@@ -1123,7 +1126,7 @@ window.__galioSafeReload = () => {
 setInterval(()=>{ if(_reloadPending && appIsIdle()) location.reload(); }, 3000);
 
 window.addEventListener('beforeunload', e=>{
-  if(state.pendingAiCharge && hasUnsavedAddWork()){ e.preventDefault(); e.returnValue=''; }
+  if(scannedThisItem() && hasUnsavedAddWork()){ e.preventDefault(); e.returnValue=''; }
 });
 
 window._appNav = (tab) => {
@@ -2178,15 +2181,15 @@ function renderSettingsSheet(o){
 function suggestNotifDays(warrantyMonths, hasReturn){
   const days = [];
   if(warrantyMonths){
-    if(warrantyMonths <= 1)       days.push(3, 1);
-    else if(warrantyMonths <= 6)  days.push(14, 7, 1);
-    else if(warrantyMonths <= 12) days.push(30, 7, 1);
-    else                          days.push(60, 30, 7, 1);
+    if(warrantyMonths <= 1)       days.push(1);
+    else if(warrantyMonths <= 6)  days.push(7);
+    else                          days.push(30);
   }
   return days;
 }
 
-function showNotifModal(itemId, itemData, savedNote=''){
+function showNotifModal(itemId, itemData, savedNote='', opts={}){
+  const formMode = !!opts.formMode;
   if(!itemId){ state.view='list'; render(); return; }
   const firstItemId = Array.isArray(itemId) ? itemId[0] : itemId;
   const item = itemData || state.items.find(i=>i.id===firstItemId);
@@ -2208,6 +2211,7 @@ function showNotifModal(itemId, itemData, savedNote=''){
   const hasReturnDate = !!returnDeadline;
   const returnActive = returnDaysLeft !== null && returnDaysLeft >= 0;
   const returnExpired = hasReturnDate && returnDaysLeft !== null && returnDaysLeft < 0;
+  if(formMode && !warrantyActive && !returnActive) return false;
   if(!hasWarrantyDate && !hasReturnDate){
     showAppDialog('Nėra termino', 'Šiam įrašui nėra datos, pagal kurią būtų galima siųsti priminimą.', '', {hideSupport:true, align:'center'});
     return;
@@ -2223,9 +2227,9 @@ function showNotifModal(itemId, itemData, savedNote=''){
   const defaults = savedWarrantyDays || state._lastNotifDays || suggested;
   // Only offer reminders that can still fire (fewer days than are left); if none
   // survive, fall back to a sensible default instead of an empty or useless list.
-  const fitDays = (arr, left, fallback) => {
+  const fitDays = (arr, left, fallback, exact=editingExisting) => {
     const ok = (arr||[]).filter(d => Number.isFinite(d) && d > 0 && d < left);
-    if(editingExisting) return ok;
+    if(exact) return ok;
     return ok.length ? ok : (left > fallback ? [fallback] : (left > 1 ? [1] : []));
   };
   const savedOff = editingExisting && item.notifyEnabled === false;
@@ -2235,8 +2239,9 @@ function showNotifModal(itemId, itemData, savedNote=''){
     itemId: firstItemId,
     itemIds: Array.isArray(itemId) ? itemId : [firstItemId],
     enabled: true,
-    selectedDays: warrantyActive && !savedOff ? fitDays(editingExisting ? savedWarrantyDays : defaults, warrantyDaysLeft, 30) : [],
-    returnSelectedDays: returnActive && !savedOff ? fitDays(editingExisting ? savedReturnDays : (savedReturnDays || state._lastReturnNotifDays || [3]), returnDaysLeft, 3) : [],
+    selectedDays: warrantyActive && !savedOff ? fitDays(editingExisting ? savedWarrantyDays : defaults, warrantyDaysLeft, 30, editingExisting || (formMode && !!savedWarrantyDays)) : [],
+    returnSelectedDays: returnActive && !savedOff ? fitDays(editingExisting ? savedReturnDays : (savedReturnDays || state._lastReturnNotifDays || [3]), returnDaysLeft, 3, editingExisting || (formMode && !!savedReturnDays)) : [],
+    formMode,
     hasWarranty: hasWarrantyDate,
     hasReturn: hasReturnDate,
     warrantyActive,
@@ -2245,8 +2250,9 @@ function showNotifModal(itemId, itemData, savedNote=''){
     returnExpired,
     item,
   };
-  if(!editingExisting) state.view='list';
+  if(!editingExisting && !formMode) state.view='list';
   render();
+  return true;
 }
 
 function renderNotifModal(){
@@ -2297,7 +2303,7 @@ function renderNotifModal(){
       <h3 style="font-size:19px;font-weight:750;margin:0 0 18px;text-align:center">Kada priminti?</h3>
       ${m.hasWarranty ? sectionHtml({kind:'warranty', title:'Garantija', active:m.warrantyActive, expired:m.warrantyExpired, days:warrantyDays}) : ''}
       ${m.hasReturn ? sectionHtml({kind:'return', title:'Grąžinimas', active:m.returnActive, expired:m.returnExpired, days:returnDays}) : ''}
-      <button id="notifSaveBtn" class="save-btn">Išsaugoti</button>
+      <button id="notifSaveBtn" class="save-btn">${m.formMode ? 'Išsaugoti įrašą' : 'Išsaugoti'}</button>
     </div>
   </div>`;
 }
@@ -3505,7 +3511,7 @@ function attachEvents(){
     const backdrop = document.getElementById('notifBackdrop');
     const sheet = document.getElementById('notifSheet');
     if(!backdrop || !sheet) return;
-    const closeSheet = ()=>{ state.notifModal = null; if(state.view!=='detail') state.view='list'; render(); };
+    const closeSheet = ()=>{ const keepView = state.notifModal?.formMode; state.notifModal = null; if(state.view!=='detail' && !keepView) state.view='list'; render(); };
     backdrop.addEventListener('click', e=>{ if(e.target===backdrop) closeSheet(); });
     let startY = null, dy = 0;
     sheet.addEventListener('touchstart', e=>{
@@ -3829,7 +3835,18 @@ async function saveNotifSettings(skip=false){
   // Išsaugoti kaip naujus defaults, kad kitas įrašas siūlytų tą patį.
   state._lastNotifDays = selectedDays;
   state._lastReturnNotifDays = returnDays;
-  localStorage.setItem('galio_notif_prefs', JSON.stringify({ warranty: selectedDays, return: returnDays }));
+  localStorage.setItem('galio_notif_prefs2', JSON.stringify({ warranty: selectedDays, return: returnDays }));
+
+  if(m.formMode){
+    state.form.notifyDays = selectedDays;
+    state.form.notifyReturnDays = returnDays;
+    state.form.notifyEnabled = enabled;
+    state.notifModal = null;
+    state._remindersChosen = true;
+    if(enabled) requestPushPermission().catch(()=>{}); // still inside the tap, so the browser may ask
+    finishSaveItem();
+    return;
+  }
 
   const notifData = {
     notifyEnabled: enabled,
@@ -4186,6 +4203,17 @@ async function finishSaveItem(){
     return;
   }
 
+  // Reminders are chosen before the item is saved, on top of the form.
+  if(isCloud && !state._remindersChosen){
+    const opened = showNotifModal('form', {
+      warrantyMonths: f.warrantyMonths, warrantyEnd: f.warrantyEnd, purchaseDate: f.purchaseDate, shop: f.shop,
+      returnDays: formReturnDaysForSave(f), returnDeadline: formReturnDeadline(f),
+    }, '', {formMode:true});
+    if(opened) return;
+  }
+  const remindersChosen = !!state._remindersChosen;
+  state._remindersChosen = false;
+
   // Charge AI quota now, only if this save includes AI-assisted data the
   // user is actually keeping. Scans that were retried/discarded never
   // reach this point, so they never cost quota — only a kept result does.
@@ -4225,6 +4253,7 @@ async function finishSaveItem(){
     notifyEnabled:true, docUrl:null, docMime:null, docFileName:null, docStoragePath:null,
     itemPhotoUrl:null, itemPhotoMime:null, itemPhotoFileName:null, itemPhotoStoragePath:null,
     ...(f.docMime==='application/pdf' && f.docThumb ? {docThumb:f.docThumb} : {}),
+    ...(remindersChosen ? { notifyEnabled: f.notifyEnabled!==false, notifyDays: f.notifyDays||[], notifyReturnDays: f.notifyReturnDays||[], notifyRepeatDays: null } : {}),
     returnDays: formReturnDaysForSave(f),
     returnDeadline: formReturnDeadline(f),
     createdAtMs: Date.now(),
@@ -4294,7 +4323,11 @@ async function finishSaveItem(){
 
   // Rodyti priminimų modalą tik jei yra ką priminti (garantija arba grąžinimas)
   const savedOk = state._savedOk; state._savedOk = false;
-  if(state._lastSavedId && (savedForm.warrantyEnd || savedForm.purchaseDate)){
+  if(isCloud){
+    // Reminders were already chosen (or there was nothing left to remind about).
+    if(savedOk) toast(remindersChosen && savedForm.notifyEnabled!==false ? 'Įrašas ir priminimai išsaugoti ✓' : 'Išsaugota ✓');
+    state.view='list'; render();
+  }else if(state._lastSavedId && (savedForm.warrantyEnd || savedForm.purchaseDate)){
     showNotifModal(state._lastSavedId, {
       warrantyMonths: savedForm.warrantyMonths,
       warrantyEnd: savedForm.warrantyEnd,
