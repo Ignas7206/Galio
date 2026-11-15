@@ -169,9 +169,8 @@ function scannedThisItem(){
   return state.aiRetriesUsedThisItem > 0 || !!state.multiItemReceipt;
 }
 function requestUnsavedAddExit(targetView='list'){
-  // While the entry is being saved, leaving would ask "leave without saving?" about an entry
-  // that is about to be saved, and that question stayed on screen after the save finished.
-  if(state.savingItem){ toast('Įrašas saugomas, palaukite kelias sekundes…', 2500); return true; }
+  // The entry is already being saved: just leave, the save finishes in the background.
+  if(state.savingItem) return false;
   if(state.analyzing) return requestAnalysisExit(targetView);
   if(!hasUnsavedAddWork()) return false;
   state.pendingUnsavedExit = { targetView };
@@ -1101,6 +1100,7 @@ window.addEventListener('popstate', () => {
   if(state.analyzing && state.view==='add'){ requestAnalysisExit('list'); return; }
   if(requestUnsavedAddExit('list')) return;
   if(state.view==='multi-select'){ discardPendingAdd(); state.view='list'; render(); return; }
+  if(state.view==='add' && state.savingItem){ state.view='list'; render(); return; } // keeps saving in the background
   if(state.view==='add'&&state.addMode){ discardPendingAdd(); state.view='list'; render(); return; }
   if(state.view==='admin-users' && state.adminUserSheet){ state.adminUserSheet=null; history.pushState({view:'admin-users'},'',location.href); render(); return; }
   if(state.view==='admin-promo' || state.view==='admin-users'){ state.view='admin-stats'; render(); return; }
@@ -4332,7 +4332,8 @@ async function finishSaveItem(){
   if(isCloud){
     // Reminders were already chosen (or there was nothing left to remind about).
     if(savedOk) toast(remindersChosen && savedForm.notifyEnabled!==false ? 'Įrašas ir priminimai išsaugoti ✓' : 'Išsaugota ✓');
-    state.view='list'; render();
+    if(state.view==='add') state.view='list'; // the user may have moved on while it saved
+    render();
   }else if(state._lastSavedId && (savedForm.warrantyEnd || savedForm.purchaseDate)){
     showNotifModal(state._lastSavedId, {
       warrantyMonths: savedForm.warrantyMonths,
