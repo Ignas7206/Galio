@@ -1301,7 +1301,7 @@ function renderAuth(){
     </label>
     <label class="consent-row">
       <input type="checkbox" id="marketingCheck" ${state.authMarketing?'checked':''} />
-      <span>Noriu el. paštu gauti Galio naujienas ir pasiūlymus (neprivaloma, atsisakyti galima bet kada)</span>
+      <span>Sutinku el. paštu gauti Galio naujienas, specialius pasiūlymus ir nuolaidas. Sutikimą galiu bet kada atšaukti</span>
     </label>`:''}
 
     ${state.authError?`<p class="login-error">${esc(state.authError)}</p>`:''}
@@ -1944,6 +1944,8 @@ function renderSettings(){
   const notifyOn = state.userDoc?.notifyEnabled !== false; // default true
   const emailRemOn = state.userDoc?.emailReminders !== false; // default true
   const marketingOn = state.userDoc?.marketingEmails === true; // default false: needs opt-in
+  const remindersMailOn = isPremium && isCloud && emailRemOn && notifyOn;
+  const emailSummary = remindersMailOn && marketingOn ? 'visi' : remindersMailOn ? 'priminimai' : marketingOn ? 'naujienos' : 'išjungti';
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const isCloud = state.storageMode==='cloud';
   const initials = (u.displayName||u.email||'?').trim().charAt(0).toUpperCase();
@@ -2016,16 +2018,10 @@ function renderSettings(){
         <div class="settings-row-label">Pranešimai${!isCloud?'<small>Tik su Galio saugykla</small>':''}</div>
         <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
       </div>
-      ${isPremium&&isCloud?`<div class="settings-row" style="border-bottom:none;${!notifyOn?'opacity:0.65':''}">
-        <i class="ti ti-mail row-icon"></i>
-        <div class="settings-row-label">Priminimai el. paštu<small>${u.emailVerified?esc(accountEmail):'Pirmiausia patvirtinkite el. paštą'}</small></div>
-        <button class="toggle-switch${emailRemOn&&notifyOn?' on':''}" id="emailRemToggle" ${!notifyOn?'disabled':''}><div class="knob"></div></button>
-      </div>`:''}
-      <div class="settings-row" style="border-bottom:none">
-        <i class="ti ti-speakerphone row-icon"></i>
-        <div class="settings-row-label">Naujienos ir pasiūlymai<small>Retkarčiais el. paštu, atsisakyti galima bet kada</small></div>
-        <button class="toggle-switch${marketingOn?' on':''}" id="marketingToggle"><div class="knob"></div></button>
-      </div>
+      <button class="settings-row tappable" id="settingsEmailBtn" style="${rowBtn}">
+        <i class="ti ti-mail row-icon"></i><span class="settings-row-label">El. laiškai</span>
+        <span class="settings-row-val">${emailSummary}</span>${chev}
+      </button>
       <button class="settings-row tappable" id="settingsExpiredBtn" style="${rowBtn}">
         <i class="ti ti-archive row-icon"></i><span class="settings-row-label">Seni įrašai</span>
         <span class="settings-row-val">${keepM?`trinti po ${esc(keepLabel)}`:'saugoti visada'}</span>${chev}
@@ -2048,7 +2044,7 @@ function renderSettings(){
       </button>
     </div>
     <p style="text-align:center;font-size:11px;color:var(--text3);margin:0 0 12px">Galio ${APP_VERSION_NAME}</p>
-    ${renderSettingsSheet({isPremium, isCloud, canChangePassword, accountEmail, providerLabel, uidShort, keepM, themeOpts, appVersion, aiLeft, aiMonthUsed, aiDayUsed})}
+    ${renderSettingsSheet({isPremium, isCloud, canChangePassword, accountEmail, providerLabel, uidShort, keepM, themeOpts, appVersion, aiLeft, aiMonthUsed, aiDayUsed, emailRemOn, notifyOn, marketingOn, emailVerified: u.emailVerified})}
   </div>`;
 }
 
@@ -2097,6 +2093,22 @@ function renderSettingsSheet(o){
       : meter('Panaudota nemokamų', AI_FREE_USES - o.aiLeft, AI_FREE_USES)
         + note(`AI nuskaito čekį ir pats užpildo prekę, garantiją ir grąžinimo terminą. Nemokamai – ${AI_FREE_USES} kartai. Su Premium – iki ${PREMIUM_MONTHLY_LIMIT} per mėnesį.`)
         + `<div style="padding:0 20px 8px"><button class="save-btn" data-close id="upgradeBtnSettings" style="margin:0">Premium</button></div>`;
+  }else if(k==='email'){
+    title = 'El. laiškai';
+    const row = (id, on, disabled, label, desc) => `<div style="display:flex;align-items:flex-start;gap:14px;padding:12px 20px">
+      <div style="flex:1;min-width:0"><div style="font-size:16px;color:var(--text)">${label}</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.45;margin-top:4px">${desc}</div></div>
+      <button class="toggle-switch${on?' on':''}" id="${id}" ${disabled?'disabled':''} style="flex-shrink:0;margin-top:2px"><div class="knob"></div></button>
+    </div>`;
+    const remAvail = o.isPremium && o.isCloud;
+    const remDesc = !remAvail ? 'Laiškas prieš garantijos ar grąžinimo termino pabaigą. Įeina į Premium planą.'
+      : !o.notifyOn ? 'Pirmiausia įjunkite pranešimus.'
+      : !o.emailVerified ? 'Pirmiausia patvirtinkite savo el. pašto adresą.'
+      : `Laiškas prieš garantijos ar grąžinimo termino pabaigą. Siunčiama adresu ${esc(o.accountEmail)}.`;
+    body = row('emailRemToggle', remAvail && o.emailRemOn && o.notifyOn, !remAvail || !o.notifyOn, 'Priminimai apie terminus', remDesc)
+      + row('marketingToggle', o.marketingOn, false, 'Galio naujienos ir pasiūlymai',
+        'Specialūs Premium pasiūlymai ir nuolaidos, naujos funkcijos bei patarimai, kaip pasinaudoti garantija. Ne dažniau kaip 2 kartus per mėnesį.')
+      + `<div style="height:10px"></div>`;
   }else if(k==='legal'){
     title = 'Teisinė informacija';
     body = `<a class="warranty-opt" data-close href="privacy.html" target="_blank" rel="noopener" style="text-decoration:none">Privatumo politika<i class="ti ti-external-link" style="color:var(--text3)"></i></a>`
@@ -3344,7 +3356,7 @@ function attachEvents(){
   });
   on('settingsLogoutBtn2','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   [['settingsAccountBtn','account'],['settingsStorageBtn','storage'],['settingsExpiredBtn','expired'],
-   ['settingsThemeBtn','theme'],['settingsLegalBtn','legal'],['settingsAiBtn','ai']].forEach(([id,k])=>on(id,'click',()=>{state.settingsSheet=k;render();}));
+   ['settingsThemeBtn','theme'],['settingsLegalBtn','legal'],['settingsAiBtn','ai'],['settingsEmailBtn','email']].forEach(([id,k])=>on(id,'click',()=>{state.settingsSheet=k;render();}));
   on('settingsSheetOverlay','click',()=>{state.settingsSheet=null;render();});
   const ss=document.getElementById('settingsSheet');
   if(ss){
@@ -5054,10 +5066,25 @@ async function toggleNotify(){
   }
 }
 
+// The sheet sits above dialogs, so close it while asking and reopen it afterwards.
+function confirmEmailOff(title, message, okText, action){
+  state.settingsSheet = null;
+  showConfirmDialog(title, message, async ()=>{ await action(); state.settingsSheet = 'email'; render(); },
+    { okText, cancelText: 'Palikti', onCancel: ()=>{ state.settingsSheet = 'email'; render(); } });
+}
+
 async function toggleEmailReminders(){
   if(!state.user) return;
   if(!state.online){ toast('Nustatymui pakeisti reikia interneto'); return; }
   const next = state.userDoc?.emailReminders === false;
+  if(!next){
+    return confirmEmailOff('Išjungti priminimus el. paštu?',
+      'Nebegausite laiškų apie artėjančius garantijos ir grąžinimo terminus. Priminimai programėlėje liks įjungti.',
+      'Išjungti', ()=>saveEmailReminders(false));
+  }
+  return saveEmailReminders(true);
+}
+async function saveEmailReminders(next){
   try{
     await updateDoc(doc(db,'users',state.user.uid), { emailReminders: next });
     toast(next ? 'Priminimai el. paštu įjungti' : 'Priminimai el. paštu išjungti');
@@ -5070,6 +5097,14 @@ async function toggleMarketingEmails(){
   if(!state.user) return;
   if(!state.online){ toast('Nustatymui pakeisti reikia interneto'); return; }
   const next = state.userDoc?.marketingEmails !== true;
+  if(!next){
+    return confirmEmailOff('Atsisakyti naujienų?',
+      'Nebegausite specialių Premium pasiūlymų, nuolaidų ir žinių apie naujas Galio funkcijas.',
+      'Atsisakyti', ()=>saveMarketingEmails(false));
+  }
+  return saveMarketingEmails(true);
+}
+async function saveMarketingEmails(next){
   const upd = next
     ? { marketingEmails: true, marketingConsentAt: serverTimestamp(), marketingConsentSource: 'settings' }
     : { marketingEmails: false, marketingOptOutAt: serverTimestamp() };
