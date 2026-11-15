@@ -4104,6 +4104,12 @@ function updateItem(){
     showAppDialog('Trūksta garantijos datos', 'Nurodykite, iki kada galioja garantija. Prekės be garantijos datos neišsaugomos, kad sąraše neliktų neaiškių įrašų.');
     return;
   }
+  // Warn about expired terms only when the edit changes the dates; editing a photo or a
+  // name of an item saved long ago should just save.
+  const existing = state.items.find(i=>i.id===state.editItemId);
+  const datesSame = existing && (existing.warrantyEnd||'') === (f.warrantyEnd||'')
+    && (effectiveReturnDeadline(existing)||'') === (formReturnDeadline(f)||'');
+  if(datesSame){ finishUpdateItem(); return; }
   confirmExpiredTerms({
     warrantyEnd: f.warrantyEnd,
     returnDeadline: formReturnDeadline(f),
