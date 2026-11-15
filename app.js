@@ -1944,10 +1944,10 @@ function renderSettings(){
   const notifyOn = state.userDoc?.notifyEnabled !== false; // default true
   const emailRemOn = state.userDoc?.emailReminders !== false; // default true
   const marketingOn = state.userDoc?.marketingEmails === true; // default false: needs opt-in
-  const remindersMailOn = isPremium && isCloud && emailRemOn && notifyOn;
-  const emailSummary = remindersMailOn && marketingOn ? 'visi' : remindersMailOn ? 'priminimai' : marketingOn ? 'naujienos' : 'išjungti';
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const isCloud = state.storageMode==='cloud';
+  const remindersMailOn = isPremium && isCloud && emailRemOn && notifyOn;
+  const emailSummary = remindersMailOn && marketingOn ? 'visi' : remindersMailOn ? 'priminimai' : marketingOn ? 'naujienos' : 'išjungti';
   const initials = (u.displayName||u.email||'?').trim().charAt(0).toUpperCase();
   const avatarHtml = u.photoURL
     ? `<img src="${esc(u.photoURL)}" alt="" />`
