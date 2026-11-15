@@ -177,7 +177,7 @@ function requestUnsavedAddExit(targetView='list'){
   showAppDialog(
     'Išeiti neišsaugojus?',
     scannedThisItem()
-      ? 'Dokumentas jau nuskaitytas, bet įrašas dar neišsaugotas. Išėjus duomenys bus prarasti, o nuskaitymas lieka įskaitytas į AI analizių limitą.'
+      ? 'Dokumentas jau nuskaitytas, bet įrašas dar neišsaugotas. Išėjus duomenys bus prarasti, o nuskaitymas lieka įskaitytas į nuskaitymų limitą.'
       : 'Šis įrašas dar neišsaugotas. Išeinant įvesti duomenys ir dokumentas bus prarasti.',
     '',
     {hideSupport:false, supportText:'Išeiti neišsaugojus', okText:'Likti', supportAction:'discardAdd', align:'center'}
@@ -230,7 +230,7 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 function offlineDialog(title, message){
   showAppDialog(
     title || 'Nėra interneto ryšio',
-    message || 'Galite peržiūrėti šiame įrenginyje esančius įrašus. AI nuskaitymui, Galio saugyklai ir priminimų nustatymams reikės interneto.',
+    message || 'Galite peržiūrėti šiame įrenginyje esančius įrašus. Dokumentų nuskaitymui, Galio saugyklai ir priminimų nustatymams reikės interneto.',
     '',
     {hideSupport:true, align:'center'}
   );
@@ -599,7 +599,7 @@ function maybeShowPremiumWelcome(){
   }catch(e){ return; }
   state.appDialog = {
     title: 'Jums suteiktas Galio Premium',
-    message: 'Galio saugykla, automatiniai priminimai ir daugiau AI analizių jau įjungti jūsų paskyroje.',
+    message: 'Galio saugykla, automatiniai priminimai ir daugiau dokumentų nuskaitymų jau įjungti jūsų paskyroje.',
     supportDraft: '',
     hideSupport: true,
     align: 'center',
@@ -703,7 +703,7 @@ function startAnalyzeWatchdog(){
       // toast importuojamas vėliau, naudojam tiesioginį DOM
       const t = document.createElement('div');
       t.className = 'toast';
-      t.textContent = 'AI analizė užtruko per ilgai — bandykite dar kartą';
+      t.textContent = 'Nuskaitymas užtruko per ilgai — bandykite dar kartą';
       document.body.appendChild(t);
       setTimeout(()=>t.remove(), 4000);
     }
@@ -780,7 +780,7 @@ async function consumeSharedFile(){
   if(!file){ toast('Galio gali priimti čekio nuotrauką arba PDF', 5000); return; }
   if(state.analyzing){ toast('Palaukite, ankstesnis failas dar apdorojamas'); return; }
   if(!state.online){
-    offlineDialog('Nuskaitymui reikia interneto', 'Dokumento nuskaitymas veikia su AI, todėl jam reikia interneto. Pasidalinkite dar kartą, kai būsite prisijungę.');
+    offlineDialog('Nuskaitymui reikia interneto', 'Dokumento nuskaitymui reikia interneto. Pasidalinkite dar kartą, kai būsite prisijungę.');
     return;
   }
   if(!canAttachNewDoc()){
@@ -1149,7 +1149,7 @@ window._appStartNewItem = (mode) => {
   if(mode==='photo' && !state.online){
     offlineDialog(
       'Nuskaitymui reikia interneto',
-      'Dokumento nuskaitymas veikia su AI, todėl jam reikia interneto. Dabar galite įvesti prekę rankiniu būdu, o dokumentą pridėti vėliau.'
+      'Dokumento nuskaitymui reikia interneto. Dabar galite įvesti prekę rankiniu būdu, o dokumentą pridėti vėliau.'
     );
     return;
   }
@@ -1220,10 +1220,10 @@ function onboardSlides(){
   const ic = { bg:'var(--accent-bg)', color:'var(--accent)' };
   const share = canShareToGalio();
   return [
-    { ...ic, icon:'ti-scan', title:'Nufotografuok čekį', text:'AI pats atpažįsta prekę, parduotuvę ir datas iš nuotraukos ar PDF – per kelias sekundes.' },
+    { ...ic, icon:'ti-scan', title:'Nufotografuok čekį', text:'Galio pats atpažįsta prekę, parduotuvę ir datas iš nuotraukos ar PDF – per kelias sekundes.' },
     share
       ? { ...ic, icon:'ti-share', title:'Sąskaitos iš el. pašto', text:'Laiške ar galerijoje pasirink „Bendrinti“ → Galio – įrašas bus užpildytas automatiškai.' }
-      : { ...ic, icon:'ti-device-laptop', title:'Sąskaita kompiuteryje?', text:'Atidaryk ją ekrane ir nufotografuok telefonu – AI perskaito ir ekrano nuotrauką.' },
+      : { ...ic, icon:'ti-device-laptop', title:'Sąskaita kompiuteryje?', text:'Atidaryk ją ekrane ir nufotografuok telefonu – Galio perskaito ir ekrano nuotrauką.' },
     { ...ic, icon:'ti-rotate-2', title:'Nepražiopsok grąžinimo', text:'Galio parodo tikslią datą, iki kada gali grąžinti prekę, ir primena prieš terminą.' },
     { ...ic, icon:'ti-shield-check', title:'Garantija po ranka', text:'Visi čekiai vienoje vietoje. Priminsime ir prieš baigiantis garantijai.' },
   ];
@@ -1419,7 +1419,7 @@ function renderList(){
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const planBanner = !isPremium ? `<div class="plan-banner">
     <i class="ti ti-sparkles"></i>
-    <div class="pb-text">${aiLeft>0?`<b>${aiLeft}</b> AI analiz${aiLeft===1?'ė':'ės'} liko`:'AI analizės išnaudotos'} · Nemokamame plane matomi ${FREE_DOC_LIMIT} dokumentai</div>
+    <div class="pb-text">${aiLeft>0?`Liko <b>${aiLeft}</b> nuskaitym${aiLeft%10===1&&aiLeft%100!==11?'as':(aiLeft%10===0||(aiLeft%100>10&&aiLeft%100<20))?'ų':'ai'}`:'Nemokami nuskaitymai išnaudoti'} · Nemokamame plane matomi ${FREE_DOC_LIMIT} dokumentai</div>
     <button id="upgradeBtn">Premium</button>
   </div>`:'';
 
@@ -1442,12 +1442,12 @@ function renderList(){
 
   const verifyBanner = !state.user.emailVerified ? `<div class="plan-banner" style="background:var(--accent-bg)">
     <i class="ti ti-mail-exclamation" style="color:var(--accent)"></i>
-    <div class="pb-text" style="color:var(--accent)">Patvirtinkite el. paštą, kad galėtumėte naudoti AI analizę. ${state.authInfo&&state.authInfo.includes('iš naujo')?esc(state.authInfo):'Patikrinkite Spam aplanką.'}</div>
+    <div class="pb-text" style="color:var(--accent)">Patvirtinkite el. paštą, kad galėtumėte nuskaityti dokumentus. ${state.authInfo&&state.authInfo.includes('iš naujo')?esc(state.authInfo):'Patikrinkite Spam aplanką.'}</div>
     <button id="resendVerifyBtn" style="background:var(--accent)" ${state.authBusy?'disabled':''}>${state.authBusy?'...':'Siųsti dar kartą'}</button>
   </div>`:'';
   const offlineBanner = !state.online ? `<div class="plan-banner" style="background:var(--bg2);margin:0 16px 14px">
     <i class="ti ti-wifi-off" style="color:var(--text2)"></i>
-    <div class="pb-text" style="color:var(--text2)">Nėra interneto ryšio. Galite peržiūrėti šiame įrenginyje esančius įrašus; AI nuskaitymas, Galio saugykla ir priminimų keitimas veiks prisijungus.</div>
+    <div class="pb-text" style="color:var(--text2)">Nėra interneto ryšio. Galite peržiūrėti šiame įrenginyje esančius įrašus; dokumentų nuskaitymas, Galio saugykla ir priminimų keitimas veiks prisijungus.</div>
   </div>` : '';
 
   const chips=['Visos',...CATEGORIES].map(c=>`<button class="chip${filterCat===c?' active':''}" data-filter="${esc(c)}">${esc(c)}</button>`).join('');
@@ -1628,7 +1628,7 @@ function renderPicker(){
     <div class="picker-cards">
       <button class="picker-card" id="modePhoto">
         <div class="picker-icon" style="background:var(--accent-bg)"><i class="ti ti-camera" style="color:var(--accent)"></i></div>
-        <div><h3>Nuskaityti dokumentą</h3><p>${offline?'Reikia interneto. Dabar galite įvesti rankiniu būdu.':docLimitReached?`Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`:aiExhausted?'AI analizės išnaudotos. Toliau įveskite rankiniu būdu.':`Nufotografuokite čekį ar sąskaitą – prekes ir terminus užpildysime už jus${!isPremium?` (liko ${aiLeft})`:''}.`}</p></div>
+        <div><h3>Nuskaityti dokumentą</h3><p>${offline?'Reikia interneto. Dabar galite įvesti rankiniu būdu.':docLimitReached?`Pasiektas ${FREE_DOC_LIMIT} dokumentų limitas. Daugiau – su Premium.`:aiExhausted?'Nemokami nuskaitymai išnaudoti. Toliau įveskite rankiniu būdu.':`Nufotografuokite čekį ar sąskaitą – prekes ir terminus užpildysime už jus${!isPremium?` (liko ${aiLeft})`:''}.`}</p></div>
       </button>
       <button class="picker-card" id="modeManual">
         <div class="picker-icon" style="background:var(--green-bg)"><i class="ti ti-pencil" style="color:var(--green)"></i></div>
@@ -1636,7 +1636,7 @@ function renderPicker(){
       </button>
     </div>
     ${canShareToGalio() && !offline ? `<p class="picker-share-tip"><i class="ti ti-share"></i>Dokumentus iš el. pašto ar kitų programėlių galite perduoti per <b>„Bendrinti“ → Galio</b></p>` : ''}
-    ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
+    ${aiExhausted?`<div class="plan-banner" style="margin:0 16px 16px"><i class="ti ti-sparkles"></i><div class="pb-text">Išnaudojote ${AI_FREE_USES} nemokamus nuskaitymus. Atsinaujinkite į Premium.</div><button id="upgradeBtn3">Premium</button></div>`:''}
   </div>`;
 }
 
@@ -1741,14 +1741,14 @@ function renderAdd(){
   return`<div>
     <div class="page-header-sm"><button class="back-btn" id="backBtn"><i class="ti ti-arrow-left"></i></button><h2>${state.editItemId?'Redaguoti':'Nauja garantija'}</h2></div>
     <div class="form-body">
-      ${!state.user.emailVerified&&isPhoto?`<div class="plan-banner" style="margin-bottom:14px"><i class="ti ti-mail-exclamation"></i><div class="pb-text">Patvirtinkite el. paštą, kad galėtumėte naudoti AI analizę</div></div>`:''}
+      ${!state.user.emailVerified&&isPhoto?`<div class="plan-banner" style="margin-bottom:14px"><i class="ti ti-mail-exclamation"></i><div class="pb-text">Patvirtinkite el. paštą, kad galėtumėte nuskaityti dokumentus</div></div>`:''}
       ${multiItemBanner}
       <div class="doc-upload-area">
         ${docAreaHtml}
         ${docLimitReached?'':`<input type="file" id="docInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" ${isPhoto?'capture="environment"':''} style="display:none" />`}
         ${f.docData?`<button class="doc-remove-btn" id="removeDoc"><i class="ti ti-trash" style="font-size:14px"></i>Pašalinti dokumentą</button>`:''}
         ${state.docError?`<p class="doc-error">${esc(state.docError)}</p>`:''}
-        ${state.analyzing?`<div class="analyzing-row"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">AI analizuoja dokumentą...</span></div>`:''}
+        ${state.analyzing?`<div class="analyzing-row"><div class="spinner"></div><span style="font-size:15px;color:var(--text2)">Dokumentas analizuojamas...</span></div>`:''}
       </div>
 
       <p class="form-label-section">Pagrindinė informacija</p>
@@ -1812,7 +1812,7 @@ function renderAdd(){
       </div>
       ${f.warrantyAppliesWarning ? `<div class="plan-banner" style="margin-bottom:16px;background:var(--orange-bg)">
         <i class="ti ti-info-circle" style="color:var(--orange);flex-shrink:0"></i>
-        <div class="pb-text" style="color:var(--text);font-size:14px">AI: šiai prekei garantija paprastai netaikoma. Jei vis tiek norite saugoti, nurodykite garantijos pabaigos datą rankiniu būdu.</div>
+        <div class="pb-text" style="color:var(--text);font-size:14px">Šiai prekei garantija paprastai netaikoma. Jei vis tiek norite saugoti, nurodykite garantijos pabaigos datą rankiniu būdu.</div>
       </div>` : ''}
         ${!f.warrantyEnd?`<div style="font-size:13px;color:var(--orange);padding:10px 2px 0">Nurodykite garantijos pabaigos datą, kad galėtumėte išsaugoti.</div>`:''}
 
@@ -2047,7 +2047,7 @@ function renderSettings(){
       <button id="downgradeStorageBtn2" style="background:var(--orange)">Perkelti</button>
     </div>` : !isPremium ? `<div class="plan-banner" style="margin:0 16px 14px">
       <i class="ti ti-crown"></i>
-      <div class="pb-text">Premium: Galio saugykla, priminimai ir ${PREMIUM_MONTHLY_LIMIT} AI analizių per mėnesį</div>
+      <div class="pb-text">Premium: Galio saugykla, priminimai ir ${PREMIUM_MONTHLY_LIMIT} dokumentų nuskaitymų per mėnesį</div>
       <button id="upgradeBtnSettings">Premium</button>
     </div>` : ''}
     ${!state.online ? `<div class="plan-banner" style="background:var(--bg2);margin:0 16px 14px">
@@ -2061,7 +2061,7 @@ function renderSettings(){
         <span class="settings-row-val">${isCloud?'Galio saugykla':'Įrenginyje'}</span>${chev}
       </button>
       <button class="settings-row tappable" id="settingsAiBtn" style="${rowBtn}">
-        <i class="ti ti-sparkles row-icon"></i><span class="settings-row-label">AI analizių limitai</span>
+        <i class="ti ti-sparkles row-icon"></i><span class="settings-row-label">Nuskaitymų limitai</span>
         <span class="settings-row-val">${aiVal}</span>${chev}
       </button>
       <div class="settings-row" style="border-bottom:none;${!isCloud?'opacity:0.65':''}">
@@ -2142,7 +2142,7 @@ function renderSettingsSheet(o){
     title = 'Išvaizda';
     body = o.themeOpts.map(([t,l,ic]) => opt(`data-theme="${t}"`, `<span style="display:flex;align-items:center;gap:12px"><i class="ti ti-${ic}" style="color:var(--text2)"></i>${l}</span>`, state.theme===t, 'theme-row')).join('');
   }else if(k==='ai'){
-    title = 'AI analizių limitai';
+    title = 'Nuskaitymų limitai';
     const meter = (label, used, limit) => `<div style="margin:0 20px 14px">
       <div style="display:flex;justify-content:space-between;font-size:15px;margin-bottom:6px"><span>${label}</span><span style="color:var(--text2)"><b style="color:var(--text)">${used}</b> iš ${limit}</span></div>
       <div style="height:8px;border-radius:4px;background:var(--bg3);overflow:hidden"><div style="height:100%;width:${Math.min(100, used*100/Math.max(1,limit))}%;background:var(--accent);border-radius:4px"></div></div>
@@ -2151,7 +2151,7 @@ function renderSettingsSheet(o){
       ? meter('Šiandien panaudota', o.aiDayUsed, PREMIUM_DAILY_LIMIT) + meter('Šį mėnesį panaudota', o.aiMonthUsed, PREMIUM_MONTHLY_LIMIT)
         + note('Dienos limitas atsinaujina kas parą, mėnesio – mėnesio pradžioje.')
       : meter('Panaudota nemokamų', AI_FREE_USES - o.aiLeft, AI_FREE_USES)
-        + note(`AI nuskaito čekį ir pats užpildo prekę, garantiją ir grąžinimo terminą. Nemokamai – ${AI_FREE_USES} kartai. Su Premium – iki ${PREMIUM_MONTHLY_LIMIT} per mėnesį.`)
+        + note(`Galio nuskaito čekį ir pats užpildo prekę, garantiją ir grąžinimo terminą. Nemokamai – ${AI_FREE_USES} kartai. Su Premium – iki ${PREMIUM_MONTHLY_LIMIT} per mėnesį.`)
         + `<div style="padding:0 20px 8px"><button class="save-btn" data-close id="upgradeBtnSettings" style="margin:0">Premium</button></div>`;
   }else if(k==='email'){
     title = 'El. laiškai';
@@ -2394,7 +2394,7 @@ function renderPremium(){
         <i class="ti ti-crown" style="font-size:38px;color:var(--accent)"></i>
       </div>
       <h3 style="font-size:22px;font-weight:700;margin:0 0 8px">Priminimai ir dokumentai vienoje vietoje</h3>
-      <p style="font-size:15px;color:var(--text2);margin:0;line-height:1.5">Premium atrakina Galio saugyklą, automatinius priminimus ir daugiau AI analizių.</p>
+      <p style="font-size:15px;color:var(--text2);margin:0;line-height:1.5">Premium atrakina Galio saugyklą, automatinius priminimus ir daugiau dokumentų nuskaitymų.</p>
     </div>
     <div style="padding:0 16px">
       ${feats.map(f=>`
@@ -5168,11 +5168,11 @@ async function checkPolicy(item){
   const monthKey = state.userDoc?.aiMonthKey;
   const monthCount = monthKey===month ? (state.userDoc?.aiMonthCount||0) : 0;
   if(dayCount >= PREMIUM_DAILY_LIMIT){
-    toast(`Pasiektas dienos limitas (${PREMIUM_DAILY_LIMIT} AI analizių). Pabandykite rytoj.`);
+    toast(`Pasiektas dienos nuskaitymų limitas (${PREMIUM_DAILY_LIMIT}). Pabandykite rytoj.`);
     return;
   }
   if(monthCount >= PREMIUM_MONTHLY_LIMIT){
-    toast(`Pasiektas mėnesio limitas (${PREMIUM_MONTHLY_LIMIT} AI analizių).`);
+    toast(`Pasiektas mėnesio nuskaitymų limitas (${PREMIUM_MONTHLY_LIMIT}).`);
     return;
   }
 
@@ -5694,7 +5694,7 @@ async function analyzeDoc(b64,mime, runId=state.analysisRunId){
     return;
   }
   if(!isPremium && usesLeft<=0){
-    toast(`Išnaudojote ${AI_FREE_USES} nemokamas AI analizes. Atsinaujinkite į Premium.`);
+    toast(`Išnaudojote ${AI_FREE_USES} nemokamus nuskaitymus. Atsinaujinkite į Premium.`);
     return;
   }
 
@@ -5764,8 +5764,8 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
     });
     if(!stillCurrent()) return;
     if(res.status===401){toast('Sesija pasibaigė, prisijunkite iš naujo');return;}
-    if(res.status===403){toast('Patvirtinkite el. paštą, kad naudotumėte AI analizę');return;}
-    if(res.status===429){let m='Pasiektas AI analizių limitas';try{m=(await res.json()).error||m;}catch(e){}toast(m,6000);return;}
+    if(res.status===403){toast('Patvirtinkite el. paštą, kad galėtumėte nuskaityti dokumentus');return;}
+    if(res.status===429){let m='Pasiektas nuskaitymų limitas';try{m=(await res.json()).error||m;}catch(e){}toast(m,6000);return;}
     if(!res.ok)return;
 
     await chargeAiUsageNow();
@@ -5805,7 +5805,7 @@ Jei items sąraše nieko neradai (pvz. visiškai neįskaitoma), grąžink tušč
 
     if(items.length===0){
       // Nothing usable was recognized — don't silently fabricate a name.
-      toast('AI nerado atpažįstamos prekės šiame dokumente. Įveskite duomenis rankiniu būdu.');
+      toast('Šiame dokumente nepavyko atpažinti prekės. Įveskite duomenis rankiniu būdu.');
       if(typeof p.shop==='string')state.form.shop=p.shop.slice(0,100);
       if(typeof p.purchaseDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(p.purchaseDate))state.form.purchaseDate=p.purchaseDate;
       state.form.returnDays=normalizeReturnDays(p.returnDays, p.shop);
