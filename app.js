@@ -5710,7 +5710,11 @@ async function performDeleteAccount(){
   let cleanupFailed = false;
 
   if(wasCloud){
-    for(const item of items){
+    // Read the whole list from the server: the screen may show none of it (hidden after Premium ended).
+    let cloudItems = items;
+    try{ cloudItems = (await getDocsFromServer(collection(db,'users',uid,'warranties'))).docs.map(d=>({id:d.id,...d.data()})); }
+    catch(e){ console.warn('Could not read cloud entries for deletion, using the list on screen', e); }
+    for(const item of cloudItems){
       try{ await deleteDoc(doc(db,'users',uid,'warranties',item.id)); }
       catch(e){ cleanupFailed = true; }
       if(item.docStoragePath){
