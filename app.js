@@ -3132,7 +3132,8 @@ const SIM_SCENARIOS = [
 
 function renderAdminSimPage(){
   const testers = (state.adminUsers||[]).filter(u=>u.testAccount);
-  if(!state.simUid && testers.length) state.simUid = testers[0].uid;
+  const others = (state.adminUsers||[]).filter(u=>!u.testAccount && u.role!=='admin' && u.hasDoc!==false);
+  if(!testers.some(u=>u.uid===state.simUid)) state.simUid = testers[0]?.uid || null;
   const r = state.simResult;
   const fmtT = t => t ? new Date(t).toLocaleString('lt-LT',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
   const emails = state.simEmails;
@@ -3146,8 +3147,14 @@ function renderAdminSimPage(){
     <div style="margin:0 16px 16px;padding:14px;background:var(--bg2);border-radius:var(--radius)">
       <div style="font-size:16px;font-weight:600">Bandomoji paskyra</div>
       <div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.45">Scenarijus serveryje nustato tikrą paskyros būseną ir iš karto paleidžia tas pačias naktines užduotis. Pranešimai ir laiškai ateina iš tikrųjų. Prisijunkite ta paskyra kitame naršyklės lange ar telefone ir matysite tai, ką matytų vartotojas. Bandomąja paskyrą pažymite Vartotojų sąraše, jos kortelėje.</div>
-      ${testers.length ? `<select id="simUidSelect" style="${PROMO_FIELD};margin-top:10px">${testers.map(u=>`<option value="${esc(u.uid)}" ${u.uid===state.simUid?'selected':''}>${esc(u.email)}</option>`).join('')}</select>`
-        : `<div style="margin-top:10px;font-size:14px;color:var(--orange)">Dar nėra bandomosios paskyros. Atidarykite Vartotojai → paskyra → „Pažymėti kaip bandomąją paskyrą“.</div>`}
+      ${testers.length ? `<label style="display:block;margin-top:10px;font-size:12px;color:var(--text3)">Scenarijus taikomas paskyrai
+        <select id="simUidSelect" style="${PROMO_FIELD}">${testers.map(u=>`<option value="${esc(u.uid)}" ${u.uid===state.simUid?'selected':''}>${esc(u.email)}</option>`).join('')}</select></label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${testers.map(u=>`<button class="sim-unmark" data-uid="${esc(u.uid)}" style="background:var(--bg3);border:none;border-radius:14px;padding:5px 10px;color:var(--text2);font-size:12px;cursor:pointer">${esc(u.email)} ✕</button>`).join('')}</div>`
+        : `<div style="margin-top:10px;font-size:14px;color:var(--orange)">Dar nėra bandomosios paskyros.</div>`}
+      ${others.length ? `<label style="display:block;margin-top:12px;font-size:12px;color:var(--text3)">Pridėti bandomąją paskyrą (galima kelias)
+        <div style="display:flex;gap:8px;margin-top:4px"><select id="simAddSelect" style="${PROMO_FIELD};margin-top:0;flex:1">${others.map(u=>`<option value="${esc(u.uid)}">${esc(u.email)}</option>`).join('')}</select>
+        <button id="simAddBtn" class="save-btn" style="width:auto;margin:0;padding:10px 14px">Pridėti</button></div></label>` : ''}
+      <div style="font-size:12px;color:var(--text3);margin-top:8px">Administratoriaus paskyrų pažymėti negalima.</div>
     </div>
     ${r ? `<div style="margin:0 16px 16px;padding:14px;background:var(--accent-bg);border-radius:var(--radius);font-size:13px;line-height:1.6">
       <div style="font-weight:600;font-size:15px;margin-bottom:4px">${esc(r.title)}</div>
@@ -3832,6 +3839,8 @@ function attachEvents(){
   on('adminSimBtn','click',()=>{state.view='admin-sim';render();});
   on('adminSimBackBtn','click',()=>{state.view='admin-stats';render();});
   on('simUidSelect','change',e=>{state.simUid=e.currentTarget.value;state.simResult=null;render();});
+  on('simAddBtn','click',()=>{ const v=document.getElementById('simAddSelect')?.value; if(v){ state.simUid=v; markTestAccount(v,true); } });
+  onAll('.sim-unmark','click',e=>markTestAccount(e.currentTarget.dataset.uid,false));
   onAll('.sim-run','click',e=>runSimScenario(e.currentTarget.dataset.sc));
   on('simEmailsBtn','click',()=>loadSimEmails(false));
   on('simEmailsSendBtn','click',()=>loadSimEmails(true));
