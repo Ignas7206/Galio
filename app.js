@@ -151,6 +151,8 @@ function discardPendingAdd(){
   state.editItemId=null;
 }
 function hasUnsavedAddWork(){
+  // The product list from a multi-item receipt is unsaved work too.
+  if(state.view==='multi-select' && state.multiItemReceipt && state.multiEditIdx==null) return true;
   if(state.view!=='add' || !state.addMode || state.editItemId || state.multiEditIdx!=null) return false;
   const f = state.form || {};
   const empty = emptyForm();
@@ -167,7 +169,9 @@ function requestUnsavedAddExit(targetView='list'){
   state.pendingUnsavedExit = { targetView };
   showAppDialog(
     'Išeiti neišsaugojus?',
-    'Šis įrašas dar neišsaugotas. Išeinant įvesti duomenys ir dokumentas bus prarasti.',
+    state.pendingAiCharge
+      ? 'Dokumentas jau nuskaitytas, bet įrašas dar neišsaugotas. Išėjus duomenys bus prarasti, o nuskaitymas vis tiek bus įskaitytas į AI analizių limitą.'
+      : 'Šis įrašas dar neišsaugotas. Išeinant įvesti duomenys ir dokumentas bus prarasti.',
     '',
     {hideSupport:false, supportText:'Išeiti neišsaugojus', okText:'Likti', supportAction:'discardAdd', align:'center'}
   );
@@ -177,6 +181,8 @@ function discardAddAndLeave(){
   const target = state.pendingUnsavedExit?.targetView || 'list';
   state.pendingUnsavedExit=null;
   state.appDialog=null;
+  // A finished scan costs the same whether or not the result is kept.
+  if(state.pendingAiCharge){ state.pendingAiCharge=false; chargeAiUsageNow(); }
   discardPendingAdd();
   state.view=target;
   render();
@@ -1115,6 +1121,10 @@ window.__galioSafeReload = () => {
   else _reloadPending = true;
 };
 setInterval(()=>{ if(_reloadPending && appIsIdle()) location.reload(); }, 3000);
+
+window.addEventListener('beforeunload', e=>{
+  if(state.pendingAiCharge && hasUnsavedAddWork()){ e.preventDefault(); e.returnValue=''; }
+});
 
 window._appNav = (tab) => {
   if(state.analyzing && state.view==='add'){
@@ -3416,7 +3426,7 @@ function attachEvents(){
   onAll('.keep-opt','click',e=>{ const m=parseInt(e.currentTarget.dataset.keep,10)||0; if(m!==keepExpiredMonths()) changeKeepExpired(m); });
   on('settingsLogoutRow','click',()=>{showConfirmDialog('Atsijungti?', '', doLogout, {okText:'Atsijungti', align:'center'});});
   on('deleteAccountBtn','click',confirmDeleteAccount);
-  on('multiCancelBtn','click',()=>{ discardPendingAdd(); state.view='list'; render(); });
+  on('multiCancelBtn','click',()=>{ if(requestUnsavedAddExit('list')) return; discardPendingAdd(); state.view='list'; render(); });
   onAll('.multi-row','click',e=>{
     if(e.target.closest('.multi-edit-btn') || e.target.closest('.multi-name-input')) return;
     const idx=parseInt(e.currentTarget.dataset.midx);
