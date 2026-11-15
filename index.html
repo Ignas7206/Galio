@@ -280,8 +280,8 @@
     .detail-status .ds-val { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
     .detail-section { margin: 0 16px 16px; }
     .media-label { font-size: 13px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px 2px; }
-    .detail-media-img { width: 100%; border-radius: var(--radius); max-height: 220px; object-fit: cover; cursor: pointer; display: block; background: var(--bg2); }
-    .detail-media-img.item-photo-main { max-height: 260px; }
+    .detail-media-img { width: 100%; height: 240px; box-sizing: border-box; padding: 8px; border-radius: var(--radius); object-fit: contain; cursor: zoom-in; display: block; background: var(--bg2); border: 1px solid var(--border); }
+    .detail-media-img.item-photo-main { height: 300px; }
     .detail-rows { background: var(--bg2); border-radius: var(--radius); overflow: hidden; }
     .detail-row { display: flex; align-items: flex-start; gap: 12px; padding: 13px 16px; border-bottom: 0.5px solid var(--border); }
     .detail-row:last-child { border-bottom: none; }
@@ -515,12 +515,12 @@
     document.body.innerHTML = '<div style="font-family:sans-serif;padding:32px;text-align:center"><p style="font-size:16px;font-weight:600">Galio nepasikrovė</p><p style="font-size:12px;color:#888;word-break:break-word">' + (window.__galioErrors.join('<br>') || 'app.js nepaleistas') + '</p><button onclick="__galioResetCache()" style="margin-top:16px;padding:12px 24px;border:none;border-radius:12px;background:#2f6bff;color:#fff;font-size:15px">Išvalyti talpyklą ir perkrauti</button></div>';
   }, 20000);
 </script>
-<script type="module" src="firebase-config.js?v=20261115-2040"></script>
-<script type="module" src="app.js?v=20261115-2040"></script>
+<script type="module" src="firebase-config.js?v=20261115-2105"></script>
+<script type="module" src="app.js?v=20261115-2105"></script>
 <script>
   document.addEventListener('DOMContentLoaded', ()=>{
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js?v=20261115-2040').then(reg => {
+      navigator.serviceWorker.register('sw.js?v=20261115-2105').then(reg => {
         reg.update();
         reg.addEventListener('updatefound', () => {
           const worker = reg.installing;
