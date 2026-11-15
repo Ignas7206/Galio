@@ -715,6 +715,7 @@ onAuthStateChanged(auth, async (user)=>{
     startEmailVerifyPoll(user);
   }else{
     if(state.itemsUnsub){state.itemsUnsub();state.itemsUnsub=null;}
+    if(state.userDocUnsub){state.userDocUnsub();state.userDocUnsub=null;}
     state.items=[];
     state.userDoc=null;
     stopEmailVerifyPoll();
@@ -853,7 +854,8 @@ async function ensureUserDoc(user){
   state.storageMode = state.userDoc.storageMode || 'local';
   try{ if(typeof Notification!=='undefined' && Notification.permission==='granted' && (state.userDoc.fcmToken || state.userDoc.fcmTokens?.length)) setupForegroundPush(); }catch(e){}
   // live updates to plan/itemCount/storageMode/aiUsesRemaining
-  onSnapshot(ref_, s=>{
+  if(state.userDocUnsub) state.userDocUnsub();
+  state.userDocUnsub = onSnapshot(ref_, s=>{
     if(s.exists()){
       const prevMode = state.storageMode;
       state.userDoc = s.data();
@@ -870,7 +872,7 @@ async function ensureUserDoc(user){
       render();
       if(!s.metadata.fromCache) autoMoveToCloud();
     }
-  });
+  }, err=>{ if(auth.currentUser) console.warn('User doc listener error:', err); });
   restorePlayPurchases();
   if(!stale) setTimeout(autoMoveToCloud, 1500);
 }
@@ -932,6 +934,8 @@ function attachItemsListener(uid, retryCount=0){
       }
       render();
     }, err=>{
+      // Signing out cancels the listener with permission-denied: that is not an error to show or report.
+      if(state._intentionalLogout || auth.currentUser?.uid !== uid) return;
       console.warn('Items listener error:', err);
       // Right after a fresh login (especially one forced by a password
       // change), the freshly-issued ID token can take a brief moment to
@@ -941,7 +945,7 @@ function attachItemsListener(uid, retryCount=0){
       // it still fails after that, something is actually wrong and we
       // show it instead of silently leaving an empty list on screen.
       if(err.code==='permission-denied' && retryCount<2){
-        setTimeout(()=>attachItemsListener(uid, retryCount+1), 800);
+        setTimeout(()=>{ if(auth.currentUser?.uid === uid) attachItemsListener(uid, retryCount+1); }, 800);
         return;
       }
       state.loadingItems = false;
@@ -1029,10 +1033,11 @@ async function resendVerification(){
   state.authBusy=false;render();
 }
 async function doLogout(){
+  state._intentionalLogout = true;
   if(state.itemsUnsub){state.itemsUnsub();state.itemsUnsub=null;}
+  if(state.userDocUnsub){state.userDocUnsub();state.userDocUnsub=null;}
   stopEmailVerifyPoll();
   if(state.qrStream){state.qrStream.getTracks().forEach(t=>t.stop());state.qrStream=null;}
-  state._intentionalLogout = true;
   await signOut(auth);
   // Reset all per-session state so a different account logging in on the
   // same device never briefly sees stale data from the previous user.
