@@ -3038,7 +3038,7 @@ function renderAdminUserSheet(){
           <span style="color:var(--text2);flex-shrink:0">${l}</span><span style="color:var(--text);text-align:right;word-break:break-all">${esc(v)}</span></div>`).join('')}
       </div>
       ${action}
-      ${u.role==='admin' ? '' : `<div style="padding:4px 20px 12px"><button class="save-btn" data-uid="${esc(u.uid)}" data-on="${u.testAccount?'0':'1'}" data-action="markTest" style="margin:0;background:none;border:1px solid var(--border);color:var(--text2)">${u.testAccount ? 'Nebežymėti kaip bandomosios' : 'Pažymėti kaip bandomąją paskyrą'}</button></div>`}
+      ${u.role==='admin' || (!u.testAccount && (state.adminUsers||[]).some(x=>x.testAccount)) ? '' : `<div style="padding:4px 20px 12px"><button class="save-btn" data-uid="${esc(u.uid)}" data-on="${u.testAccount?'0':'1'}" data-action="markTest" style="margin:0;background:none;border:1px solid var(--border);color:var(--text2)">${u.testAccount ? 'Nebežymėti kaip bandomosios' : 'Pažymėti kaip bandomąją paskyrą'}</button></div>`}
     </div>
   </div>`;
 }
@@ -3147,14 +3147,14 @@ function renderAdminSimPage(){
     <div style="margin:0 16px 16px;padding:14px;background:var(--bg2);border-radius:var(--radius)">
       <div style="font-size:16px;font-weight:600">Bandomoji paskyra</div>
       <div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.45">Scenarijus serveryje nustato tikrą paskyros būseną ir iš karto paleidžia tas pačias naktines užduotis. Pranešimai ir laiškai ateina iš tikrųjų. Prisijunkite ta paskyra kitame naršyklės lange ar telefone ir matysite tai, ką matytų vartotojas. Bandomąja paskyrą pažymite Vartotojų sąraše, jos kortelėje.</div>
-      ${testers.length ? `<label style="display:block;margin-top:10px;font-size:12px;color:var(--text3)">Scenarijus taikomas paskyrai
-        <select id="simUidSelect" style="${PROMO_FIELD}">${testers.map(u=>`<option value="${esc(u.uid)}" ${u.uid===state.simUid?'selected':''}>${esc(u.email)}</option>`).join('')}</select></label>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${testers.map(u=>`<button class="sim-unmark" data-uid="${esc(u.uid)}" style="background:var(--bg3);border:none;border-radius:14px;padding:5px 10px;color:var(--text2);font-size:12px;cursor:pointer">${esc(u.email)} ✕</button>`).join('')}</div>`
+      ${testers.length ? `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--bg)">
+          <i class="ti ti-flask" style="color:var(--green)"></i><b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(testers[0].email)}</b>
+          <button class="sim-unmark" data-uid="${esc(testers[0].uid)}" style="background:none;border:none;color:var(--red);font-size:13px;font-weight:600;cursor:pointer">Nuimti žymę</button></div>`
         : `<div style="margin-top:10px;font-size:14px;color:var(--orange)">Dar nėra bandomosios paskyros.</div>`}
-      ${others.length ? `<label style="display:block;margin-top:12px;font-size:12px;color:var(--text3)">Pridėti bandomąją paskyrą (galima kelias)
+      ${!testers.length && others.length ? `<label style="display:block;margin-top:12px;font-size:12px;color:var(--text3)">Pasirinkite bandomąją paskyrą (galima tik viena)
         <div style="display:flex;gap:8px;margin-top:4px"><select id="simAddSelect" style="${PROMO_FIELD};margin-top:0;flex:1">${others.map(u=>`<option value="${esc(u.uid)}">${esc(u.email)}</option>`).join('')}</select>
         <button id="simAddBtn" class="save-btn" style="width:auto;margin:0;padding:10px 14px">Pridėti</button></div></label>` : ''}
-      <div style="font-size:12px;color:var(--text3);margin-top:8px">Administratoriaus paskyrų pažymėti negalima.</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:8px">${testers.length ? 'Kitą paskyrą pasirinkti galėsite nuėmę šios žymę.' : 'Administratoriaus paskyrų pažymėti negalima.'}</div>
     </div>
     ${r ? `<div style="margin:0 16px 16px;padding:14px;background:var(--accent-bg);border-radius:var(--radius);font-size:13px;line-height:1.6">
       <div style="font-weight:600;font-size:15px;margin-bottom:4px">${esc(r.title)}</div>
