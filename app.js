@@ -3213,6 +3213,7 @@ function attachEvents(){
     if(v==='x'){state.form.warrantyMonths=null;state.form.warrantyEnd='';}
     else{const m=parseInt(v);state.form.warrantyMonths=m;if(state.form.purchaseDate)state.form.warrantyEnd=addMonths(state.form.purchaseDate,m);}
     state.showWarranty=false;render();
+    if(v==='x') openDatePicker('f_warrantyEnd');
   });
   on('returnDaysBtn','click',()=>{state.showReturnDays=true;render();});
   on('returnDaysOverlay','click',()=>{state.showReturnDays=false;render();});
@@ -3228,6 +3229,7 @@ function attachEvents(){
     state.showReturnDays=false;
     syncSave();
     render();
+    if(v === 'x') openDatePicker('f_returnDeadline');
   });
   on('f_warrantyEnd','change',e=>{state.form.warrantyEnd=e.target.value;});
   on('f_returnDeadline','change',e=>{state.form.returnDeadline=e.target.value;syncSave();});
@@ -5081,6 +5083,16 @@ async function toggleNotify(){
   }catch(e){
     toast('Nepavyko išsaugoti nustatymo');
   }
+}
+
+// After "Kita data" the date field appears below the row: open its calendar right away
+// (still inside the tap, which browsers require), so the user doesn't have to look for it.
+function openDatePicker(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.scrollIntoView({block:'center', behavior:'smooth'});
+  el.focus({preventScroll:true});
+  try{ el.showPicker?.(); }catch(e){}
 }
 
 // The sheet sits above dialogs, so close it while asking and reopen it afterwards.
