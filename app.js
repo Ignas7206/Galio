@@ -1969,7 +1969,7 @@ function renderDetail(){
     </div>
     ${statusHtml}
     ${itemPhoto.itemPhotoUrl ? '' : itemPhotoHtml /* missing photo: ask for it up front */}
-    <div class="detail-section"><div class="detail-rows">${rows}</div></div>
+    <div class="detail-section" style="margin-top:14px"><div class="detail-rows">${rows}</div></div>
     ${remindersSection}
     ${visibleNotes?`<div class="detail-section"><div class="notes-card"><div class="nc-label">Pastabos</div><p>${esc(visibleNotes)}</p></div></div>`:''}
     ${docHtml}
