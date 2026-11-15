@@ -2146,8 +2146,9 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
-  const m=/[?&]v=(\d{4})(\d{2})(\d{2})/.exec(import.meta.url);
-  const web=m?` · ${m[1]}-${m[2]}-${m[3]}`:'';
+  // Short build code instead of a date, so the label doesn't say when the app was updated.
+  const m=/[?&]v=(\d{8})-?(\d{4})/.exec(import.meta.url);
+  const web=m?` · ${parseInt(m[1]+m[2],10).toString(36).toUpperCase().slice(-5)}`:'';
   if(b>=7) return '1.6'+web;
   if(b>=6) return '1.5'+web;
   if(b>0) return '1.4'+web;
