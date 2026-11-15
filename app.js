@@ -1934,6 +1934,7 @@ function renderSettings(){
   const isPremium = isPremiumUser();
   const isAdmin = state.userDoc?.role==='admin';
   const notifyOn = state.userDoc?.notifyEnabled !== false; // default true
+  const emailRemOn = state.userDoc?.emailReminders !== false; // default true
   const aiLeft = state.userDoc?.aiUsesRemaining ?? AI_FREE_USES;
   const isCloud = state.storageMode==='cloud';
   const initials = (u.displayName||u.email||'?').trim().charAt(0).toUpperCase();
@@ -2006,6 +2007,11 @@ function renderSettings(){
         <div class="settings-row-label">Pranešimai${!isCloud?'<small>Tik su Galio saugykla</small>':''}</div>
         <button class="toggle-switch${notifyOn&&isCloud?' on':''}" id="notifyToggle" ${!isCloud?'disabled':''}><div class="knob"></div></button>
       </div>
+      ${isPremium&&isCloud?`<div class="settings-row" style="border-bottom:none;${!notifyOn?'opacity:0.65':''}">
+        <i class="ti ti-mail row-icon"></i>
+        <div class="settings-row-label">Priminimai el. paštu<small>${u.emailVerified?esc(accountEmail):'Pirmiausia patvirtinkite el. paštą'}</small></div>
+        <button class="toggle-switch${emailRemOn&&notifyOn?' on':''}" id="emailRemToggle" ${!notifyOn?'disabled':''}><div class="knob"></div></button>
+      </div>`:''}
       <button class="settings-row tappable" id="settingsExpiredBtn" style="${rowBtn}">
         <i class="ti ti-archive row-icon"></i><span class="settings-row-label">Seni įrašai</span>
         <span class="settings-row-val">${keepM?`trinti po ${esc(keepLabel)}`:'saugoti visada'}</span>${chev}
@@ -3311,6 +3317,7 @@ function attachEvents(){
     state.theme=t; localStorage.setItem('galio_theme',t); applyTheme(); render();
   });
   on('notifyToggle','click',toggleNotify);
+  on('emailRemToggle','click',toggleEmailReminders);
   on('storageModeToggle','click',toggleStorageMode);
   on('downgradeStorageBtn','click',toggleStorageMode);
   on('downgradeStorageBtn2','click',toggleStorageMode);
@@ -5019,6 +5026,18 @@ async function toggleNotify(){
   const current = state.userDoc?.notifyEnabled !== false;
   try{
     await updateDoc(doc(db,'users',state.user.uid), { notifyEnabled: !current });
+  }catch(e){
+    toast('Nepavyko išsaugoti nustatymo');
+  }
+}
+
+async function toggleEmailReminders(){
+  if(!state.user) return;
+  if(!state.online){ toast('Nustatymui pakeisti reikia interneto'); return; }
+  const next = state.userDoc?.emailReminders === false;
+  try{
+    await updateDoc(doc(db,'users',state.user.uid), { emailReminders: next });
+    toast(next ? 'Priminimai el. paštu įjungti' : 'Priminimai el. paštu išjungti');
   }catch(e){
     toast('Nepavyko išsaugoti nustatymo');
   }
