@@ -1968,11 +1968,12 @@ function renderDetail(){
       <button class="icon-btn" id="editItemBtn" style="color:var(--accent)"><i class="ti ti-pencil" style="font-size:18px"></i></button>
     </div>
     ${statusHtml}
-    ${itemPhotoHtml}
-    ${docHtml}
+    ${itemPhoto.itemPhotoUrl ? '' : itemPhotoHtml /* missing photo: ask for it up front */}
     <div class="detail-section"><div class="detail-rows">${rows}</div></div>
     ${remindersSection}
     ${visibleNotes?`<div class="detail-section"><div class="notes-card"><div class="nc-label">Pastabos</div><p>${esc(visibleNotes)}</p></div></div>`:''}
+    ${docHtml}
+    ${itemPhoto.itemPhotoUrl ? itemPhotoHtml : '' /* the photo was already seen in the list, so it goes last */}
     ${policySection}
     <div class="detail-section"><button class="delete-btn" id="deleteBtn2"><i class="ti ti-trash"></i>Ištrinti įrašą</button></div>
     <div style="height:8px"></div>
