@@ -2800,7 +2800,7 @@ function renderAdminStats(mode='stats'){
   const filteredUsers = users
     .filter(u => {
       const kind = premiumKind(u);
-      const haystack = `${u.email||''} ${u.uid||''} ${u.plan||''} ${u.planSource||''} ${u.role||''} ${u.storageMode||''}`.toLowerCase();
+      const haystack = `${u.email||''} ${u.uid||''} ${u.plan||''} ${u.planSource||''} ${u.role||''} ${u.storageMode||''} ${u.firstPromoCode||''} ${u.promoCode||''}`.toLowerCase();
       const matchesSearch = !adminSearch || haystack.includes(adminSearch);
       const matchesFilter =
         adminPlanFilter === 'all' ||
@@ -2848,7 +2848,7 @@ function renderAdminStats(mode='stats'){
     <div class="form-section" style="margin:0 16px 12px;padding:12px">
       <div style="display:flex;align-items:center;gap:10px;background:var(--bg);border-radius:12px;padding:10px 12px;margin-bottom:10px">
         <i class="ti ti-search" style="font-size:18px;color:var(--text3);flex-shrink:0"></i>
-        <input id="adminUserSearch" value="${esc(state.adminSearch||'')}" placeholder="Ieškoti pagal el. paštą, UID, planą" style="width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;min-width:0" />
+        <input id="adminUserSearch" value="${esc(state.adminSearch||'')}" placeholder="Ieškoti pagal el. paštą, UID, planą, kodą" style="width:100%;background:none;border:none;outline:none;color:var(--text);font-size:15px;min-width:0" />
       </div>
       <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;margin-bottom:10px">
         ${filterOptions.map(([value,label])=>`<button class="chip${adminPlanFilter===value?' active':''}" data-admin-filter="${value}" style="flex-shrink:0">${label}</button>`).join('')}
@@ -2867,14 +2867,14 @@ function renderAdminStats(mode='stats'){
           const isPremiumPlan = kind==='purchased' || kind==='manual' || kind==='promo';
           const isAdminUser = u.role==='admin';
           const how = (u.providers||[]).includes('google.com') ? 'Google' : 'el. paštas';
-          const aiInfo = kind==='free' && u.aiUsesRemaining!==null ? ` · AI liko ${u.aiUsesRemaining}/${AI_FREE_USES}` : '';
+          const aiInfo = kind==='free' && u.aiUsesRemaining!==null ? ` · nuskait. liko ${u.aiUsesRemaining}/${AI_FREE_USES}` : '';
           return `<div class="settings-row tappable admin-user" data-uid="${esc(u.uid)}" style="flex-direction:column;align-items:stretch;gap:10px;padding:14px 14px;cursor:pointer">
             <div style="display:flex;width:100%;align-items:flex-start;gap:10px">
               <div style="flex:1;min-width:0">
                 <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
                 <div style="font-size:14px;color:${planColor};margin-top:3px;font-weight:600">${planLabel}${isAdminUser && kind!=='admin'?' · Administratorius':''}${u.premiumExpiresMs&&isPremiumPlan?` <span style="color:var(--text3);font-weight:400">iki ${fmtDate(u.premiumExpiresMs)}</span>`:''}</div>
                 <div style="font-size:13px;color:var(--text2);margin-top:4px">Aktyvus ${adminAgo(u.lastActiveMs)} · registr. ${fmtDate(u.createdMs)}</div>
-                <div style="font-size:12px;color:var(--text3);margin-top:3px;line-height:1.35">${u.itemCount||0} įrašų · ${u.storageMode==='cloud'?'saugykloje':'įrenginyje'} · ${how}${u.emailVerified?'':' · nepatvirtintas'}${u.hasPush?' · push':''}${aiInfo} · ID ${esc((u.uid||'').slice(0,8))}</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:3px;line-height:1.35">${u.itemCount||0} įrašų · ${u.storageMode==='cloud'?'saugykloje':'įrenginyje'} · ${how}${u.emailVerified?'':' · nepatvirtintas'}${u.hasPush?' · push':''}${aiInfo}${u.firstPromoCode?` · kodas <b style="color:var(--text2);font-family:monospace">${esc(u.firstPromoCode)}</b>`:''} · ID ${esc((u.uid||'').slice(0,8))}</div>
               </div>
               <i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px;margin-top:2px"></i>
             </div>
@@ -2938,7 +2938,7 @@ function renderAdminStats(mode='stats'){
         <i class="ti ti-users row-icon" style="color:var(--accent)"></i><span class="settings-row-label">Vartotojai<small>${users.length} paskyros · paieška, filtrai, kortelės</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </button>
       <button class="settings-row tappable" id="adminPromoBtn" style="width:100%;background:none;border:none;text-align:left;color:inherit">
-        <i class="ti ti-ticket row-icon" style="color:var(--gold)"></i><span class="settings-row-label">Premium kodai<small>${state.promoCodes ? `${state.promoCodes.filter(c=>!c.usedBy&&!c.revokedAt).length} laisvi · ${state.promoCodes.filter(c=>c.usedBy).length} panaudoti` : 'Kurti ir valdyti kodus'}</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+        <i class="ti ti-ticket row-icon" style="color:var(--gold)"></i><span class="settings-row-label">Premium kodai<small>${state.promoCodes ? `${state.promoCodes.filter(c=>['free','active'].includes(promoState(c))).length} galiojantys · ${state.promoCodes.reduce((n,c)=>n+(c.useCount??(c.usedBy?1:0)),0)} panaudojimai` : 'Kurti ir valdyti kodus'}</small></span><i class="ti ti-chevron-right" style="color:var(--text3)"></i>
       </button>
     </div>
     <div class="form-section" style="margin:0 16px 16px;padding:0">
@@ -2966,6 +2966,8 @@ function renderAdminUserSheet(){
     ['Prisijungimo būdas', (u.providers||[]).includes('google.com') ? 'Google' : 'El. paštas'],
     ['El. paštas patvirtintas', u.emailVerified ? 'Taip' : 'Ne'],
     ['Push pranešimai', u.hasPush ? 'Įjungti' : 'Ne'],
+    ...(u.firstPromoCode ? [['Atėjo su kodu', u.firstPromoCode]] : []),
+    ...(u.promoCode && u.promoCode !== u.firstPromoCode ? [['Paskutinis kodas', u.promoCode]] : []),
     ['AI', kind==='free' ? (u.aiUsesRemaining===null ? '—' : `liko ${u.aiUsesRemaining}/${AI_FREE_USES}`) : `šį mėn. ${u.aiMonthKey===new Date().toISOString().slice(0,7)?u.aiMonthCount:0}`],
     ['ID', u.uid],
   ];
@@ -3009,6 +3011,17 @@ async function loadAdminStats(){
 // ── One-time Premium codes (admin creates, a friend/tester redeems once) ──────
 const FUNCTIONS_BASE = 'https://europe-west1-garantijos-4f397.cloudfunctions.net';
 const PROMO_MONTH_OPTIONS = [1,3,6,12,0]; // 0 = unlimited
+const PROMO_USE_OPTIONS = [1,5,10,20,50,100,500,0]; // 0 = no limit
+const promoUsesLabel = n => n===1 ? 'Vienam žmogui' : n===0 ? 'Neribotai žmonių' : `${n} žmonėms`;
+// free | used | full | expired | revoked | active (a code for many people that still works)
+function promoState(c){
+  if(c.revokedAt) return 'revoked';
+  const max = c.maxUses ?? 1, used = c.useCount ?? (c.usedBy ? 1 : 0);
+  if(max===1) return used ? 'used' : (c.validUntil && c.validUntil < Date.now() ? 'expired' : 'free');
+  if(max>0 && used>=max) return 'full';
+  if(c.validUntil && c.validUntil < Date.now()) return 'expired';
+  return 'active';
+}
 const promoMonthsLabel = m => m===0 ? 'Neribotai' : `${m} mėn.`;
 
 // Server calls never hang silently: after 25 s the caller gets a clear "took too long" error.
@@ -3058,35 +3071,56 @@ function renderAdminPromoPage(){
     ${renderAdminPromo()}
   </div>`;
 }
+const PROMO_FIELD = 'display:block;width:100%;box-sizing:border-box;margin-top:4px;padding:10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px';
 function renderAdminPromo(){
   const codes = state.promoCodes || [];
   const last = state.promoLastCode;
   const fmt = ts => ts?.toDate ? ts.toDate().toLocaleDateString('lt-LT') : '';
   return `<div style="margin:0 16px 16px;padding:14px;background:var(--bg2);border-radius:var(--radius)">
     <div style="font-size:16px;font-weight:600">Premium kodai</div>
-    <div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.4">Vienkartinis kodas suteikia nemokamą Premium pasirinktam laikui. Panaudoti gali tik vienas žmogus.</div>
-    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <select id="promoMonths" style="padding:10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text)">
-        ${PROMO_MONTH_OPTIONS.map(m=>`<option value="${m}" ${m===3?'selected':''}>${promoMonthsLabel(m)}</option>`).join('')}
-      </select>
-      <input id="promoNote" maxlength="80" placeholder="Kam (neprivaloma)" style="flex:1;min-width:120px;padding:10px;border-radius:10px;border:0.5px solid var(--border);background:var(--bg);color:var(--text)">
-      <button id="promoCreateBtn" class="save-btn" style="width:auto;margin:0;padding:10px 16px" ${state.promoBusy?'disabled':''}>${state.promoBusy?'...':'Sukurti'}</button>
+    <div style="font-size:13px;color:var(--text2);margin-top:4px;line-height:1.4">Kodas suteikia nemokamą Premium pasirinktam laikui. Galite sukurti vienkartinį kodą arba savo pavadinimo kodą daugeliui žmonių (pvz. partneriui). Kiekvienas žmogus tą patį kodą gali panaudoti tik kartą.</div>
+    <div class="promo-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px">
+      <label style="font-size:12px;color:var(--text3)">Kodas
+        <input id="promoCustom" maxlength="24" autocapitalize="characters" placeholder="Sugeneruoti automatiškai" style="${PROMO_FIELD};text-transform:uppercase;font-family:monospace"></label>
+      <label style="font-size:12px;color:var(--text3)">Premium trukmė
+        <select id="promoMonths" style="${PROMO_FIELD}">
+          ${PROMO_MONTH_OPTIONS.map(m=>`<option value="${m}" ${m===3?'selected':''}>${promoMonthsLabel(m)}</option>`).join('')}
+        </select></label>
+      <label style="font-size:12px;color:var(--text3)">Kiek žmonių gali panaudoti
+        <select id="promoMaxUses" style="${PROMO_FIELD}">
+          ${PROMO_USE_OPTIONS.map(n=>`<option value="${n}">${promoUsesLabel(n)}</option>`).join('')}
+        </select></label>
+      <label style="font-size:12px;color:var(--text3)">Panaudoti galima iki
+        <input id="promoValidUntil" type="date" min="${new Date().toISOString().slice(0,10)}" style="${PROMO_FIELD}"></label>
+      <label style="font-size:12px;color:var(--text3);grid-column:1/-1">Pastaba (kam, kokiai kampanijai)
+        <input id="promoNote" maxlength="80" placeholder="Neprivaloma" style="${PROMO_FIELD}"></label>
     </div>
+    <div style="font-size:12px;color:var(--text3);margin-top:6px">Data neprivaloma: be jos kodas galioja, kol jį deaktyvuosite.</div>
+    <button id="promoCreateBtn" class="save-btn" style="margin:12px 0 0" ${state.promoBusy?'disabled':''}>${state.promoBusy?'Kuriama…':'Sukurti kodą'}</button>
     ${last?`<div style="margin-top:12px;padding:12px;border-radius:10px;background:var(--accent-bg);display:flex;align-items:center;gap:10px">
       <div style="flex:1;font-family:monospace;font-size:17px;font-weight:700;letter-spacing:1px">${last}</div>
       <button id="promoCopyBtn" style="background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer">Kopijuoti</button>
     </div>`:''}
     ${codes.length?`<div style="margin-top:12px;border-top:0.5px solid var(--border)">
       ${codes.map(c=>{
-        const st = c.revokedAt ? ['Deaktyvuotas','var(--red)','var(--red-bg, rgba(255,69,58,.12))']
-          : c.usedBy ? ['Panaudotas','var(--text2)','var(--bg3)'] : ['Laisvas','var(--green)','var(--green-bg)'];
+        const ps = promoState(c), max = c.maxUses ?? 1, used = c.useCount ?? (c.usedBy ? 1 : 0);
+        const grey = ['var(--text2)','var(--bg3)'], green = ['var(--green)','var(--green-bg)'];
+        const st = ps==='revoked' ? ['Deaktyvuotas','var(--red)','var(--red-bg, rgba(255,69,58,.12))']
+          : ps==='used' ? ['Panaudotas',...grey] : ps==='full' ? ['Išnaudotas',...grey] : ps==='expired' ? ['Pasibaigęs',...grey]
+          : ps==='active' ? ['Galioja',...green] : ['Laisvas',...green];
+        const multi = max!==1;
+        const uses = multi ? ` · panaudota ${used}${max?` iš ${max}`:''}` : '';
+        const until = c.validUntil ? ` · iki ${new Date(c.validUntil).toLocaleDateString('lt-LT')}` : '';
+        const who = multi && (c.users||[]).length ? `<details style="margin-top:4px"><summary style="font-size:12px;color:var(--accent);cursor:pointer">Kas panaudojo (${used})</summary>
+            <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-top:4px">${c.users.map(x=>`${esc(x.email||'—')} · ${x.usedAt?new Date(x.usedAt).toLocaleDateString('lt-LT'):''}`).join('<br>')}${used>c.users.length?`<br>… ir dar ${used-c.users.length}`:''}</div></details>` : '';
         return `<div style="padding:11px 0;border-bottom:0.5px solid var(--border)">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
             <button class="promo-copy" data-code="${esc(c.code)}" title="Kopijuoti" style="background:none;border:none;padding:0;color:var(--text);font-family:monospace;font-size:15px;font-weight:700;white-space:nowrap;cursor:pointer">${esc(c.code)}</button>
             <span style="font-size:12px;font-weight:600;color:${st[1]};background:${st[2]};padding:3px 9px;border-radius:10px;white-space:nowrap">${st[0]}</span>
           </div>
-          <div style="font-size:12px;color:var(--text3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${promoMonthsLabel(c.months)} · sukurtas ${fmt(c.createdAt)}${c.note?` · ${esc(c.note)}`:''}</div>
-          ${c.usedBy||c.usedByEmail?`<div style="font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.usedByEmail||'')} · ${fmt(c.usedAt)}</div>`:''}
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${promoMonthsLabel(c.months)} Premium${uses}${until} · sukurtas ${fmt(c.createdAt)}${c.note?` · ${esc(c.note)}`:''}</div>
+          ${who}
+          ${!multi&&(c.usedBy||c.usedByEmail)?`<div style="font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.usedByEmail||'')} · ${fmt(c.usedAt)}</div>`:''}
           ${c.revokedAt?'':`<div style="text-align:right;margin-top:2px"><button class="promo-revoke" data-code="${esc(c.code)}" style="background:none;border:none;padding:4px 0;color:var(--red);font-size:13px;font-weight:600;cursor:pointer">Deaktyvuoti</button></div>`}
         </div>`;
       }).join('')}
@@ -3096,7 +3130,9 @@ function renderAdminPromo(){
 
 function revokePromoCode(code){
   const c = (state.promoCodes||[]).find(x=>x.code===code);
-  const msg = c?.usedBy
+  const msg = (c?.maxUses ?? 1) !== 1
+    ? 'Naujiems žmonėms kodo nebebus galima panaudoti. Tie, kurie jį jau panaudojo, Premium pasiliks.'
+    : c?.usedBy
     ? `${c.usedByEmail||'Vartotojas'} neteks šiuo kodu suteikto Premium iškart. Apmokėtos prenumeratos tai neliečia.`
     : 'Kodo nebebus galima panaudoti.';
   showConfirmDialog('Deaktyvuoti kodą?', msg, async ()=>{
@@ -3112,9 +3148,15 @@ async function createPromoCode(){
   if(state.promoBusy) return;
   const months = parseInt(document.getElementById('promoMonths')?.value??'3',10);
   const note = document.getElementById('promoNote')?.value||'';
+  const maxUses = parseInt(document.getElementById('promoMaxUses')?.value??'1',10);
+  const code = (document.getElementById('promoCustom')?.value||'').trim().toUpperCase().replace(/\s+/g,'');
+  const until = document.getElementById('promoValidUntil')?.value||'';
+  if(code && !/^[A-Z0-9][A-Z0-9-]{3,23}$/.test(code)){ toast('Kodą sudaro 4–24 lotyniškos raidės, skaičiai ar brūkšneliai (be lietuviškų raidžių)', 6000); return; }
+  // Last day included: the code works until the end of that day (Lithuanian time on this device).
+  const validUntil = until ? new Date(until+'T23:59:59').getTime() : null;
   state.promoBusy = true; render();
   try{
-    const {ok, data} = await callFunction('createPromoCode', {months, note});
+    const {ok, data} = await callFunction('createPromoCode', {months, note, maxUses, ...(code?{code}:{}), ...(validUntil?{validUntil}:{})});
     if(ok && data.code){ state.promoLastCode = data.code; await loadPromoCodes(); }
     else toast(data.error||'Nepavyko sukurti kodo');
   }catch(e){ toast('Nepavyko sukurti kodo'); }
