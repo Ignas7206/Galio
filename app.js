@@ -2021,7 +2021,10 @@ function renderSettings(){
   const themeLabel = (themeOpts.find(o=>o[0]===state.theme)||themeOpts[0])[1];
   const aiMonthUsed = state.userDoc?.aiMonthKey===new Date().toISOString().slice(0,7)?(state.userDoc?.aiMonthCount||0):0;
   const aiDayUsed = state.userDoc?.aiDayKey===new Date().toISOString().slice(0,10)?(state.userDoc?.aiDayCount||0):0;
-  const aiVal = isPremium ? `liko ${Math.max(0,PREMIUM_MONTHLY_LIMIT-aiMonthUsed)}` : `liko ${aiLeft}`;
+  // Show whichever limit runs out first, and say which one it is.
+  const aiMonthLeft = Math.max(0, PREMIUM_MONTHLY_LIMIT-aiMonthUsed), aiDayLeft = Math.max(0, PREMIUM_DAILY_LIMIT-aiDayUsed);
+  const aiVal = !isPremium ? `liko ${aiLeft} iš ${AI_FREE_USES}`
+    : aiDayLeft < aiMonthLeft ? `šiandien liko ${aiDayLeft}` : `šį mėn. liko ${aiMonthLeft}`;
   const rowBtn = 'width:100%;background:none;border:none;text-align:left;color:inherit';
   const chev = '<i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px"></i>';
   const appVersion = esc((document.querySelector('script[src*="app.js"]')?.src.split('v=')[1])||'?');
