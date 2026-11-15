@@ -4847,19 +4847,34 @@ async function openPhotoEditor(dataUrl, onDone){
   const img = wrap.querySelector('#photoEditorImg');
   img.src = dataUrl;
   // viewMode 0: the photo can be made smaller than the square; empty edges are filled with the photo's background colour
-  const cropper = new window.Cropper(img, { aspectRatio: 1, viewMode: 0, autoCropArea: 0.9, background: false, dragMode: 'move' });
   let fill = '#ffffff', fitted = false;
+  // Empty edges are saved in the photo's own background colour, so show them that way too.
+  const paintEdges = ()=>{ const vb=wrap.querySelector('.cropper-view-box'); if(vb) vb.style.background=fill; };
+  // Smallest useful size: the whole photo just fits the square. Zooming out further only
+  // made a tiny photo in a big empty frame.
+  const minRatio = ()=>{
+    const cb=cropper.getCropBoxData(), cd=cropper.getCanvasData();
+    return cb.width && cd.naturalWidth ? cb.width / Math.max(cd.naturalWidth, cd.naturalHeight) : 0;
+  };
+  const cropper = new window.Cropper(img, { aspectRatio: 1, viewMode: 0, autoCropArea: 0.9, background: false, dragMode: 'move',
+    ready: paintEdges,
+    zoom: e=>{
+      const min = minRatio();
+      if(min && e.detail.ratio < e.detail.oldRatio && e.detail.ratio < min){ e.preventDefault(); fitWhole(); }
+    },
+  });
   img.addEventListener('load', ()=>{ try{
     const c=document.createElement('canvas'); c.width=c.height=24; const x=c.getContext('2d'); x.drawImage(img,0,0,24,24);
     const px=[[0,0],[23,0],[0,23],[23,23],[12,0],[12,23],[0,12],[23,12]].map(([a,b])=>x.getImageData(a,b,1,1).data);
     const avg=i=>Math.round(px.reduce((t,p)=>t+p[i],0)/px.length);
     fill=`rgb(${avg(0)},${avg(1)},${avg(2)})`;
+    paintEdges();
   }catch(e){} }, { once:true });
   const fitWhole = ()=>{
     const cb=cropper.getCropBoxData(), cd=cropper.getCanvasData(); if(!cb.width||!cd.width) return;
     const r=cd.width/cd.height, w=r>=1?cb.width:cb.height*r, h=w/r;
     cropper.setCanvasData({ left: cb.left+(cb.width-w)/2, top: cb.top+(cb.height-h)/2, width: w, height: h });
-    const vb=wrap.querySelector('.cropper-view-box'); if(vb) vb.style.background=fill; // preview the filled edges
+    paintEdges();
   };
   const close = ()=>{ try{ cropper.destroy(); }catch(e){} wrap.remove(); };
   wrap.querySelector('#peCancel').onclick = close;
