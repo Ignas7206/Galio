@@ -170,7 +170,7 @@ function scannedThisItem(){
 }
 function requestUnsavedAddExit(targetView='list'){
   // The entry is already being saved: just leave, the save finishes in the background.
-  if(state.savingItem) return false;
+  if(state.savingItem || state.multiSaving) return false;
   if(state.analyzing) return requestAnalysisExit(targetView);
   if(!hasUnsavedAddWork()) return false;
   state.pendingUnsavedExit = { targetView };
@@ -2245,6 +2245,7 @@ function showNotifModal(itemId, itemData, savedNote='', opts={}){
     selectedDays: warrantyActive && !savedOff ? fitDays(editingExisting ? savedWarrantyDays : defaults, warrantyDaysLeft, 30, editingExisting || (formMode && !!savedWarrantyDays)) : [],
     returnSelectedDays: returnActive && !savedOff ? fitDays(editingExisting ? savedReturnDays : (savedReturnDays || state._lastReturnNotifDays || [3]), returnDaysLeft, 3, editingExisting || (formMode && !!savedReturnDays)) : [],
     formMode,
+    onChosen: opts.onChosen || null,
     hasWarranty: hasWarrantyDate,
     hasReturn: hasReturnDate,
     warrantyActive,
@@ -3844,10 +3845,11 @@ async function saveNotifSettings(skip=false){
     state.form.notifyDays = selectedDays;
     state.form.notifyReturnDays = returnDays;
     state.form.notifyEnabled = enabled;
+    state._chosenReminders = { notifyDays: selectedDays, notifyReturnDays: returnDays, notifyEnabled: enabled };
     state.notifModal = null;
     state._remindersChosen = true;
     if(enabled) requestPushPermission().catch(()=>{}); // still inside the tap, so the browser may ask
-    finishSaveItem();
+    (m.onChosen || finishSaveItem)();
     return;
   }
 
@@ -4435,8 +4437,26 @@ async function finishSaveMultiItems(){
       );
       return;
     }
-    toast(`Praleista ${duplicates.length} jau išsaugota ${duplicates.length===1?'prekė':'prekės'}`);
+    if(!state._remindersChosen) toast(`Praleista ${duplicates.length} jau išsaugota ${duplicates.length===1?'prekė':'prekės'}`);
   }
+  // Reminders are chosen before saving, over the product list (same as a single item).
+  if(isCloud && !state._remindersChosen){
+    const base = selected.find(item=>{
+      const wa = daysLeft(multiWarrantyEnd(item, r)); const ra = daysLeft(receiptReturnDeadline(r));
+      return (wa !== null && wa >= 0) || (ra !== null && ra >= 0);
+    });
+    if(base){
+      const opened = showNotifModal('form', {
+        warrantyMonths: base.warrantyMonths || 24, warrantyEnd: multiWarrantyEnd(base, r),
+        purchaseDate: r.purchaseDate, shop: r.shop,
+        returnDays: r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop),
+        returnDeadline: receiptReturnDeadline(r),
+      }, '', {formMode:true, onChosen: finishSaveMultiItems});
+      if(opened) return;
+    }
+  }
+  const multiRem = state._remindersChosen ? state._chosenReminders : null;
+  state._remindersChosen = false;
   state.multiSaving = true;
   render();
   let saved=0, failed=0;
@@ -4507,9 +4527,10 @@ async function finishSaveMultiItems(){
         ...(r.docMime==='application/pdf' && r.docThumb ? {docThumb:r.docThumb} : {}),
         returnDays: r.returnDays === null ? null : normalizeReturnDays(r.returnDays, r.shop),
         returnDeadline: receiptReturnDeadline(r),
-        notifyEnabled: false,
-        notifyDays: [],
-        notifyReturnDays: [],
+        notifyEnabled: !!multiRem?.notifyEnabled,
+        notifyDays: multiRem?.notifyDays || [],
+        notifyReturnDays: multiRem?.notifyReturnDays || [],
+        notifyRepeatDays: null,
         createdAtMs: Date.now(),
       };
 
@@ -4541,7 +4562,12 @@ async function finishSaveMultiItems(){
   if(isCloud) state.loadingItems = true;
   if(failed>0) toast(`${ltSavedProducts(saved).replace(' ✓','')}, nepavyko ${failed}`);
   const savedNote = failed>0 ? '' : ltSavedProducts(saved).replace(' ✓','');
-  if(savedIds.length>0){
+  if(isCloud){
+    // Reminders were chosen before saving; the user may already have left this screen.
+    if(savedNote) toast(multiRem?.notifyEnabled ? `${savedNote}, priminimai nustatyti ✓` : ltSavedProducts(saved));
+    if(state.view==='multi-select') state.view='list';
+    render();
+  }else if(savedIds.length>0){
     const reminderBase = selected.find(item=>{
       const warrantyActive = daysLeft(multiWarrantyEnd(item, r)) !== null && daysLeft(multiWarrantyEnd(item, r)) >= 0;
       const returnDeadline = receiptReturnDeadline(r);
