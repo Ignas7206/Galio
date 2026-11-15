@@ -2146,7 +2146,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 151;
+const WEB_RELEASE = 152;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -3375,12 +3375,16 @@ function attachEvents(){
     if(!menu||!btn) return;
     const r=btn.getBoundingClientRect();
     menu.style.minWidth=`${Math.max(160,r.width)}px`;
+    // A transformed or zoomed parent shifts and scales "fixed" positions:
+    // measure where 0,0 and 100,100 really land, then place the menu exactly under the button.
     menu.style.right='auto'; menu.style.left='0px'; menu.style.top='0px';
-    // A transformed parent shifts "fixed" positions, so measure where 0,0 really lands and correct.
     const o=menu.getBoundingClientRect();
+    menu.style.left='100px'; menu.style.top='100px';
+    const o2=menu.getBoundingClientRect();
+    const kx=(o2.left-o.left)/100 || 1, ky=(o2.top-o.top)/100 || 1;
     const wantLeft = side==='left' ? r.left : r.right - o.width;
-    menu.style.left=`${wantLeft - o.left}px`;
-    menu.style.top=`${r.bottom + 6 - o.top}px`;
+    menu.style.left=`${(wantLeft - o.left)/kx}px`;
+    menu.style.top=`${(r.bottom + 6 - o.top)/ky}px`;
   });
 
   // Swipe-to-delete on list cards. Only a clearly sideways swipe counts (a scroll that
