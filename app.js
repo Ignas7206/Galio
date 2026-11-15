@@ -1470,11 +1470,11 @@ function renderList(){
   const moveBy = cloudMoveDeadline();
   const downgradeBanner = cloudEntriesHidden() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Premium nepratęstas, todėl įrašai Galio saugykloje nebepasiekiami.</div>
+    <div class="pb-text" style="color:var(--text)">Jūsų įrašai paslėpti, nes Premium nepratęstas. ${moveBy ? `Užsisakykite Premium iki <b>${new Date(moveBy.getTime()+60*86400000).toLocaleDateString('lt-LT')}</b> ir visi įrašai grįš.` : 'Užsisakykite Premium ir visi įrašai grįš.'}</div>
     <button id="upgradeBtnHidden" style="background:var(--orange)">Premium</button>
   </div>` : needsCloudDowngrade() ? `<div class="plan-banner" style="background:var(--orange-bg);margin:0 16px 14px">
     <i class="ti ti-alert-circle" style="color:var(--orange)"></i>
-    <div class="pb-text" style="color:var(--text)">Premium nepratęstas. ${moveBy ? `Perkelkite įrašus į šį įrenginį iki <b>${moveBy.toLocaleDateString('lt-LT')}</b>, kitaip jie nebebus pasiekiami. Arba atnaujinkite Premium.` : 'Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio saugykloje ir veiktų priminimai.'}</div>
+    <div class="pb-text" style="color:var(--text)">Premium nepratęstas. ${moveBy ? `Perkelkite įrašus į šį įrenginį iki <b>${moveBy.toLocaleDateString('lt-LT')}</b> arba atnaujinkite Premium, kad jie liktų Galio saugykloje.` : 'Perkelkite įrašus į šį įrenginį arba atnaujinkite Premium, kad jie liktų Galio saugykloje ir veiktų priminimai.'}</div>
     <button id="downgradeStorageBtn" style="background:var(--orange)">Perkelti</button>
   </div>` : '';
 
@@ -5404,7 +5404,7 @@ async function toggleStorageMode(){
   if(!state.user) return;
   if(state.migratingStorage) return;
   // Hidden entries can't be moved (the list is empty here): switching would just drop them.
-  if(cloudEntriesHidden()){ toast('Įrašai Galio saugykloje nebepasiekiami. Atnaujinkite Premium.', 5000); return; }
+  if(cloudEntriesHidden()){ toast('Įrašai paslėpti. Užsisakykite Premium ir jie grįš.', 5000); return; }
   if(!state.online){
     offlineDialog(
       'Saugojimo keitimui reikia interneto',
