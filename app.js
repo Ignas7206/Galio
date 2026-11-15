@@ -2146,7 +2146,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 152;
+const WEB_RELEASE = 153;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -3374,7 +3374,6 @@ function attachEvents(){
     const menu=document.getElementById(menuId), btn=document.getElementById(btnId);
     if(!menu||!btn) return;
     const r=btn.getBoundingClientRect();
-    menu.style.minWidth=`${Math.max(160,r.width)}px`;
     // A transformed or zoomed parent shifts and scales "fixed" positions:
     // measure where 0,0 and 100,100 really land, then place the menu exactly under the button.
     menu.style.right='auto'; menu.style.left='0px'; menu.style.top='0px';
@@ -3382,8 +3381,9 @@ function attachEvents(){
     menu.style.left='100px'; menu.style.top='100px';
     const o2=menu.getBoundingClientRect();
     const kx=(o2.left-o.left)/100 || 1, ky=(o2.top-o.top)/100 || 1;
-    const wantLeft = side==='left' ? r.left : r.right - o.width;
-    menu.style.left=`${(wantLeft - o.left)/kx}px`;
+    // Same left edge and width as the button.
+    menu.style.minWidth='0'; menu.style.width=`${r.width/kx}px`;
+    menu.style.left=`${(r.left - o.left)/kx}px`;
     menu.style.top=`${(r.bottom + 6 - o.top)/ky}px`;
   });
 
