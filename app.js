@@ -888,6 +888,8 @@ async function ensureUserDoc(user){
   if(state.userDocUnsub) state.userDocUnsub();
   state.userDocUnsub = onSnapshot(ref_, s=>{
     if(s.exists()){
+      // Only the "last seen" time changed: nothing to redraw (keeps open forms intact).
+      if(state.userDoc && onlyLastSeenChanged(state.userDoc, s.data())){ state.userDoc = s.data(); return; }
       const prevMode = state.storageMode;
       const prevHidden = cloudEntriesHidden();
       state.userDoc = s.data();
@@ -910,6 +912,30 @@ async function ensureUserDoc(user){
   }, err=>{ if(auth.currentUser) console.warn('User doc listener error:', err); });
   restorePlayPurchases();
   if(!stale) setTimeout(autoMoveToCloud, 1500);
+  if(!stale) touchLastSeen();
+}
+
+// When the user last had the app open (admin "Aktyvus"). Written on open and when the app
+// comes back to the screen, at most every 5 minutes.
+let _lastSeenWrite = 0;
+function touchLastSeen(){
+  if(!state.user || !state.userDoc || document.visibilityState === 'hidden') return;
+  if(Date.now() - _lastSeenWrite < 5*60000) return;
+  _lastSeenWrite = Date.now();
+  updateDoc(doc(db,'users',state.user.uid), { lastSeenAt: serverTimestamp() }).catch(()=>{});
+}
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') touchLastSeen(); });
+function onlyLastSeenChanged(a, b){
+  const keys = new Set([...Object.keys(a||{}), ...Object.keys(b||{})]);
+  keys.delete('lastSeenAt');
+  for(const k of keys){
+    const x = a[k], y = b[k];
+    if(x === y) continue;
+    if(x && y && typeof x.isEqual === 'function'){ try{ if(x.isEqual(y)) continue; }catch(e){} }
+    if(x && y && typeof x === 'object' && JSON.stringify(x) === JSON.stringify(y)) continue;
+    return false;
+  }
+  return true;
 }
 
 // ── Items listener abstraction ──────────────────────────────────────────
@@ -2156,7 +2182,7 @@ function renderSettings(){
 // Play app version comes from its build (?app=N); a plain browser tab always runs the latest web build.
 // Version shown to users: <Android app version>.<web release>. WEB_RELEASE goes up with every
 // web update (same number as the service worker cache, galio-vN in sw.js).
-const WEB_RELEASE = 155;
+const WEB_RELEASE = 156;
 const APP_VERSION_NAME = (()=>{
   let b=0; try{ b=parseInt(localStorage.getItem('galio_app_build')||'0',10)||0; }catch(e){}
   const base = b>=7 ? '1.6' : b>=6 ? '1.5' : b>0 ? '1.4' : '1.6'; // a plain browser tab runs the latest
@@ -2722,6 +2748,17 @@ function renderMultiSelect(){
 
 // ── Admin statistics ──────────────────────────────────────────────────────
 const ADMIN_DAY = 86400000;
+// Exact time: "šiandien 18:20", "vakar 09:14", "2026-11-14 18:20".
+function adminWhen(t){
+  if(!t) return 'nežinoma';
+  const d = new Date(t), now = new Date();
+  const hm = d.toLocaleTimeString('lt-LT', {hour:'2-digit', minute:'2-digit'});
+  const day = x => x.toLocaleDateString('sv-SE');
+  const y = new Date(now); y.setDate(now.getDate()-1);
+  if(day(d) === day(now)) return `šiandien ${hm}`;
+  if(day(d) === day(y)) return `vakar ${hm}`;
+  return `${day(d)} ${hm}`;
+}
 function adminAgo(t){
   if(!t) return 'niekada';
   const d = (Date.now()-t)/ADMIN_DAY;
@@ -2931,7 +2968,7 @@ function renderAdminStats(mode='stats'){
               <div style="flex:1;min-width:0">
                 <div style="font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(u.email)}</div>
                 <div style="font-size:14px;color:${planColor};margin-top:3px;font-weight:600">${planLabel}${isAdminUser && kind!=='admin'?' · Administratorius':''}${u.premiumExpiresMs&&isPremiumPlan?` <span style="color:var(--text3);font-weight:400">iki ${fmtDate(u.premiumExpiresMs)}</span>`:''}</div>
-                <div style="font-size:13px;color:var(--text2);margin-top:4px">Aktyvus ${adminAgo(u.lastActiveMs)} · registr. ${fmtDate(u.createdMs)}</div>
+                <div style="font-size:13px;color:var(--text2);margin-top:4px">Aktyvus ${adminWhen(u.lastActiveMs)}${u.lastSeenMs?'':' <span title="Dar neatnaujino programėlės – laikas apytikslis">≈</span>'} · registr. ${fmtDate(u.createdMs)}</div>
                 <div style="font-size:12px;color:var(--text3);margin-top:3px;line-height:1.35">${u.itemCount||0} įrašų · ${u.storageMode==='cloud'?'saugykloje':'įrenginyje'} · ${how}${u.emailVerified?'':' · nepatvirtintas'}${u.hasPush?' · push':''}${aiInfo}${u.firstPromoCode?` · kodas <b style="color:var(--text2);font-family:monospace">${esc(u.firstPromoCode)}</b>`:''} · ID ${esc((u.uid||'').slice(0,8))}</div>
               </div>
               <i class="ti ti-chevron-right" style="color:var(--text3);font-size:16px;margin-top:2px"></i>
@@ -3019,8 +3056,7 @@ function renderAdminUserSheet(){
   const plan = kind==='purchased' ? `Moka · ${u.playProductId==='galio_premium_yearly'?'metinis':'mėnesinis'}` : kind==='promo' ? 'Premium · kodas' : kind==='manual' ? 'Premium · suteiktas' : kind==='admin' ? 'Administratorius' : 'Nemokamas';
   const rows = [
     ['Planas', plan + (u.premiumExpiresMs && kind==='promo' ? ` (iki ${new Date(u.premiumExpiresMs).toLocaleDateString('lt-LT')})` : '')],
-    ['Paskutinį kartą aktyvus', `${adminAgo(u.lastActiveMs)}`],
-    ['Paskutinis prisijungimas', fmtDT(u.lastSignInMs)],
+    ['Paskutinį kartą atidarė', u.lastActiveMs ? `${fmtDT(u.lastActiveMs)} (${adminAgo(u.lastActiveMs)})${u.lastSeenMs?'':' – apytiksliai'}` : 'nežinoma'],
     ['Užsiregistravo', fmtDT(u.createdMs)],
     ['Įrašų', String(u.itemCount||0)],
     ['Saugojimas', u.storageMode==='cloud' ? 'Galio saugykla' : 'Įrenginyje'],

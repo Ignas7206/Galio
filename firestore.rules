@@ -59,6 +59,9 @@ service cloud.firestore {
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailVerified'])
                        && request.resource.data.emailVerified is bool)
                       ||
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt'])
+                       && request.resource.data.lastSeenAt == request.time)
+                      ||
                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['emailReminders'])
                        && request.resource.data.emailReminders is bool)
                       ||
